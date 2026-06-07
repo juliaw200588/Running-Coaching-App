@@ -74,6 +74,25 @@ export default function Onboarding({ onPlanGenerated }) {
             <input style={inputStyle} placeholder="z.B. Julia" value={form.name}
               onChange={e => setForm({ ...form, name: e.target.value })} />
           </div>
+          {["5 km", "10 km", "Halbmarathon", "Marathon"].map((goal) => (
+<button
+key={goal}
+onClick={() => setForm({...form, goal})}
+style={{
+background: form.goal === goal ? "#FF8C69" : "white",
+color: form.goal === goal ? "white" : "#8B7355",
+border: "1px solid #F0E8E0",
+borderRadius: 12,
+padding: "10px 12px",
+fontSize: 12,
+cursor: "pointer",
+flex: 1,
+}}
+>
+{goal}
+</button>
+))}
+
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 18 }}>
             <div>
