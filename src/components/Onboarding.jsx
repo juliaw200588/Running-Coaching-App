@@ -12,25 +12,14 @@ export default function Onboarding({ onPlanGenerated }) {
   const handleGenerate = async () => {
     setLoading(true)
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const response = await fetch('/api/generate-plan', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': import.meta.env.VITE_ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
-          messages: [{
-            role: 'user',
-            content: `Erstelle einen ${form.weeksUntilRace}-wöchigen Halbmarathon-Trainingsplan. Zielzeit: ${form.goalTime}h, bisherige Zeit: ${form.previousTime}, Läufe pro Woche: ${form.runsPerWeek}. Antworte auf Deutsch, strukturiert nach Wochen.`
-          }]
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
       })
       const data = await response.json()
-      onPlanGenerated(data.content[0].text)
+      if (data.error) throw new Error(data.error)
+      onPlanGenerated(data.plan)
     } catch (e) {
       onPlanGenerated('Fehler: ' + e.message)
     }
@@ -51,6 +40,10 @@ export default function Onboarding({ onPlanGenerated }) {
       <label>Wochen bis zum Rennen<br />
         <input type="number" value={form.weeksUntilRace}
           onChange={e => setForm({...form, weeksUntilRace: e.target.value})} />
+      </label><br /><br />
+      <label>Läufe pro Woche<br />
+        <input type="number" value={form.runsPerWeek}
+          onChange={e => setForm({...form, runsPerWeek: e.target.value})} />
       </label><br /><br />
       <button onClick={handleGenerate} disabled={loading}>
         {loading ? 'Wird generiert...' : 'Plan generieren'}
