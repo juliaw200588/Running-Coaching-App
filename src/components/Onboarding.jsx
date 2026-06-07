@@ -131,7 +131,7 @@ export default function Onboarding({ onPlanGenerated }) {
         </div>
 
         <p style={{ textAlign: 'center', fontSize: 11, color: '#D4C4B8', marginTop: 20, fontFamily: 'sans-serif' }}>
-          Powered by Claude AI · Run Coaching App
+          Run Coaching App
         </p>
       </div>
     </div>
