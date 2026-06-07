@@ -49,16 +49,16 @@ export default function Onboarding({ onPlanGenerated }) {
       <div style={{ background: 'linear-gradient(135deg, #FF8C69 0%, #FFB347 50%, #FF6B9D 100%)', padding: '56px 24px 48px', borderRadius: '0 0 40px 40px', boxShadow: '0 8px 32px rgba(255,140,105,0.3)', position: 'relative', overflow: 'hidden', textAlign: 'center' }}>
         <div style={{ position: 'absolute', top: -30, right: -30, width: 160, height: 160, background: 'rgba(255,255,255,0.08)', borderRadius: '50%' }} />
         <div style={{ position: 'absolute', bottom: -40, left: 20, width: 100, height: 100, background: 'rgba(255,255,255,0.06)', borderRadius: '50%' }} />
-        <div style={{ marginBottom: 12 }}>
+  <div style={{ marginBottom: 12 }}>
   <svg width="90" height="90" viewBox="0 0 90 90" xmlns="http://www.w3.org/2000/svg">
     <circle cx="45" cy="45" r="45" fill="rgba(255,255,255,0.18)"/>
     <circle cx="45" cy="45" r="36" fill="rgba(255,255,255,0.13)"/>
-    <path d="M22 64 Q30 50 38 44 Q46 38 52 42 Q58 46 66 36" 
-          fill="none" stroke="white" stroke-width="4.5" 
+    <path d="M22 68 C22 68 28 60 35 54 C42 48 50 50 56 44 C62 38 64 28 70 24"
+          fill="none" stroke="white" stroke-width="5"
           stroke-linecap="round" stroke-linejoin="round" opacity="0.95"/>
-    <circle cx="22" cy="64" r="5" fill="white" opacity="0.9"/>
-    <line x1="66" y1="22" x2="66" y2="38" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.9"/>
-    <path d="M66 22 L80 27 L66 32Z" fill="white" opacity="0.95"/>
+    <circle cx="22" cy="68" r="5" fill="white" opacity="0.95"/>
+    <line x1="70" y1="18" x2="70" y2="30" stroke="white" stroke-width="3" stroke-linecap="round" opacity="0.95"/>
+    <polygon points="70,18 82,22 70,26" fill="white" opacity="0.95"/>
   </svg>
 </div>
         <h1 style={{ color: 'white', fontSize: 28, fontWeight: 'bold', margin: '0 0 6px', textShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>Run Coaching</h1>
