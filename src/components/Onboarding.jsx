@@ -50,7 +50,7 @@ export default function Onboarding({ onPlanGenerated }) {
         <div style={{ position: 'absolute', top: -30, right: -30, width: 160, height: 160, background: 'rgba(255,255,255,0.08)', borderRadius: '50%' }} />
         <div style={{ position: 'absolute', bottom: -40, left: 20, width: 100, height: 100, background: 'rgba(255,255,255,0.06)', borderRadius: '50%' }} />
         <img
-          src="/public/route-icon.png"
+          src="/route-icon.png"
           alt="Route"
           style={{ width: 90, height: 90, borderRadius: '50%', marginBottom: 12 }}
         />
