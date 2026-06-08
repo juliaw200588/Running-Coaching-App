@@ -5,24 +5,30 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { goalTime, previousTime, weeksUntilRace, runsPerWeek, name } = req.body
+  const { goal, goalTime, previousTime, startDate, weeksUntilRace, runsPerWeek, name } = req.body
 
-  const systemPrompt = `Du bist ein professioneller Lauftrainer. Erstelle einen personalisierten Halbmarathon-Trainingsplan als JSON.
+  const hasTime = goalTime || previousTime
+  const timeInfo = hasTime
+    ? `Zielzeit: ${goalTime || 'keine Angabe'}, Bisherige Zeit: ${previousTime || 'keine Angabe'}`
+    : 'Keine Zeitangabe – Ziel ist es, die Distanz zu finishen.'
+
+  const systemPrompt = `Du bist ein professioneller Lauftrainer. Erstelle einen personalisierten Trainingsplan als JSON.
 
 Antworte NUR mit validem JSON, kein Markdown, keine Erklärungen.
 
 Das JSON muss exakt diesem Schema folgen:
 {
   "title": "16-Wochen Trainingsplan",
-  "goal": "2:05h",
-  "startDate": "2026-06-07",
+  "goal": "Halbmarathon finishen",
+  "startDate": "2026-06-08",
+  "name": "Julia",
   "phases": [
     {
       "id": "basis",
       "label": "Basisphase",
       "sub": "Wo. 1–4",
       "icon": "🌱",
-      "dateRange": "7. Jun – 5. Jul",
+      "dateRange": "8. Jun – 5. Jul",
       "description": "Kurze Beschreibung der Phase",
       "accent": "#059669",
       "light": "#ecfdf5",
@@ -31,7 +37,7 @@ Das JSON muss exakt diesem Schema folgen:
       "weeks": [
         {
           "n": 1,
-          "dateRange": "07.06. – 13.06.",
+          "dateRange": "08.06. – 14.06.",
           "days": [
             { "tag": "Di", "einheit": "Locker", "details": "30 min @ 7:00–7:15 min/km" },
             { "tag": "Do", "einheit": "Dauerlauf", "details": "40 min @ 6:45 min/km" },
@@ -47,17 +53,17 @@ Das JSON muss exakt diesem Schema folgen:
 Farben pro Phase:
 - Basisphase: accent #059669, light #ecfdf5, mid #a7f3d0, soft #d1fae5
 - Entwicklung: accent #d97706, light #fffbeb, mid #fcd34d, soft #fef3c7
-- HM-spezifisch: accent #e11d48, light #fff1f2, mid #fda4af, soft #ffe4e6
+- Spezifisch: accent #e11d48, light #fff1f2, mid #fda4af, soft #ffe4e6
 - Tapering: accent #7c3aed, light #f5f3ff, mid #c4b5fd, soft #ede9fe
 
-Wichtige Regeln:
-- Passe die Phasen sinnvoll an die Anzahl der Wochen an
-- Nutze genau ${runsPerWeek} Pflichtläufe pro Woche (optional: 1 zusätzlicher lockerer Lauf)
-- Passe Paces an die bisherige Zeit ${previousTime} und Zielzeit ${goalTime}h an
-- Heute ist der 07.06.2026, berechne Datumsangaben ab heute
+Regeln:
+- Passe Phasen sinnvoll an die Wochen an
+- Nutze genau ${runsPerWeek} Pflichtläufe pro Woche (optional: 1 zusätzlicher)
+- Berechne Datumsangaben ab dem Startdatum ${startDate}
+- Wenn keine Zeiten angegeben: Fokus auf Ausdauer und Distanz, keine Tempoangaben in min/km
+- Wenn Zeiten angegeben: Passe Paces entsprechend an
 - Regenerationswochen (regen: true) alle 4 Wochen
-- Letzte Woche: race: true
-- Einheitentypen: Locker, Dauerlauf, Fahrtspiel, Intervalle, Tempodauerlauf, HM-Pace Intervalle, Langer Lauf, Pause, Spazieren, Lauf mit HM-Pace, Locker + Strides, 🏁 RENNTAG`
+- Letzte Woche: race: true`
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -73,12 +79,12 @@ Wichtige Regeln:
         system: systemPrompt,
         messages: [{
           role: 'user',
-          content: `Erstelle einen ${weeksUntilRace}-wöchigen Halbmarathon-Trainingsplan.
-Name: ${name || 'Läuferin'}
-Zielzeit: ${goalTime}h
-Bisherige HM-Zeit: ${previousTime}
+          content: `Erstelle einen ${weeksUntilRace}-wöchigen Trainingsplan.
+Name: ${name || 'Läufer/in'}
+Distanz: ${goal}
+${timeInfo}
 Läufe pro Woche: ${runsPerWeek}
-Startdatum: 07.06.2026`
+Startdatum: ${startDate}`
         }]
       })
     })

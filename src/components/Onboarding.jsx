@@ -3,8 +3,10 @@ import { useState } from 'react'
 export default function Onboarding({ onPlanGenerated }) {
   const [form, setForm] = useState({
     name: '',
-    goalTime: '2:05',
-    previousTime: '2:14:38',
+    goal: 'Halbmarathon',
+    goalTime: '',
+    previousTime: '',
+    startDate: new Date().toISOString().split('T')[0],
     weeksUntilRace: 16,
     runsPerWeek: 3,
   })
@@ -42,6 +44,11 @@ export default function Onboarding({ onPlanGenerated }) {
     display: 'block', marginBottom: 6, fontFamily: 'sans-serif',
   }
 
+  const optionalBadge = {
+    fontSize: 10, color: '#D4C4B8', fontWeight: 'normal',
+    marginLeft: 6, textTransform: 'none', letterSpacing: 0,
+  }
+
   return (
     <div style={{ fontFamily: "'Georgia', 'Times New Roman', serif", background: 'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 50%, #FFF0F5 100%)', minHeight: '100vh' }}>
 
@@ -49,11 +56,7 @@ export default function Onboarding({ onPlanGenerated }) {
       <div style={{ background: 'linear-gradient(135deg, #FF8C69 0%, #FFB347 50%, #FF6B9D 100%)', padding: '56px 24px 48px', borderRadius: '0 0 40px 40px', boxShadow: '0 8px 32px rgba(255,140,105,0.3)', position: 'relative', overflow: 'hidden', textAlign: 'center' }}>
         <div style={{ position: 'absolute', top: -30, right: -30, width: 160, height: 160, background: 'rgba(255,255,255,0.08)', borderRadius: '50%' }} />
         <div style={{ position: 'absolute', bottom: -40, left: 20, width: 100, height: 100, background: 'rgba(255,255,255,0.06)', borderRadius: '50%' }} />
-        <img
-          src="/route-icon.png"
-          alt="Route"
-          style={{ width: 90, height: 90, borderRadius: '50%', marginBottom: 12 }}
-        />
+        <img src="/route-icon.jpeg" alt="Route" style={{ width: 90, height: 90, borderRadius: '50%', marginBottom: 12 }} />
         <h1 style={{ color: 'white', fontSize: 28, fontWeight: 'bold', margin: '0 0 6px', textShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>Run Coaching</h1>
         <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, margin: 0, fontFamily: 'sans-serif' }}>Dein persönlicher Trainingsplan</p>
       </div>
@@ -61,37 +64,65 @@ export default function Onboarding({ onPlanGenerated }) {
       <div style={{ maxWidth: 460, margin: '0 auto', padding: '28px 20px 40px' }}>
         <div style={{ background: 'white', borderRadius: 24, padding: 24, boxShadow: '0 4px 32px rgba(255,140,105,0.12)', border: '1px solid #FFE8D8' }}>
 
+          {/* Name */}
           <div style={{ marginBottom: 18 }}>
             <label style={labelStyle}>Dein Name</label>
             <input style={inputStyle} placeholder="z.B. Julia" value={form.name}
               onChange={e => setForm({ ...form, name: e.target.value })} />
           </div>
 
+          {/* Distanz */}
           <div style={{ marginBottom: 18 }}>
             <label style={labelStyle}>Renndistanz</label>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {['5 km', '10 km', 'Halbmarathon', 'Marathon'].map(goal => (
-                <button key={goal} onClick={() => setForm({ ...form, goal })}
-                  style={{ background: form.goal === goal ? '#FF8C69' : 'white', color: form.goal === goal ? 'white' : '#8B7355', border: '1px solid #F0E8E0', borderRadius: 12, padding: '10px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'sans-serif', fontWeight: 'bold', transition: 'all 0.2s' }}>
-                  {goal}
+              {['5 km', '10 km', 'Halbmarathon', 'Marathon'].map(g => (
+                <button key={g} onClick={() => setForm({ ...form, goal: g })}
+                  style={{ background: form.goal === g ? '#FF8C69' : 'white', color: form.goal === g ? 'white' : '#8B7355', border: `2px solid ${form.goal === g ? '#FF8C69' : '#F0E8E0'}`, borderRadius: 12, padding: '10px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'sans-serif', fontWeight: 'bold', transition: 'all 0.2s', boxShadow: form.goal === g ? '0 4px 14px rgba(255,140,105,0.4)' : 'none' }}>
+                  {g}
                 </button>
               ))}
             </div>
           </div>
 
+          {/* Zielzeit + bisherige Zeit */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 18 }}>
             <div>
-              <label style={labelStyle}>Zielzeit</label>
-              <input style={inputStyle} placeholder="2:05" value={form.goalTime}
+              <label style={labelStyle}>
+                Zielzeit
+                <span style={optionalBadge}>optional</span>
+              </label>
+              <input style={inputStyle} placeholder="z.B. 2:05" value={form.goalTime}
                 onChange={e => setForm({ ...form, goalTime: e.target.value })} />
             </div>
             <div>
-              <label style={labelStyle}>Bisherige HM-Zeit</label>
-              <input style={inputStyle} placeholder="2:14:38" value={form.previousTime}
+              <label style={labelStyle}>
+                Bisherige Zeit
+                <span style={optionalBadge}>optional</span>
+              </label>
+              <input style={inputStyle} placeholder="z.B. 2:14:38" value={form.previousTime}
                 onChange={e => setForm({ ...form, previousTime: e.target.value })} />
             </div>
           </div>
 
+          {/* Hinweis wenn keine Zeiten */}
+          {!form.goalTime && !form.previousTime && (
+            <div style={{ marginBottom: 18, padding: '10px 14px', background: '#F0FAF4', border: '1px solid #B8E4CC', borderRadius: 12, fontSize: 12, color: '#5BA88A', fontFamily: 'sans-serif' }}>
+              💡 Ohne Zeitangabe wird ein Plan erstellt, der dir hilft die Distanz zu finishen.
+            </div>
+          )}
+
+          {/* Startdatum */}
+          <div style={{ marginBottom: 18 }}>
+            <label style={labelStyle}>Startdatum des Plans</label>
+            <input
+              type="date"
+              style={{ ...inputStyle, cursor: 'pointer' }}
+              value={form.startDate}
+              onChange={e => setForm({ ...form, startDate: e.target.value })}
+            />
+          </div>
+
+          {/* Wochen */}
           <div style={{ marginBottom: 18 }}>
             <label style={labelStyle}>Wochen bis zum Rennen</label>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -104,6 +135,7 @@ export default function Onboarding({ onPlanGenerated }) {
             </div>
           </div>
 
+          {/* Läufe pro Woche */}
           <div style={{ marginBottom: 26 }}>
             <label style={labelStyle}>Läufe pro Woche</label>
             <div style={{ display: 'flex', gap: 8 }}>
