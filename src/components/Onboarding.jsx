@@ -61,7 +61,6 @@ export default function Onboarding({ onPlanGenerated }) {
         <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14, margin: 0, fontFamily: 'sans-serif' }}>Dein persönlicher Trainingsplan</p>
       </div>
 
-      {/* Form */}
       <div style={{ maxWidth: 460, margin: '0 auto', padding: '28px 20px 40px' }}>
         <div style={{ background: 'white', borderRadius: 24, padding: 24, boxShadow: '0 4px 32px rgba(255,140,105,0.12)', border: '1px solid #FFE8D8' }}>
 
