@@ -5,12 +5,24 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { goal, goalTime, previousTime, startDate, weeksUntilRace, runsPerWeek, name } = req.body
+  const { name, zielTyp, niveau, goal, goalTime, previousTime, startDate, weeksUntilRace, runsPerWeek } = req.body
 
-  const hasTime = goalTime || previousTime
-  const timeInfo = hasTime
-    ? `Zielzeit: ${goalTime || 'keine Angabe'}, Bisherige Zeit: ${previousTime || 'keine Angabe'}`
-    : 'Keine Zeitangabe – Ziel ist es, die Distanz zu finishen.'
+  const zielBeschreibung = {
+    rennen: 'hat ein bevorstehendes Rennen und möchte sich gezielt darauf vorbereiten',
+    distanz: 'möchte eine bestimmte Distanz schaffen',
+    starten: 'fängt gerade mit dem Laufen an und braucht einen sanften Einstieg',
+  }[zielTyp] || 'möchte einen Trainingsplan'
+
+  const niveauBeschreibung = {
+    'Anfänger': 'Anfänger (läuft selten oder gar nicht)',
+    'Fortgeschritten': 'Fortgeschrittener (läuft regelmäßig)',
+    'Erfahren': 'Erfahrener Läufer (nimmt an Wettkämpfen teil)',
+  }[niveau] || niveau
+
+  const distanzInfo = goal ? `Zieldistanz: ${goal}` : 'Kein spezifisches Rennen – allgemeiner Einsteigerplan'
+  const zeitInfo = goalTime || previousTime
+    ? `Zielzeit: ${goalTime || 'keine'}, Bisherige Zeit: ${previousTime || 'keine'}`
+    : 'Keine Zeitangabe – Fokus auf Finishen bzw. Einstieg'
 
   const systemPrompt = `Du bist ein professioneller Lauftrainer. Erstelle einen personalisierten Trainingsplan als JSON.
 
@@ -18,7 +30,7 @@ Antworte NUR mit validem JSON, kein Markdown, keine Erklärungen.
 
 Das JSON muss exakt diesem Schema folgen:
 {
-  "title": "16-Wochen Trainingsplan",
+  "title": "12-Wochen Trainingsplan",
   "goal": "Halbmarathon finishen",
   "startDate": "2026-06-08",
   "name": "Julia",
@@ -56,14 +68,16 @@ Farben pro Phase:
 - Spezifisch: accent #e11d48, light #fff1f2, mid #fda4af, soft #ffe4e6
 - Tapering: accent #7c3aed, light #f5f3ff, mid #c4b5fd, soft #ede9fe
 
-Regeln:
-- Passe Phasen sinnvoll an die Wochen an
+Wichtige Regeln:
+- Passe den Plan vollständig an Niveau, Ziel und Zeiten an
+- Bei Anfänger: sanfter Einstieg, viel Gehen erlaubt, kurze Distanzen, langsame Paces
+- Bei Fortgeschritten: ausgewogener Mix aus Tempo und Ausdauer
+- Bei Erfahren: anspruchsvolle Intervalle, Tempodauerläufe, höhere Paces
+- Bei "starten": kein Rennen, Fokus auf Gewohnheit aufbauen, Laufen/Gehen Wechsel
 - Nutze genau ${runsPerWeek} Pflichtläufe pro Woche (optional: 1 zusätzlicher)
-- Berechne Datumsangaben ab dem Startdatum ${startDate}
-- Wenn keine Zeiten angegeben: Fokus auf Ausdauer und Distanz, keine Tempoangaben in min/km
-- Wenn Zeiten angegeben: Passe Paces entsprechend an
+- Berechne alle Datumsangaben ab Startdatum ${startDate}
 - Regenerationswochen (regen: true) alle 4 Wochen
-- Letzte Woche: race: true`
+- Letzte Woche: race: true (außer bei zielTyp "starten")`
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -81,8 +95,10 @@ Regeln:
           role: 'user',
           content: `Erstelle einen ${weeksUntilRace}-wöchigen Trainingsplan.
 Name: ${name || 'Läufer/in'}
-Distanz: ${goal}
-${timeInfo}
+Niveau: ${niveauBeschreibung}
+Ziel: ${name || 'die Person'} ${zielBeschreibung}
+${distanzInfo}
+${zeitInfo}
 Läufe pro Woche: ${runsPerWeek}
 Startdatum: ${startDate}`
         }]
