@@ -1,5 +1,12 @@
 import { useState } from 'react'
 
+const distanzConfig = {
+  '5 km':        { zielzeit: 'z.B. 0:25', bisherige: 'z.B. 0:28' },
+  '10 km':       { zielzeit: 'z.B. 0:55', bisherige: 'z.B. 1:05' },
+  'Halbmarathon':{ zielzeit: 'z.B. 2:05', bisherige: 'z.B. 2:14' },
+  'Marathon':    { zielzeit: 'z.B. 4:30', bisherige: 'z.B. 4:55' },
+}
+
 export default function Onboarding({ onPlanGenerated }) {
   const [form, setForm] = useState({
     name: '',
@@ -49,6 +56,8 @@ export default function Onboarding({ onPlanGenerated }) {
     marginLeft: 6, textTransform: 'none', letterSpacing: 0,
   }
 
+  const config = distanzConfig[form.goal] || distanzConfig['Halbmarathon']
+
   return (
     <div style={{ fontFamily: "'Georgia', 'Times New Roman', serif", background: 'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 50%, #FFF0F5 100%)', minHeight: '100vh' }}>
 
@@ -76,7 +85,7 @@ export default function Onboarding({ onPlanGenerated }) {
             <label style={labelStyle}>Renndistanz</label>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {['5 km', '10 km', 'Halbmarathon', 'Marathon'].map(g => (
-                <button key={g} onClick={() => setForm({ ...form, goal: g })}
+                <button key={g} onClick={() => setForm({ ...form, goal: g, goalTime: '', previousTime: '' })}
                   style={{ background: form.goal === g ? '#FF8C69' : 'white', color: form.goal === g ? 'white' : '#8B7355', border: `2px solid ${form.goal === g ? '#FF8C69' : '#F0E8E0'}`, borderRadius: 12, padding: '10px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'sans-serif', fontWeight: 'bold', transition: 'all 0.2s', boxShadow: form.goal === g ? '0 4px 14px rgba(255,140,105,0.4)' : 'none' }}>
                   {g}
                 </button>
@@ -91,7 +100,7 @@ export default function Onboarding({ onPlanGenerated }) {
                 Zielzeit
                 <span style={optionalBadge}>optional</span>
               </label>
-              <input style={inputStyle} placeholder="z.B. 2:05" value={form.goalTime}
+              <input style={inputStyle} placeholder={config.zielzeit} value={form.goalTime}
                 onChange={e => setForm({ ...form, goalTime: e.target.value })} />
             </div>
             <div>
@@ -99,7 +108,7 @@ export default function Onboarding({ onPlanGenerated }) {
                 Bisherige Zeit
                 <span style={optionalBadge}>optional</span>
               </label>
-              <input style={inputStyle} placeholder="z.B. 2:14:38" value={form.previousTime}
+              <input style={inputStyle} placeholder={config.bisherige} value={form.previousTime}
                 onChange={e => setForm({ ...form, previousTime: e.target.value })} />
             </div>
           </div>
@@ -114,22 +123,19 @@ export default function Onboarding({ onPlanGenerated }) {
           {/* Startdatum */}
           <div style={{ marginBottom: 18 }}>
             <label style={labelStyle}>Startdatum des Plans</label>
-            <input
-              type="date"
-              style={{ ...inputStyle, cursor: 'pointer' }}
+            <input type="date" style={{ ...inputStyle, cursor: 'pointer' }}
               value={form.startDate}
-              onChange={e => setForm({ ...form, startDate: e.target.value })}
-            />
+              onChange={e => setForm({ ...form, startDate: e.target.value })} />
           </div>
 
-          {/* Wochen */}
+          {/* Planlänge */}
           <div style={{ marginBottom: 18 }}>
-            <label style={labelStyle}>Wochen bis zum Rennen</label>
+            <label style={labelStyle}>Wie lange soll dein Plan gehen?</label>
             <div style={{ display: 'flex', gap: 8 }}>
               {[8, 12, 16, 20].map(w => (
                 <button key={w} onClick={() => setForm({ ...form, weeksUntilRace: w })}
-                  style={{ flex: 1, padding: '11px 0', borderRadius: 12, border: `2px solid ${form.weeksUntilRace === w ? '#FF8C69' : '#F0E0D0'}`, background: form.weeksUntilRace === w ? 'linear-gradient(135deg,#FF8C69,#FFB347)' : 'white', color: form.weeksUntilRace === w ? 'white' : '#C4A882', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', boxShadow: form.weeksUntilRace === w ? '0 4px 14px rgba(255,140,105,0.4)' : 'none', transition: 'all 0.2s' }}>
-                  {w}
+                  style={{ flex: 1, padding: '11px 0', borderRadius: 12, border: `2px solid ${form.weeksUntilRace === w ? '#FF8C69' : '#F0E0D0'}`, background: form.weeksUntilRace === w ? 'linear-gradient(135deg,#FF8C69,#FFB347)' : 'white', color: form.weeksUntilRace === w ? 'white' : '#C4A882', fontSize: 13, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', boxShadow: form.weeksUntilRace === w ? '0 4px 14px rgba(255,140,105,0.4)' : 'none', transition: 'all 0.2s' }}>
+                  {w} Wo.
                 </button>
               ))}
             </div>
