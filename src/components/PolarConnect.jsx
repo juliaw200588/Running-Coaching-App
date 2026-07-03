@@ -25,13 +25,13 @@ export default function PolarConnect({ user }) {
   }, [user])
 
   const checkConnection = async () => {
-    const { data } = await supabase
-      .from('integrations')
-      .select('polar_connected_at, polar_user_id')
-      .eq('user_id', user.id)
-      .single()
+const { data } = await supabase
+  .from('integrations')
+  .select('polar_connected_at, polar_user_id, polar_access_token')
+  .eq('user_id', user.id)
+  .single()
 
-    if (data?.polar_access_token !== undefined || data?.polar_user_id) {
+if (data?.polar_user_id) {
       setConnected(true)
       setLastSync(data.polar_connected_at)
     }
