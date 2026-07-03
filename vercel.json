@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/auth/polar/callback", "destination": "/api/polar/callback" },
     { "source": "/api/(.*)", "destination": "/api/$1" }
   ]
 }

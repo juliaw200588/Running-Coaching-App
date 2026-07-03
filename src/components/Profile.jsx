@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import Friends from './Friends.jsx'
+import PolarConnect from './PolarConnect.jsx'
 import { supabase } from '../lib/supabase.js'
 
 const TABS = [
   { id: 'profil', label: 'Profil', icon: '👤' },
   { id: 'schuhe', label: 'Schuhe', icon: '👟' },
   { id: 'freunde', label: 'Freunde', icon: '👥' },
+  { id: 'geraete', label: 'Geräte', icon: '⌚' },
 ]
 
 function SchuhCard({ schuh, onEdit, onDelete }) {
@@ -392,6 +394,11 @@ export default function Profile({ user, onClose }) {
           {/* ── FREUNDE TAB ── */}
           {activeTab === 'freunde' && (
             <Friends user={user} />
+          )}
+
+          {/* ── GERÄTE TAB ── */}
+          {activeTab === 'geraete' && (
+            <PolarConnect user={user} />
           )}
         </div>
       </div>
