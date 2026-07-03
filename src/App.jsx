@@ -12,23 +12,18 @@ function App() {
   const [loadingAuth, setLoadingAuth] = useState(true)
 
   useEffect(() => {
-    // Session prüfen
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
       setLoadingAuth(false)
     })
-
-    // Auth-Änderungen beobachten
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
     })
-
     return () => subscription.unsubscribe()
   }, [])
 
   useEffect(() => {
     if (user) {
-      // Plan aus localStorage laden (später Supabase)
       try {
         const saved = localStorage.getItem(`runcoaching_plan_${user.id}`)
         setPlan(saved ? JSON.parse(saved) : null)
@@ -58,7 +53,6 @@ function App() {
 
   return (
     <>
-      {/* Profil-Button oben rechts */}
       {!showProfile && (
         <button onClick={() => setShowProfile(true)}
           style={{ position: 'fixed', top: 16, right: 16, zIndex: 50, width: 40, height: 40, borderRadius: '50%', background: 'rgba(255,255,255,0.9)', border: '1.5px solid #FFE0CC', boxShadow: '0 2px 12px rgba(255,140,105,0.2)', cursor: 'pointer', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -69,7 +63,7 @@ function App() {
       {showProfile && <Profile user={user} onClose={() => setShowProfile(false)} />}
 
       {plan
-        ? <TrainingPlan plan={plan} onReset={handleReset} />
+        ? <TrainingPlan plan={plan} onReset={handleReset} user={user} />
         : <Onboarding onPlanGenerated={handlePlanGenerated} />
       }
     </>

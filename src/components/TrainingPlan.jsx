@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { supabase } from '../lib/supabase.js'
 
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
@@ -8,7 +9,7 @@ const typeStyle = (einheit, optional, isDone) => {
   if (einheit.includes('RENNTAG')) return { bg: '#F5F0FF', text: '#A78BCA', border: '#DDD4F0', dot: '#A78BCA' }
   if (einheit.includes('HM-Pace')) return { bg: '#FDECEA', text: '#B85464', border: '#F5C4CC', dot: '#E07B8A' }
   if (einheit.includes('Tempo') || einheit.includes('Lauf mit HM')) return { bg: '#FFF0E6', text: '#C17A3A', border: '#FFD4B0', dot: '#F4A96A' }
-  if (einheit.includes('Intervall') || einheit.includes('Fahrtspiel')) return { bg: '#FFF8E1', text: '#A07830', border: '#FFE8A0', dot: '#D4A840' }
+  if (einheit.includes('Intervall')) return { bg: '#FFF8E1', text: '#A07830', border: '#FFE8A0', dot: '#D4A840' }
   if (einheit.includes('Langer')) return { bg: '#FDECEA', text: '#B85464', border: '#F5C4CC', dot: '#E07B8A' }
   return { bg: '#E8F5EF', text: '#3D8B6E', border: '#C0DDD0', dot: '#7EC8A4' }
 }
@@ -27,14 +28,15 @@ const compressImage = (dataUrl) => new Promise((resolve) => {
   img.src = dataUrl
 })
 
-export default function TrainingPlan({ plan, onReset }) {
+export default function TrainingPlan({ plan, onReset, user }) {
   const [activePhase, setActivePhase] = useState(0)
   const [openWeeks, setOpenWeeks] = useState({ 0: true })
   const [done, setDone] = useState({})
   const [logs, setLogs] = useState({})
   const [screenshots, setScreenshots] = useState({})
+  const [schuhe, setSchuhe] = useState([])
   const [logModal, setLogModal] = useState(null)
-  const [logInput, setLogInput] = useState({ pace: '', km: '', bpm: '', note: '' })
+  const [logInput, setLogInput] = useState({ pace: '', km: '', bpm: '', note: '', schuh_id: '' })
   const [modalScreenshot, setModalScreenshot] = useState(null)
   const [modalPreview, setModalPreview] = useState(null)
   const [analyzing, setAnalyzing] = useState(false)
@@ -57,9 +59,14 @@ export default function TrainingPlan({ plan, onReset }) {
           setScreenshots(loaded)
         }
       } catch {}
+
+      if (user) {
+        const { data } = await supabase.from('shoes').select('*').eq('user_id', user.id).order('created_at')
+        if (data) setSchuhe(data)
+      }
     }
     load()
-  }, [])
+  }, [user])
 
   const persistDone = async (nd) => {
     setDone(nd)
@@ -89,7 +96,7 @@ export default function TrainingPlan({ plan, onReset }) {
 
   const openLog = (key, tag, einheit) => {
     const ex = logs[key] || {}
-    setLogInput({ pace: ex.pace || '', km: ex.km || '', bpm: ex.bpm || '', note: ex.note || '' })
+    setLogInput({ pace: ex.pace || '', km: ex.km || '', bpm: ex.bpm || '', note: ex.note || '', schuh_id: ex.schuh_id || '' })
     setModalScreenshot(screenshots[key] || null)
     setModalPreview(screenshots[key] || null)
     setLogModal({ key, tag, einheit })
@@ -121,6 +128,7 @@ export default function TrainingPlan({ plan, onReset }) {
       const data = await response.json()
       if (data.result) {
         setLogInput(prev => ({
+          ...prev,
           pace: data.result.pace || prev.pace,
           km: data.result.km || prev.km,
           bpm: data.result.bpm || prev.bpm,
@@ -133,14 +141,54 @@ export default function TrainingPlan({ plan, onReset }) {
 
   const saveLog = async () => {
     const key = logModal.key
+    const oldLog = logs[key]
     const nl = { ...logs, [key]: { ...logInput } }
     await persistLogs(nl)
     await persistScreenshot(key, modalScreenshot, screenshots)
     await persistDone({ ...done, [key]: true })
+
+    // Schuh-km updaten
+    if (user && logInput.schuh_id && logInput.km) {
+      const neueKm = parseFloat(logInput.km.replace(',', '.')) || 0
+      const alteKm = oldLog?.schuh_id === logInput.schuh_id
+        ? parseFloat(oldLog.km?.replace(',', '.')) || 0
+        : 0
+
+      // Alte km vom alten Schuh abziehen falls Schuh gewechselt
+      if (oldLog?.schuh_id && oldLog.schuh_id !== logInput.schuh_id) {
+        const alteSchuhKm = parseFloat(oldLog.km?.replace(',', '.')) || 0
+        const { data: alterSchuh } = await supabase.from('shoes').select('start_km').eq('id', oldLog.schuh_id).single()
+        if (alterSchuh) {
+          await supabase.from('shoes').update({ start_km: Math.max(0, (alterSchuh.start_km || 0) - alteSchuhKm) }).eq('id', oldLog.schuh_id)
+        }
+      }
+
+      const diff = neueKm - alteKm
+      const { data: schuh } = await supabase.from('shoes').select('start_km').eq('id', logInput.schuh_id).single()
+      if (schuh) {
+        const updated = Math.max(0, (schuh.start_km || 0) + diff)
+        await supabase.from('shoes').update({ start_km: updated }).eq('id', logInput.schuh_id)
+        setSchuhe(prev => prev.map(s => s.id === logInput.schuh_id ? { ...s, start_km: updated } : s))
+      }
+    }
+
     setLogModal(null); setModalScreenshot(null); setModalPreview(null)
   }
 
   const deleteLog = async (key) => {
+    const oldLog = logs[key]
+
+    // Schuh-km zurückrechnen
+    if (user && oldLog?.schuh_id && oldLog?.km) {
+      const alteKm = parseFloat(oldLog.km.replace(',', '.')) || 0
+      const { data: schuh } = await supabase.from('shoes').select('start_km').eq('id', oldLog.schuh_id).single()
+      if (schuh) {
+        const updated = Math.max(0, (schuh.start_km || 0) - alteKm)
+        await supabase.from('shoes').update({ start_km: updated }).eq('id', oldLog.schuh_id)
+        setSchuhe(prev => prev.map(s => s.id === oldLog.schuh_id ? { ...s, start_km: updated } : s))
+      }
+    }
+
     const nl = { ...logs }; delete nl[key]
     await persistLogs(nl)
     await persistScreenshot(key, null, screenshots)
@@ -152,7 +200,6 @@ export default function TrainingPlan({ plan, onReset }) {
   const totalDays = phases.flatMap(p => (p.weeks || []).flatMap(w => w.days.filter(d => !d.optional))).length
   const doneDays = Object.values(done).filter(Boolean).length
   const progress = totalDays > 0 ? Math.round((doneDays / totalDays) * 100) : 0
-
   const phaseTabColors = ['#7EC8A4', '#F4A96A', '#E07B8A', '#A78BCA']
 
   return (
@@ -166,13 +213,14 @@ export default function TrainingPlan({ plan, onReset }) {
             <div style={{ fontSize: 11, color: '#C4A882', marginBottom: 2, fontFamily: 'sans-serif' }}>{logModal.tag}</div>
             <div style={{ fontSize: 18, fontWeight: 'bold', color: '#3D2B1F', marginBottom: 18 }}>{logModal.einheit}</div>
 
-            <div style={{ marginBottom: 16 }}>
+            {/* Screenshot */}
+            <div style={{ marginBottom: 14 }}>
               <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 1, display: 'block', marginBottom: 8, fontFamily: 'sans-serif' }}>Screenshot</label>
               {modalPreview ? (
                 <div style={{ position: 'relative', borderRadius: 16, overflow: 'hidden', border: '1.5px solid #F0E8E0' }}>
                   <img src={modalPreview} alt="Screenshot" style={{ width: '100%', maxHeight: 240, objectFit: 'cover', display: 'block' }} />
                   <div style={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 6 }}>
-                    <button onClick={analyzeScreenshot} disabled={analyzing} style={{ padding: '6px 12px', borderRadius: 10, border: 'none', background: analyzing ? '#F0E8E0' : 'linear-gradient(135deg,#7EC8A4,#5BA88A)', color: analyzing ? '#C4A882' : 'white', fontSize: 12, fontWeight: 'bold', cursor: analyzing ? 'default' : 'pointer', fontFamily: 'sans-serif' }}>
+                    <button onClick={analyzeScreenshot} disabled={analyzing} style={{ padding: '6px 12px', borderRadius: 10, border: 'none', background: analyzing ? '#F0E8E0' : '#5BA88A', color: analyzing ? '#C4A882' : 'white', fontSize: 12, fontWeight: 'bold', cursor: analyzing ? 'default' : 'pointer', fontFamily: 'sans-serif' }}>
                       {analyzing ? '⏳ Analysiere…' : '✨ Auto-ausfüllen'}
                     </button>
                     <button onClick={() => { setModalScreenshot(null); setModalPreview(null) }} style={{ padding: '6px 10px', borderRadius: 10, border: 'none', background: 'rgba(255,255,255,0.9)', color: '#B8A090', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>✕</button>
@@ -188,29 +236,49 @@ export default function TrainingPlan({ plan, onReset }) {
               <input ref={fileRef} type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'none' }} />
             </div>
 
-            {[{ key: 'pace', label: 'Ø Pace', placeholder: '6:19 min/km', half: true }, { key: 'km', label: 'Distanz', placeholder: '14,2 km', half: true }].map(f => (
-              <div key={f.key} style={{ display: 'inline-block', width: 'calc(50% - 5px)', marginRight: f.key === 'pace' ? 10 : 0, marginBottom: 10, verticalAlign: 'top' }}>
-                <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>{f.label}</label>
-                <input value={logInput[f.key]} onChange={e => setLogInput(p => ({ ...p, [f.key]: e.target.value }))} placeholder={f.placeholder}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 14, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif' }} />
-              </div>
-            ))}
+            {/* Felder */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+              {[{ key: 'pace', label: 'Ø Pace', placeholder: '6:19 min/km' }, { key: 'km', label: 'Distanz', placeholder: '14,2 km' }].map(f => (
+                <div key={f.key}>
+                  <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>{f.label}</label>
+                  <input value={logInput[f.key]} onChange={e => setLogInput(p => ({ ...p, [f.key]: e.target.value }))} placeholder={f.placeholder}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 14, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif' }} />
+                </div>
+              ))}
+            </div>
+
             <div style={{ marginBottom: 10 }}>
               <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>Ø Herzfrequenz</label>
               <input value={logInput.bpm} onChange={e => setLogInput(p => ({ ...p, bpm: e.target.value }))} placeholder="158 bpm"
                 style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 14, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif' }} />
             </div>
-            <div style={{ marginBottom: 22 }}>
+
+            {/* Schuh-Auswahl */}
+            {schuhe.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>Laufschuhe</label>
+                <select value={logInput.schuh_id} onChange={e => setLogInput(p => ({ ...p, schuh_id: e.target.value }))}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 14, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', cursor: 'pointer' }}>
+                  <option value="">Kein Schuh ausgewählt</option>
+                  {schuhe.map(s => (
+                    <option key={s.id} value={s.id}>{s.marke} {s.modell} ({Math.round(s.start_km || 0)} km)</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div style={{ marginBottom: 20 }}>
               <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>Notiz</label>
               <textarea value={logInput.note} onChange={e => setLogInput(p => ({ ...p, note: e.target.value }))} placeholder="Wie hat es sich angefühlt?" rows={2}
                 style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 14, color: '#3D2B1F', resize: 'none', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif' }} />
             </div>
+
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => { setLogModal(null); setModalScreenshot(null); setModalPreview(null) }} style={{ flex: 1, padding: 14, borderRadius: 16, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>Abbrechen</button>
               {logs[logModal.key] && (
                 <button onClick={() => deleteLog(logModal.key)} style={{ padding: '14px 16px', borderRadius: 16, border: '1.5px solid #F5C4CC', background: '#FDECEA', color: '#B85464', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>🗑</button>
               )}
-              <button onClick={saveLog} style={{ flex: 2, padding: 14, borderRadius: 16, border: 'none', background: 'linear-gradient(135deg,#7EC8A4,#5BA88A)', color: 'white', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', boxShadow: '0 4px 16px rgba(126,200,164,0.4)' }}>
+              <button onClick={saveLog} style={{ flex: 2, padding: 14, borderRadius: 16, border: 'none', background: '#5BA88A', color: 'white', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
                 Speichern ✓
               </button>
             </div>
@@ -226,7 +294,7 @@ export default function TrainingPlan({ plan, onReset }) {
           <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', margin: '0 0 4px', fontFamily: 'sans-serif' }}>
             Halbmarathon · Ziel {plan.goal}
           </p>
-          <h1 style={{ color: 'white', fontSize: 26, fontWeight: 'bold', margin: '0 0 4px', textShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
+          <h1 style={{ color: 'white', fontSize: 24, fontWeight: 'bold', margin: '0 0 4px' }}>
             {plan.title || 'Trainingsplan'}
           </h1>
           {plan.name && <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, margin: '0 0 20px', fontFamily: 'sans-serif' }}>Für {plan.name}</p>}
@@ -237,7 +305,7 @@ export default function TrainingPlan({ plan, onReset }) {
               <span style={{ color: 'white', fontWeight: 'bold', fontSize: 20 }}>{progress}%</span>
             </div>
             <div style={{ background: 'rgba(255,255,255,0.3)', borderRadius: 8, height: 8, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${progress}%`, background: 'white', borderRadius: 8, transition: 'width 0.5s ease', boxShadow: '0 0 8px rgba(255,255,255,0.8)' }} />
+              <div style={{ height: '100%', width: `${progress}%`, background: 'white', borderRadius: 8, transition: 'width 0.5s ease' }} />
             </div>
             <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, margin: '6px 0 0', fontFamily: 'sans-serif' }}>
               {doneDays}/{totalDays} Läufe erledigt
@@ -251,7 +319,7 @@ export default function TrainingPlan({ plan, onReset }) {
         <div style={{ padding: '20px 16px 8px', overflowX: 'auto' }}>
           <div style={{ display: 'flex', gap: 10, minWidth: 'max-content' }}>
             {phases.map((p, i) => {
-              const color = p.accent || phaseTabColors[i] || '#7EC8A4'
+              const color = p.accent || phaseTabColors[i] || '#FF8C69'
               return (
                 <button key={p.id} onClick={() => { setActivePhase(i); setOpenWeeks({ 0: true }) }}
                   style={{ background: activePhase === i ? color : 'white', border: `2px solid ${activePhase === i ? color : '#F0E8E0'}`, borderRadius: 16, padding: '10px 16px', cursor: 'pointer', transition: 'all 0.2s ease', boxShadow: activePhase === i ? `0 4px 16px ${color}60` : '0 2px 8px rgba(0,0,0,0.06)', transform: activePhase === i ? 'translateY(-2px)' : 'none' }}>
@@ -264,7 +332,7 @@ export default function TrainingPlan({ plan, onReset }) {
           </div>
         </div>
 
-        {/* Phase Description */}
+        {/* Phase Info */}
         <div style={{ margin: '0 16px 16px', background: '#FFF5EE', borderRadius: 18, padding: '16px 18px', border: '1px solid #FFE0CC' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(135deg,#FFB347,#FF8C69)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>{phase.icon}</div>
@@ -275,7 +343,7 @@ export default function TrainingPlan({ plan, onReset }) {
           </div>
         </div>
 
-        {/* Weeks */}
+        {/* Wochen */}
         <div style={{ padding: '0 16px' }}>
           {(phase.weeks || []).map((week, wi) => {
             const weekDone = week.days.filter((d, di) => !d.optional && done[dayKey(phase.id, week.n, di)]).length
@@ -288,7 +356,7 @@ export default function TrainingPlan({ plan, onReset }) {
               <div key={week.n} style={{ background: 'white', borderRadius: 20, marginBottom: 12, overflow: 'hidden', boxShadow: isOpen ? '0 8px 32px rgba(255,140,105,0.15)' : '0 2px 12px rgba(0,0,0,0.06)', border: isOpen ? '2px solid #FFD4C0' : '2px solid transparent', transition: 'all 0.3s ease' }}>
                 <button onClick={() => setOpenWeeks(p => ({ ...p, [wi]: !p[wi] }))}
                   style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: allDone ? 'linear-gradient(135deg,#7EC8A4,#5BA88A)' : isOpen ? `linear-gradient(135deg,${phaseColor},#FFB347)` : '#F5EDE8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: allDone || isOpen ? 'white' : '#C4A882', fontWeight: 'bold', fontSize: 14, flexShrink: 0, boxShadow: isOpen ? `0 4px 12px ${phaseColor}60` : 'none', transition: 'all 0.3s ease' }}>
+                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: allDone ? '#5BA88A' : isOpen ? `linear-gradient(135deg,${phaseColor},#FFB347)` : '#F5EDE8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: allDone || isOpen ? 'white' : '#C4A882', fontWeight: 'bold', fontSize: 14, flexShrink: 0, transition: 'all 0.3s ease' }}>
                     {allDone ? '✓' : week.n}
                   </div>
                   <div style={{ flex: 1, textAlign: 'left' }}>
@@ -310,6 +378,8 @@ export default function TrainingPlan({ plan, onReset }) {
                       const hasLog = !!logs[key]
                       const hasShot = !!screenshots[key]
                       const s = typeStyle(day.einheit, day.optional, isDone)
+                      const loggedSchuh = hasLog && logs[key].schuh_id ? schuhe.find(sh => sh.id === logs[key].schuh_id) : null
+
                       return (
                         <div key={di} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 14, marginBottom: 8, background: s.bg, border: `1px solid ${isDone ? '#B8E4CC' : 'transparent'}`, transition: 'all 0.2s ease', opacity: day.optional ? 0.7 : 1 }}>
                           {!day.optional ? (
@@ -333,6 +403,7 @@ export default function TrainingPlan({ plan, onReset }) {
                                 {logs[key].pace && <span style={{ fontSize: 10, background: '#E8F0FF', color: '#4060C0', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>⏱ {logs[key].pace}</span>}
                                 {logs[key].km && <span style={{ fontSize: 10, background: '#FFF0E6', color: '#C17A3A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>📍 {logs[key].km}</span>}
                                 {logs[key].bpm && <span style={{ fontSize: 10, background: '#FDECEA', color: '#B85464', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>❤️ {logs[key].bpm}</span>}
+                                {loggedSchuh && <span style={{ fontSize: 10, background: '#FFF5EE', color: '#C17A3A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>👟 {loggedSchuh.marke} {loggedSchuh.modell}</span>}
                                 {logs[key].note && <span style={{ fontSize: 10, background: '#F5EDE8', color: '#8B6B5A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>💬 {logs[key].note.slice(0, 30)}{logs[key].note.length > 30 ? '…' : ''}</span>}
                               </div>
                             )}
