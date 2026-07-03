@@ -78,11 +78,27 @@ export default function Friends({ user }) {
 
   const sendAnfrage = async (empfaengerId) => {
     await supabase.from('friendships').insert({ sender_id: user.id, receiver_id: empfaengerId })
+    // Benachrichtigung senden
+    const { data: senderProfile } = await supabase.from('profiles').select('name').eq('id', user.id).single()
+    await supabase.from('notifications').insert({
+      user_id: empfaengerId,
+      type: 'friend_request',
+      message: `${senderProfile?.name || 'Jemand'} möchte dein Freund sein! 👥`,
+      from_user_id: user.id,
+    })
     setSuchergebnisse(prev => prev.filter(p => p.id !== empfaengerId))
   }
 
   const anfrageAnnehmen = async (friendshipId, profil) => {
     await supabase.from('friendships').update({ status: 'accepted' }).eq('id', friendshipId)
+    // Benachrichtigung an Absender
+    const { data: myProfile } = await supabase.from('profiles').select('name').eq('id', user.id).single()
+    await supabase.from('notifications').insert({
+      user_id: profil.id,
+      type: 'friend_accepted',
+      message: `${myProfile?.name || 'Jemand'} hat deine Freundschaftsanfrage angenommen! 🎉`,
+      from_user_id: user.id,
+    })
     setAnfragen(prev => prev.filter(a => a.friendship_id !== friendshipId))
     setFreunde(prev => [...prev, profil])
   }
