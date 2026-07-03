@@ -1,13 +1,16 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase.js'
 
 export default function Profile({ user, onClose }) {
   const [profile, setProfile] = useState({
     name: '', wohnort: '', geburtsdatum: '', groesse: '', gewicht: ''
   })
+  const [avatarUrl, setAvatarUrl] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [success, setSuccess] = useState(false)
+  const fileRef = useRef()
 
   useEffect(() => {
     const load = async () => {
@@ -16,17 +19,41 @@ export default function Profile({ user, onClose }) {
         .select('*')
         .eq('id', user.id)
         .single()
-      if (data) setProfile({
-        name: data.name || '',
-        wohnort: data.wohnort || '',
-        geburtsdatum: data.geburtsdatum || '',
-        groesse: data.groesse || '',
-        gewicht: data.gewicht || '',
-      })
+      if (data) {
+        setProfile({
+          name: data.name || '',
+          wohnort: data.wohnort || '',
+          geburtsdatum: data.geburtsdatum || '',
+          groesse: data.groesse || '',
+          gewicht: data.gewicht || '',
+        })
+        if (data.avatar_url) setAvatarUrl(data.avatar_url)
+      }
       setLoading(false)
     }
     load()
   }, [user])
+
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    setUploadingAvatar(true)
+
+    const ext = file.name.split('.').pop()
+    const path = `${user.id}/avatar.${ext}`
+
+    const { error } = await supabase.storage
+      .from('avatars')
+      .upload(path, file, { upsert: true })
+
+    if (!error) {
+      const { data } = supabase.storage.from('avatars').getPublicUrl(path)
+      const url = data.publicUrl + '?t=' + Date.now()
+      setAvatarUrl(url)
+      await supabase.from('profiles').upsert({ id: user.id, avatar_url: url })
+    }
+    setUploadingAvatar(false)
+  }
 
   const handleSave = async () => {
     setSaving(true)
@@ -39,6 +66,7 @@ export default function Profile({ user, onClose }) {
       geburtsdatum: profile.geburtsdatum || null,
       groesse: profile.groesse ? parseInt(profile.groesse) : null,
       gewicht: profile.gewicht ? parseFloat(profile.gewicht) : null,
+      avatar_url: avatarUrl || null,
     })
     setSaving(false)
     setSuccess(true)
@@ -81,7 +109,30 @@ export default function Profile({ user, onClose }) {
           <button onClick={onClose} style={{ background: '#F5EDE8', border: 'none', borderRadius: 10, padding: '6px 12px', color: '#8B6B5A', cursor: 'pointer', fontFamily: 'sans-serif', fontSize: 13 }}>✕ Schließen</button>
         </div>
 
-        {/* Email anzeigen */}
+        {/* Profilbild */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 24 }}>
+          <div style={{ position: 'relative', marginBottom: 12 }}>
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Profilbild"
+                style={{ width: 90, height: 90, borderRadius: '50%', objectFit: 'cover', border: '3px solid #FFE0CC', boxShadow: '0 4px 16px rgba(255,140,105,0.2)' }} />
+            ) : (
+              <div style={{ width: 90, height: 90, borderRadius: '50%', background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36, border: '3px solid #FFE0CC', boxShadow: '0 4px 16px rgba(255,140,105,0.2)' }}>
+                {profile.name ? profile.name[0].toUpperCase() : '👤'}
+              </div>
+            )}
+            <button onClick={() => fileRef.current.click()}
+              style={{ position: 'absolute', bottom: 0, right: 0, width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)', border: '2px solid white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>
+              {uploadingAvatar ? '⏳' : '📷'}
+            </button>
+          </div>
+          <button onClick={() => fileRef.current.click()} disabled={uploadingAvatar}
+            style={{ fontSize: 12, color: '#FF8C69', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'sans-serif', fontWeight: 'bold' }}>
+            {uploadingAvatar ? 'Wird hochgeladen…' : 'Foto ändern'}
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: 'none' }} />
+        </div>
+
+        {/* Email */}
         <div style={{ marginBottom: 18, padding: '12px 16px', background: '#FFF5EE', borderRadius: 14, border: '1px solid #FFE0CC' }}>
           <div style={{ fontSize: 10, color: '#C4A882', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'sans-serif', marginBottom: 4 }}>E-Mail</div>
           <div style={{ fontSize: 15, color: '#5C3D2E', fontFamily: 'sans-serif' }}>{user.email}</div>
