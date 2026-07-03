@@ -129,6 +129,7 @@ function SchuhForm({ schuh, onSave, onCancel }) {
 export default function Profile({ user, onClose }) {
   const [activeTab, setActiveTab] = useState('profil')
   const [profile, setProfile] = useState({ name: '', wohnort: '', geburtsdatum: '', groesse: '', gewicht: '' })
+  const [privacy, setPrivacy] = useState({ plan: 'freunde', fortschritt: 'freunde', logs: 'freunde', schuhe: 'freunde' })
   const [avatarUrl, setAvatarUrl] = useState(null)
   const [schuhe, setSchuhe] = useState([])
   const [showSchuhForm, setShowSchuhForm] = useState(false)
@@ -145,6 +146,7 @@ export default function Profile({ user, onClose }) {
       if (data) {
         setProfile({ name: data.name || '', wohnort: data.wohnort || '', geburtsdatum: data.geburtsdatum || '', groesse: data.groesse || '', gewicht: data.gewicht || '' })
         if (data.avatar_url) setAvatarUrl(data.avatar_url)
+        setPrivacy({ plan: data.privacy_plan || 'freunde', fortschritt: data.privacy_fortschritt || 'freunde', logs: data.privacy_logs || 'freunde', schuhe: data.privacy_schuhe || 'freunde' })
       }
       const { data: schuhData } = await supabase.from('shoes').select('*').eq('user_id', user.id).order('created_at')
       if (schuhData) setSchuhe(schuhData)
@@ -179,6 +181,10 @@ export default function Profile({ user, onClose }) {
       groesse: profile.groesse ? parseInt(profile.groesse) : null,
       gewicht: profile.gewicht ? parseFloat(profile.gewicht) : null,
       avatar_url: avatarUrl || null,
+      privacy_plan: privacy.plan,
+      privacy_fortschritt: privacy.fortschritt,
+      privacy_logs: privacy.logs,
+      privacy_schuhe: privacy.schuhe,
     })
     setSaving(false)
     setSuccess(true)
@@ -298,6 +304,32 @@ export default function Profile({ user, onClose }) {
                   <label style={labelStyle}>Gewicht (kg) <span style={optLabel}>optional</span></label>
                   <input style={inputStyle} type="number" step="0.1" placeholder="62.5" value={profile.gewicht} onChange={e => setProfile({ ...profile, gewicht: e.target.value })} />
                 </div>
+              </div>
+
+
+              {/* Privatsphäre */}
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'sans-serif', marginBottom: 12 }}>
+                  🔒 Privatsphäre – Was dürfen Freunde sehen?
+                </div>
+                {[
+                  { key: 'plan', label: 'Trainingsplan' },
+                  { key: 'fortschritt', label: 'Fortschritt & Läufe' },
+                  { key: 'logs', label: 'Logs & Zeiten' },
+                  { key: 'schuhe', label: 'Laufschuhe' },
+                ].map(item => (
+                  <div key={item.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#FFF8F5', borderRadius: 12, marginBottom: 8, border: '1px solid #F0E0D0' }}>
+                    <span style={{ fontSize: 13, color: '#5C3D2E', fontFamily: 'sans-serif', fontWeight: 'bold' }}>{item.label}</span>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {['freunde', 'niemand'].map(opt => (
+                        <button key={opt} onClick={() => setPrivacy(p => ({ ...p, [item.key]: opt }))}
+                          style={{ padding: '5px 12px', borderRadius: 8, border: `1.5px solid ${privacy[item.key] === opt ? '#FF8C69' : '#F0E0D0'}`, background: privacy[item.key] === opt ? '#FFF0EB' : 'white', color: privacy[item.key] === opt ? '#FF8C69' : '#C4A882', fontSize: 11, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', transition: 'all 0.2s' }}>
+                          {opt === 'freunde' ? '👥 Freunde' : '🔒 Niemand'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
 
               {success && <div style={{ marginBottom: 14, padding: '12px 16px', background: '#F0FAF4', border: '1px solid #B8E4CC', borderRadius: 12, fontSize: 13, color: '#5BA88A', fontFamily: 'sans-serif' }}>✓ Profil gespeichert!</div>}
