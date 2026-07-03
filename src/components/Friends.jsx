@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase.js'
+import FriendProfile from './FriendProfile.jsx'
 
 export default function Friends({ user }) {
+  const [selectedFriend, setSelectedFriend] = useState(null)
   const [suche, setSuche] = useState('')
   const [suchergebnisse, setSuchergebnisse] = useState([])
   const [freunde, setFreunde] = useState([])
@@ -119,6 +121,7 @@ export default function Friends({ user }) {
 
   return (
     <div>
+      {selectedFriend && <FriendProfile friendId={selectedFriend.id} currentUser={user} onClose={() => setSelectedFriend(null)} />}
       {/* Suche */}
       <div style={{ marginBottom: 20 }}>
         <label style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 1, display: 'block', marginBottom: 6, fontFamily: 'sans-serif' }}>
@@ -197,7 +200,7 @@ export default function Friends({ user }) {
           </div>
         ) : (
           freunde.map(f => (
-            <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: 'white', borderRadius: 14, border: '1.5px solid #F0E8E0', marginBottom: 8 }}>
+            <div key={f.id} onClick={() => setSelectedFriend(f)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: 'white', borderRadius: 14, border: '1.5px solid #F0E8E0', marginBottom: 8, cursor: 'pointer' }}>
               <Avatar profil={f} size={44} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 14, fontWeight: 'bold', color: '#3D2B1F', fontFamily: 'sans-serif' }}>{f.name || 'Kein Name'}</div>
