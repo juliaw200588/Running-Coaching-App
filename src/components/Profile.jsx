@@ -115,7 +115,7 @@ function SchuhForm({ schuh, onSave, onCancel }) {
 
       <div style={{ display: 'flex', gap: 8 }}>
         <button onClick={onCancel} style={{ flex: 1, padding: '11px', borderRadius: 12, border: '1.5px solid #F0E0D0', background: 'white', color: '#B8A090', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>Abbrechen</button>
-        <button onClick={() => onSave(form)} disabled={!form.marke || !form.modell}
+        <button onClick={() => onSave({ ...form, start_km: parseFloat(form.start_km) || 0, max_km: parseFloat(form.max_km) || 700 })} disabled={!form.marke || !form.modell}
           style={{ flex: 2, padding: '11px', borderRadius: 12, border: 'none', background: !form.marke || !form.modell ? '#F0E8E0' : 'linear-gradient(135deg,#FF8C69,#FF6B9D)', color: !form.marke || !form.modell ? '#C4A882' : 'white', fontSize: 14, fontWeight: 'bold', cursor: !form.marke || !form.modell ? 'default' : 'pointer', fontFamily: 'sans-serif' }}>
           Speichern ✓
         </button>
@@ -185,11 +185,13 @@ export default function Profile({ user, onClose }) {
 
   const handleSaveSchuh = async (form) => {
     if (editSchuh) {
-      const { data } = await supabase.from('shoes').update({ ...form }).eq('id', editSchuh.id).select().single()
+      const { data, error } = await supabase.from('shoes').update({ ...form }).eq('id', editSchuh.id).select().single()
+      if (error) { console.error('Update Fehler:', error); return }
       setSchuhe(prev => prev.map(s => s.id === editSchuh.id ? data : s))
     } else {
-      const { data } = await supabase.from('shoes').insert({ ...form, user_id: user.id }).select().single()
-      setSchuhe(prev => [...prev, data])
+      const { data, error } = await supabase.from('shoes').insert({ ...form, user_id: user.id }).select().single()
+      if (error) { console.error('Insert Fehler:', error); return }
+      if (data) setSchuhe(prev => [...prev, data])
     }
     setShowSchuhForm(false)
     setEditSchuh(null)
