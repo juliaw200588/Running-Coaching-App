@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
+import Friends from './Friends.jsx'
 import { supabase } from '../lib/supabase.js'
 
 const TABS = [
   { id: 'profil', label: 'Profil', icon: '👤' },
   { id: 'schuhe', label: 'Schuhe', icon: '👟' },
+  { id: 'freunde', label: 'Freunde', icon: '👥' },
 ]
 
 function SchuhCard({ schuh, onEdit, onDelete }) {
@@ -353,6 +355,11 @@ export default function Profile({ user, onClose }) {
                 💡 Laufschuhe halten ca. 600–800 km. Wir empfehlen einen Wechsel spätestens bei 700 km.
               </div>
             </>
+          )}
+
+          {/* ── FREUNDE TAB ── */}
+          {activeTab === 'freunde' && (
+            <Friends user={user} />
           )}
         </div>
       </div>
