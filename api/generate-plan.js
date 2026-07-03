@@ -75,6 +75,7 @@ Wichtige Regeln:
 - Bei Erfahren: anspruchsvolle Intervalle, Tempodauerläufe, höhere Paces
 - Bei "starten": kein Rennen, Fokus auf Gewohnheit aufbauen, Laufen/Gehen Wechsel
 - Nutze genau ${runsPerWeek} Pflichtläufe pro Woche (optional: 1 zusätzlicher)
+- Verwende KEINE Fahrtspiele als Trainingseinheit – nutze stattdessen Intervalle oder Tempodauerläufe
 - Berechne alle Datumsangaben ab Startdatum ${startDate}
 - Regenerationswochen (regen: true) alle 4 Wochen
 - Letzte Woche: race: true (außer bei zielTyp "starten")`
