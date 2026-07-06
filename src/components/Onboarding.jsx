@@ -2,24 +2,24 @@ import { useState } from 'react'
 
 const zeitenConfig = {
   '5 km': {
-    'Anfänger':       { zielzeit: 'z.B. 0:40', bisherige: 'z.B. 0:50' },
-    'Fortgeschritten':{ zielzeit: 'z.B. 0:28', bisherige: 'z.B. 0:32' },
-    'Erfahren':       { zielzeit: 'z.B. 0:22', bisherige: 'z.B. 0:25' },
+    'Anfänger':        { zielzeit: 'z.B. 0:40', bisherige: 'z.B. 0:50' },
+    'Fortgeschritten': { zielzeit: 'z.B. 0:28', bisherige: 'z.B. 0:32' },
+    'Erfahren':        { zielzeit: 'z.B. 0:22', bisherige: 'z.B. 0:25' },
   },
   '10 km': {
-    'Anfänger':       { zielzeit: 'z.B. 1:20', bisherige: 'z.B. 1:35' },
-    'Fortgeschritten':{ zielzeit: 'z.B. 0:58', bisherige: 'z.B. 1:08' },
-    'Erfahren':       { zielzeit: 'z.B. 0:46', bisherige: 'z.B. 0:52' },
+    'Anfänger':        { zielzeit: 'z.B. 1:20', bisherige: 'z.B. 1:35' },
+    'Fortgeschritten': { zielzeit: 'z.B. 0:58', bisherige: 'z.B. 1:08' },
+    'Erfahren':        { zielzeit: 'z.B. 0:46', bisherige: 'z.B. 0:52' },
   },
   'Halbmarathon': {
-    'Anfänger':       { zielzeit: 'z.B. 2:45', bisherige: 'z.B. 3:00' },
-    'Fortgeschritten':{ zielzeit: 'z.B. 2:05', bisherige: 'z.B. 2:20' },
-    'Erfahren':       { zielzeit: 'z.B. 1:45', bisherige: 'z.B. 1:55' },
+    'Anfänger':        { zielzeit: 'z.B. 2:45', bisherige: 'z.B. 3:00' },
+    'Fortgeschritten': { zielzeit: 'z.B. 2:05', bisherige: 'z.B. 2:20' },
+    'Erfahren':        { zielzeit: 'z.B. 1:45', bisherige: 'z.B. 1:55' },
   },
   'Marathon': {
-    'Anfänger':       { zielzeit: 'z.B. 5:30', bisherige: 'z.B. 6:00' },
-    'Fortgeschritten':{ zielzeit: 'z.B. 4:15', bisherige: 'z.B. 4:45' },
-    'Erfahren':       { zielzeit: 'z.B. 3:30', bisherige: 'z.B. 3:50' },
+    'Anfänger':        { zielzeit: 'z.B. 5:30', bisherige: 'z.B. 6:00' },
+    'Fortgeschritten': { zielzeit: 'z.B. 4:15', bisherige: 'z.B. 4:45' },
+    'Erfahren':        { zielzeit: 'z.B. 3:30', bisherige: 'z.B. 3:50' },
   },
 }
 
@@ -38,15 +38,11 @@ const niveauOptionen = [
 export default function Onboarding({ onPlanGenerated }) {
   const [step, setStep] = useState(1)
   const [form, setForm] = useState({
-    name: '',
-    zielTyp: '',
-    niveau: '',
-    goal: '',
-    goalTime: '',
-    previousTime: '',
+    name: '', zielTyp: '', niveau: '',
+    goal: '', goalTime: '', previousTime: '',
     startDate: new Date().toISOString().split('T')[0],
-    weeksUntilRace: 12,
-    runsPerWeek: 3,
+    weeksUntilRace: 12, runsPerWeek: 3,
+    alter: '', aktuelleWochenKm: '', verletzungen: '', maxHF: '', geschlecht: '', wohnort: '',
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -69,24 +65,32 @@ export default function Onboarding({ onPlanGenerated }) {
     setLoading(false)
   }
 
-  const canProceedStep1 = form.name && form.zielTyp && form.niveau
-
   const inputStyle = {
     width: '100%', padding: '13px 16px', borderRadius: 14,
     border: '1.5px solid #F0E0D0', fontSize: 16, color: '#3D2B1F',
     outline: 'none', boxSizing: 'border-box', background: '#FFF8F5',
     fontFamily: 'sans-serif',
   }
-
   const labelStyle = {
     fontSize: 11, fontWeight: 'bold', color: '#B8A090',
     textTransform: 'uppercase', letterSpacing: 1,
     display: 'block', marginBottom: 6, fontFamily: 'sans-serif',
   }
+  const optLabel = { fontSize: 10, color: '#D4C4B8', fontWeight: 'normal', letterSpacing: 0, textTransform: 'none', marginLeft: 6 }
 
-  const zeiten = zeitenConfig[form.goal]?.[form.niveau] || { zielzeit: 'z.B. 2:05', bisherige: 'z.B. 2:20' }
+  const canProceedStep1 = form.name && form.zielTyp && form.niveau
   const showDistanz = form.zielTyp !== 'starten'
   const showZeiten = form.zielTyp !== 'starten' && form.goal
+  const zeiten = zeitenConfig[form.goal]?.[form.niveau] || { zielzeit: 'z.B. 2:05', bisherige: 'z.B. 2:20' }
+
+  // HFmax berechnen nach Geschlecht
+  const berechneteHF = form.alter
+    ? form.geschlecht === 'w'
+      ? Math.round(206 - 0.88 * parseInt(form.alter))
+      : form.geschlecht === 'm'
+        ? Math.round(220 - parseInt(form.alter))
+        : Math.round(208 - 0.7 * parseInt(form.alter)) // geschlechtsneutral
+    : null
 
   return (
     <div style={{ fontFamily: "'Georgia', 'Times New Roman', serif", background: 'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 50%, #FFF0F5 100%)', minHeight: '100vh' }}>
@@ -175,7 +179,7 @@ export default function Onboarding({ onPlanGenerated }) {
               <button onClick={() => setStep(1)} style={{ background: 'none', border: 'none', color: '#C4A882', cursor: 'pointer', fontSize: 12, fontFamily: 'sans-serif' }}>✏️</button>
             </div>
 
-            {/* Renndistanz – nur wenn nicht "starten" */}
+            {/* Distanz */}
             {showDistanz && (
               <div style={{ marginBottom: 18 }}>
                 <label style={labelStyle}>Renndistanz</label>
@@ -190,28 +194,94 @@ export default function Onboarding({ onPlanGenerated }) {
               </div>
             )}
 
-            {/* Zeiten – nur bei rennen/distanz und wenn Distanz gewählt */}
+            {/* Zeiten */}
             {showZeiten && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 18 }}>
                 <div>
-                  <label style={labelStyle}>Zielzeit <span style={{ fontSize: 10, color: '#D4C4B8', fontWeight: 'normal', letterSpacing: 0, textTransform: 'none' }}>optional</span></label>
+                  <label style={labelStyle}>Zielzeit <span style={optLabel}>optional</span></label>
                   <input style={inputStyle} placeholder={zeiten.zielzeit} value={form.goalTime}
                     onChange={e => setForm({ ...form, goalTime: e.target.value })} />
                 </div>
                 <div>
-                  <label style={labelStyle}>Bisherige Zeit <span style={{ fontSize: 10, color: '#D4C4B8', fontWeight: 'normal', letterSpacing: 0, textTransform: 'none' }}>optional</span></label>
+                  <label style={labelStyle}>Bisherige Zeit <span style={optLabel}>optional</span></label>
                   <input style={inputStyle} placeholder={zeiten.bisherige} value={form.previousTime}
                     onChange={e => setForm({ ...form, previousTime: e.target.value })} />
                 </div>
               </div>
             )}
 
-            {/* Hinweis Finisher */}
             {showZeiten && !form.goalTime && !form.previousTime && (
               <div style={{ marginBottom: 18, padding: '10px 14px', background: '#F0FAF4', border: '1px solid #B8E4CC', borderRadius: 12, fontSize: 12, color: '#5BA88A', fontFamily: 'sans-serif' }}>
-                💡 Ohne Zeitangabe wird ein Plan erstellt, der dir hilft die Distanz zu finishen.
+                💡 Ohne Zeitangabe wird ein Finisher-Plan erstellt.
               </div>
             )}
+
+            {/* Geschlecht */}
+            <div style={{ marginBottom: 18 }}>
+              <label style={labelStyle}>Geschlecht <span style={optLabel}>optional</span></label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {[
+                  { id: 'w', label: '♀ Weiblich' },
+                  { id: 'm', label: '♂ Männlich' },
+                  { id: 'd', label: '⚧ Divers' },
+                ].map(g => (
+                  <button key={g.id} onClick={() => setForm({ ...form, geschlecht: g.id })}
+                    style={{ flex: 1, padding: '11px 0', borderRadius: 12, border: `2px solid ${form.geschlecht === g.id ? '#FF8C69' : '#F0E0D0'}`, background: form.geschlecht === g.id ? '#FFF5F0' : 'white', color: form.geschlecht === g.id ? '#FF8C69' : '#C4A882', fontSize: 13, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', transition: 'all 0.2s' }}>
+                    {g.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Alter & HF */}
+            <div style={{ marginBottom: 18 }}>
+              <label style={labelStyle}>Alter <span style={optLabel}>optional</span></label>
+              <input style={inputStyle} type="number" placeholder="z.B. 32" value={form.alter}
+                onChange={e => setForm({ ...form, alter: e.target.value, maxHF: '' })} />
+              {berechneteHF && (
+                <div style={{ fontSize: 11, color: '#7EC8A4', fontFamily: 'sans-serif', marginTop: 6 }}>
+                  → Maximale Herzfrequenz wird automatisch berechnet: ca. <strong>{berechneteHF} bpm</strong>
+                </div>
+              )}
+              {!form.alter && (
+                <div style={{ fontSize: 11, color: '#D4C4B8', fontFamily: 'sans-serif', marginTop: 6 }}>
+                  Die maximale Herzfrequenz wird automatisch aus deinem Alter berechnet (220 minus Alter)
+                </div>
+              )}
+            </div>
+
+            {/* Max HF nur für Fortgeschritten/Erfahren */}
+            {(form.niveau === 'Fortgeschritten' || form.niveau === 'Erfahren') && (
+              <div style={{ marginBottom: 18 }}>
+                <label style={labelStyle}>Max. HF (bpm) <span style={optLabel}>optional</span></label>
+                <input style={inputStyle} type="number" placeholder={berechneteHF ? `Berechnet: ca. ${berechneteHF} bpm` : 'z.B. 185'} value={form.maxHF}
+                  onChange={e => setForm({ ...form, maxHF: e.target.value })} />
+                <div style={{ fontSize: 11, color: '#D4C4B8', fontFamily: 'sans-serif', marginTop: 6 }}>
+                  Du kennst deinen genauen Wert z.B. aus einem Leistungstest? Trag ihn hier ein.
+                </div>
+              </div>
+            )}
+
+            {/* HF Hinweis */}
+            {!form.alter && !form.maxHF && (
+              <div style={{ marginBottom: 18, padding: '10px 14px', background: '#FFF5EE', border: '1px solid #FFE0CC', borderRadius: 12, fontSize: 12, color: '#C17A3A', fontFamily: 'sans-serif', lineHeight: 1.6 }}>
+                💡 <strong>Tipp:</strong> Mit Alter oder maximaler Herzfrequenz wird dein Plan noch präziser – die Einheiten werden dann mit individuellen Herzfrequenzzonen (Zone 1–5) ergänzt, statt nur nach Pace. Beides ist optional.
+              </div>
+            )}
+
+            {/* Wochenkilometer */}
+            <div style={{ marginBottom: 18 }}>
+              <label style={labelStyle}>Aktuelle Wochenkilometer <span style={optLabel}>optional</span></label>
+              <input style={inputStyle} type="number" placeholder="z.B. 20 km pro Woche" value={form.aktuelleWochenKm}
+                onChange={e => setForm({ ...form, aktuelleWochenKm: e.target.value })} />
+            </div>
+
+            {/* Verletzungen */}
+            <div style={{ marginBottom: 18 }}>
+              <label style={labelStyle}>Verletzungsgeschichte <span style={optLabel}>optional</span></label>
+              <input style={inputStyle} placeholder="z.B. Knieprobleme, Achillessehne..." value={form.verletzungen}
+                onChange={e => setForm({ ...form, verletzungen: e.target.value })} />
+            </div>
 
             {/* Startdatum */}
             <div style={{ marginBottom: 18 }}>

@@ -5,7 +5,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { name, zielTyp, niveau, goal, goalTime, previousTime, startDate, weeksUntilRace, runsPerWeek } = req.body
+  const { name, zielTyp, niveau, goal, goalTime, previousTime, startDate, weeksUntilRace, runsPerWeek, alter, aktuelleWochenKm, verletzungen, maxHF, geschlecht, wohnort } = req.body
 
   const zielBeschreibung = {
     rennen: 'hat ein bevorstehendes Rennen und möchte sich gezielt darauf vorbereiten',
@@ -24,13 +24,53 @@ export default async function handler(req, res) {
     ? `Zielzeit: ${goalTime || 'keine'}, Bisherige Zeit: ${previousTime || 'keine'}`
     : 'Keine Zeitangabe – Fokus auf Finishen bzw. Einstieg'
 
-  const systemPrompt = `Du bist ein professioneller Lauftrainer. Erstelle einen personalisierten Trainingsplan als JSON.
+  const hfMax = maxHF || (alter
+    ? geschlecht === 'w'
+      ? Math.round(206 - 0.88 * parseInt(alter))
+      : geschlecht === 'm'
+        ? Math.round(220 - parseInt(alter))
+        : Math.round(208 - 0.7 * parseInt(alter))
+    : null)
+
+  const hfInfo = hfMax
+    ? `Maximale Herzfrequenz: ${hfMax} bpm. Zone 1: <${Math.round(hfMax*0.6)} bpm, Zone 2: ${Math.round(hfMax*0.6)}-${Math.round(hfMax*0.7)} bpm, Zone 3: ${Math.round(hfMax*0.7)}-${Math.round(hfMax*0.8)} bpm, Zone 4: ${Math.round(hfMax*0.8)}-${Math.round(hfMax*0.9)} bpm, Zone 5: >${Math.round(hfMax*0.9)} bpm`
+    : 'Keine HF-Angabe – Pace und Gefühlsangaben nutzen (Unterhaltungstempo für Zone 2)'
+
+  const geschlechtInfo = geschlecht === 'w' ? 'Weiblich' : geschlecht === 'm' ? 'Männlich' : 'Divers/nicht angegeben'
+  const verletzungsInfo = verletzungen ? `Verletzungsgeschichte: ${verletzungen} – bitte besonders vorsichtig steigern und extra Regeneration einplanen` : 'Keine bekannten Verletzungen'
+  const umfangInfo = aktuelleWochenKm ? `Aktuelle Wochenkilometer: ${aktuelleWochenKm} km – davon ausgehend steigern` : 'Ausgangsumfang unbekannt – konservativ starten'
+
+  const wochenstruktur = {
+    3: 'Di=Qualität (Intervalle/Tempo), Do=Locker (Zone 2), Sa=Langer Lauf (Zone 2)',
+    4: 'Di=Qualität, Mi=Locker (Zone 2), Fr=Qualität, Sa=Langer Lauf (Zone 2)',
+    5: 'Di=Qualität, Mi=Locker, Do=Qualität, Sa=Langer Lauf, So=Sehr locker (Zone 1)',
+  }[runsPerWeek] || 'Di=Qualität, Do=Locker, Sa=Langer Lauf'
+
+  // Rennstrategie berechnen
+  const rennstrategie = goalTime
+    ? (() => {
+        const parts = goalTime.split(':')
+        const totalMin = parts.length === 3
+          ? parseInt(parts[0])*60 + parseInt(parts[1]) + parseInt(parts[2])/60
+          : parseInt(parts[0])*60 + parseInt(parts[1])
+        const distanzKm = goal === 'Marathon' ? 42.195 : goal === 'Halbmarathon' ? 21.0975 : goal === '10 km' ? 10 : 5
+        const paceMin = totalMin / distanzKm
+        const paceM = Math.floor(paceMin)
+        const paceS = Math.round((paceMin - paceM) * 60).toString().padStart(2,'0')
+        const ersteHaelfte = Math.round(paceMin * 1.03 * 10) / 10
+        const ersteM = Math.floor(ersteHaelfte)
+        const ersteS = Math.round((ersteHaelfte - ersteM) * 60).toString().padStart(2,'0')
+        return `Zielpace: ${paceM}:${paceS} min/km. Strategie: Erste Hälfte ca. 3% langsamer (${ersteM}:${ersteS} min/km), zweite Hälfte auf Zielpace oder schneller – negatives Splitting.`
+      })()
+    : 'Keine Zielzeit – Rennstrategie: Erste 3 km sehr konservativ, dann nach Gefühl steigern.'
+
+  const systemPrompt = `Du bist ein professioneller Lauftrainer mit tiefem Wissen in Sportphysiologie, Periodisierung und Verletzungsprävention. Erstelle einen wissenschaftlich fundierten, personalisierten Trainingsplan als JSON.
 
 Antworte NUR mit validem JSON, kein Markdown, keine Erklärungen.
 
 Das JSON muss exakt diesem Schema folgen:
 {
-  "title": "12-Wochen Trainingsplan",
+  "title": "16-Wochen Trainingsplan",
   "goal": "Halbmarathon finishen",
   "startDate": "2026-06-08",
   "name": "Julia",
@@ -51,10 +91,10 @@ Das JSON muss exakt diesem Schema folgen:
           "n": 1,
           "dateRange": "08.06. – 14.06.",
           "days": [
-            { "tag": "Di", "einheit": "Locker", "details": "30 min @ 7:00–7:15 min/km" },
-            { "tag": "Do", "einheit": "Dauerlauf", "details": "40 min @ 6:45 min/km" },
-            { "tag": "Sa", "einheit": "Langer Lauf", "details": "12 km @ 6:30 min/km" },
-            { "tag": "So", "einheit": "Spazieren", "details": "kein Laufen", "optional": true }
+            { "tag": "Di", "einheit": "Locker + Strides", "details": "35 min Zone 2 (Unterhaltungstempo) + 6×80m Strides locker – Ziel: Laufökonomie & aerobe Basis" },
+            { "tag": "Do", "einheit": "Locker", "details": "30 min Zone 2 – Ziel: aktive Erholung & Fettstoffwechsel" },
+            { "tag": "Sa", "einheit": "Langer Lauf", "details": "12 km Zone 2 – Ziel: Grundlagenausdauer aufbauen, nie schneller als Unterhaltungstempo" },
+            { "tag": "So", "einheit": "Kraft & Mobilität", "details": "20 min: Einbeinige Kniebeugen 3×10, Calf Raises 3×15, Hüftkreisen, Ausfallschritte – optional", "optional": true }
           ]
         }
       ]
@@ -68,18 +108,118 @@ Farben pro Phase:
 - Spezifisch: accent #e11d48, light #fff1f2, mid #fda4af, soft #ffe4e6
 - Tapering: accent #7c3aed, light #f5f3ff, mid #c4b5fd, soft #ede9fe
 
-Wichtige Regeln:
-- Passe den Plan vollständig an Niveau, Ziel und Zeiten an
-- Bei Anfänger: sanfter Einstieg, viel Gehen erlaubt, kurze Distanzen, langsame Paces
-- Bei Fortgeschritten: ausgewogener Mix aus Tempo und Ausdauer
-- Bei Erfahren: anspruchsvolle Intervalle, Tempodauerläufe, höhere Paces
-- Bei "starten": kein Rennen, Fokus auf Gewohnheit aufbauen, Laufen/Gehen Wechsel
-- Nutze genau ${runsPerWeek} Pflichtläufe pro Woche (optional: 1 zusätzlicher)
-- Verwende KEINE Fahrtspiele als Trainingseinheit – nutze stattdessen Intervalle oder Tempodauerläufe
-- Jede Woche muss mindestens einen lockeren Zone 2 Lauf enthalten (60-70% maximale Herzfrequenz, sehr niedriges Tempo, man kann sich dabei noch gut unterhalten)
-- Berechne alle Datumsangaben ab Startdatum ${startDate}
-- Regenerationswochen (regen: true) alle 4 Wochen
-- Letzte Woche: race: true (außer bei zielTyp "starten")`
+═══════════════════════════════════════
+PHASENSPEZIFISCHE PERIODISIERUNG
+═══════════════════════════════════════
+
+BASISPHASE (erste 30-35% der Wochen):
+- Ausschließlich Zone 1-2, keine Intervalle, keine Tempoläufe
+- Fokus: aerobe Basis aufbauen, Fettstoffwechsel trainieren
+- Strides nach lockeren Läufen erlaubt (kurze 80-100m Beschleunigungen)
+- Kräftigungseinheiten als optionale Einheiten einbauen
+- Umfang langsam steigern (max. 10% pro Woche)
+
+ENTWICKLUNGSPHASE (nächste 30% der Wochen):
+- Erste Intervalle einführen (kurz: 4-6×3 min Zone 4)
+- Tempodauerläufe einführen (20-30 min Zone 3-4)
+- Langer Lauf steigt auf 70-80% der Renndistanz
+- Strides weiterhin nach lockeren Läufen
+- Kräftigung beibehalten
+
+HM-SPEZIFISCHE PHASE (nächste 25% der Wochen):
+- Renntempo-Intervalle (HM-Pace, Zone 4)
+- Längere Tempodauerläufe (35-45 min)
+- Langer Lauf erreicht 90-100% der Renndistanz
+- Rennstrategie vorbereiten
+
+TAPERING (letzte 2-3 Wochen):
+- Umfang um 30-40% reduzieren, Intensität BEIBEHALTEN
+- Kurze scharfe Einheiten um Beine frisch zu halten
+- 1 Woche vor Rennen: Rennstrategie-Analyse in der Details-Beschreibung: "${rennstrategie}"
+- Letzte 3 Tage: nur sehr lockere kurze Läufe oder Pause
+
+═══════════════════════════════════════
+TRAININGSPHILOSOPHIE – STRIKT EINHALTEN
+═══════════════════════════════════════
+
+1. 80/20 REGEL: 80% Zone 1-2, maximal 20% Zone 4-5. Keine Zone 3 als eigenständige Einheit.
+
+2. KEINE AUFEINANDERFOLGENDEN HARTEN TAGE: Zwischen Intervallen/Tempo immer mindestens 1 lockerer Tag.
+
+3. WOCHENSTRUKTUR: ${wochenstruktur}
+
+4. LANGER LAUF: Immer Zone 2, immer langsamster Lauf der Woche.
+
+5. 10%-REGEL: Wochenumfang nie mehr als 10% steigern.
+
+6. REGENERATIONSWOCHEN: Alle 3-4 Wochen, Umfang -20-30%, keine harten Einheiten (regen: true).
+
+7. EINLAUFEN/AUSLAUFEN PFLICHT: Bei allen Intervall- und Tempoeinheiten immer "10-15 min einlaufen + [Hauptteil] + 10 min auslaufen" in den Details.
+
+8. STRIDES: Nach 1-2 lockeren Läufen pro Woche 4-8×80-100m locker-flotte Strides (keine Sprints) – verbessert Laufökonomie.
+
+9. KRÄFTIGUNG (optional): 1× pro Woche als optionale Einheit: Einbeinige Kniebeugen, Calf Raises, Hüftstabilisation, Ausfallschritte.
+
+10. WARM-UP/COOL-DOWN HINWEIS: In Details bei Intervallen und Tempoläufen immer erwähnen.
+
+11. ANFÄNGER-SPEZIFISCH: Laufen/Gehen-Intervalle in Woche 1-4 (z.B. "3 min laufen, 2 min gehen × 6"). Keine Pace-Angaben, nur Zeitangaben und Gefühlsangaben.
+
+12. RENNSTRATEGIE: In der letzten Woche vor dem Renntag in der Einheit "Renntag-Vorbereitung" die konkrete Strategie einbauen: "${rennstrategie}"
+
+13. KEINE FAHRTSPIELE – nur Intervalle oder Tempodauerläufe.
+
+14. VERLETZUNGSPRÄVENTION: Bei bekannten Verletzungen extra Ruhetage, Kräftigung betonen, langsamer steigern.
+
+15. JEDE EINHEIT hat einen Zweck in den Details (z.B. "Ziel: Fettstoffwechsel trainieren").
+
+═══════════════════════════════════════
+NIVEAU-SPEZIFISCHE ANPASSUNGEN
+═══════════════════════════════════════
+
+ANFÄNGER & FORTGESCHRITTEN – ähnliche Struktur, aber unterschiedliche Intensität:
+
+Basisphase (beide):
+- Zone 1-2, lockere Läufe, Strides, Kräftigung
+- Anfänger: Laufen/Gehen-Wechsel (3 min laufen, 2 min gehen × 6), keine Pace-Angaben
+- Fortgeschritten: durchgehende lockere Läufe mit Pace-Angaben
+
+Entwicklungsphase (beide):
+- Intervalle werden eingeführt – aber unterschiedlich:
+  - Anfänger: kurze Intervalle Zone 3 (2-3 min etwas schneller als normal, kein genaues Tempo), Laufen/Gehen endet
+  - Fortgeschritten: klassische Intervalle Zone 4 (4-6×3-5 min mit Pace-Angaben)
+- Tempodauerläufe:
+  - Anfänger: 15-20 min "etwas zügiger als gewohnt"
+  - Fortgeschritten: 25-35 min mit Pace-Angabe
+
+Spezifische Phase (beide):
+- Anfänger: erste Renntempo-Einheiten sehr kurz (2-3×5 min), Fokus auf Finishen
+- Fortgeschritten: längere Renntempo-Intervalle (3-4×10 min), Renntempo etablieren
+
+Tapering (beide):
+- Gleiche Struktur, Umfang reduzieren, kurze Qualitätseinheiten beibehalten
+
+ERFAHREN – eigene Periodisierung:
+
+Basisphase (kürzer, 20-25% des Plans):
+- Zone 1-2 Basis, aber aerobe Grundlage bereits vorhanden
+- Strides und leichte Tempoläufe schon in Woche 2-3 erlaubt
+- Kurze Intervalle (4×2 min Zone 4) bereits möglich
+- Höhere Gesamtkilometer von Anfang an
+
+Entwicklungsphase:
+- Komplexe Intervallstrukturen (Pyramiden: 1-2-3-2-1 min, Leiterläufe)
+- Längere Intervalle (6-8×1 km Zone 4-5)
+- Längere Tempodauerläufe (35-45 min Zone 4)
+- Mehr Qualitätseinheiten pro Woche
+
+Spezifische Phase:
+- Renntempo-Einheiten dominant und häufig
+- Lange Renntempo-Blöcke (2×6 km, 3×5 km)
+- Rennsimulatoren (letzter langer Lauf teilweise in Renntempo)
+
+Tapering:
+- Kürzer als bei Anfänger/Fortgeschritten (nur 1-2 Wochen)
+- Intensität bleibt hoch, Umfang stark reduziert`
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -97,12 +237,17 @@ Wichtige Regeln:
           role: 'user',
           content: `Erstelle einen ${weeksUntilRace}-wöchigen Trainingsplan.
 Name: ${name || 'Läufer/in'}
+Geschlecht: ${geschlechtInfo}
 Niveau: ${niveauBeschreibung}
 Ziel: ${name || 'die Person'} ${zielBeschreibung}
 ${distanzInfo}
 ${zeitInfo}
+${hfInfo}
+${umfangInfo}
+${verletzungsInfo}
 Läufe pro Woche: ${runsPerWeek}
-Startdatum: ${startDate}`
+Startdatum: ${startDate}
+Wohnort: ${wohnort || 'nicht angegeben'}`
         }]
       })
     })
