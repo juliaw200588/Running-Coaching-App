@@ -109,7 +109,20 @@ function App() {
 
   const runWeeklyCheck = async (user, plan, today, currentWeekInPlan, lastAnalysisKey, isLastDay) => {
     try {
-      const logs = JSON.parse(localStorage.getItem('laufplan_logs') || '{}')
+      // Logs aus Supabase laden für genaue Analyse
+      let logs = {}
+      try {
+        const { data: supaLogs } = await supabase.from('logs').select('*').eq('user_id', user.id)
+        if (supaLogs && supaLogs.length > 0) {
+          supaLogs.forEach(l => {
+            logs[l.day_key] = { pace: l.pace || '', km: l.km || '', bpm: l.bpm || '', note: l.note || '' }
+          })
+        } else {
+          logs = JSON.parse(localStorage.getItem('laufplan_logs') || '{}')
+        }
+      } catch {
+        logs = JSON.parse(localStorage.getItem('laufplan_logs') || '{}')
+      }
 
       const startDate = new Date(plan.startDate || today)
       const daysSinceStart = Math.floor((today - startDate) / 86400000)

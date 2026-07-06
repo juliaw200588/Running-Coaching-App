@@ -46,23 +46,46 @@ export default function TrainingPlan({ plan, onReset, user }) {
 
   useEffect(() => {
     const load = async () => {
-      try { const d = await window.storage.get('laufplan_done'); if (d) setDone(JSON.parse(d.value)) } catch {}
+      // Done-Status aus Supabase laden
+      if (user) {
+        try {
+          const { data: doneData } = await supabase
+            .from('training_done')
+            .select('day_key, done')
+            .eq('user_id', user.id)
+          if (doneData && doneData.length > 0) {
+            const doneMap = {}
+            doneData.forEach(d => { if (d.done) doneMap[d.day_key] = true })
+            setDone(doneMap)
+          } else {
+            try { const d = await window.storage.get('laufplan_done'); if (d) setDone(JSON.parse(d.value)) } catch {}
+          }
+        } catch {
+          try { const d = await window.storage.get('laufplan_done'); if (d) setDone(JSON.parse(d.value)) } catch {}
+        }
+      } else {
+        try { const d = await window.storage.get('laufplan_done'); if (d) setDone(JSON.parse(d.value)) } catch {}
+      }
 
-      // Logs: zuerst aus Supabase, dann localStorage als Fallback
+      // Logs aus Supabase laden
       if (user) {
         try {
           const { data: supaLogs } = await supabase.from('logs').select('*').eq('user_id', user.id)
           if (supaLogs && supaLogs.length > 0) {
             const logMap = {}
             supaLogs.forEach(l => {
-              logMap[l.day_key] = { pace: l.pace || '', km: l.km || '', bpm: l.bpm || '', note: l.note || '', schuh_id: l.schuh_id || '' }
+              logMap[l.day_key] = {
+                pace: l.pace || '',
+                km: l.km || '',
+                bpm: l.bpm || '',
+                note: l.note || '',
+                schuh_id: l.schuh_id || ''
+              }
             })
             setLogs(logMap)
-            // Auch in localStorage cachen
             try { await window.storage.set('laufplan_logs', JSON.stringify(logMap)) } catch {}
           } else {
-            const l = await window.storage.get('laufplan_logs')
-            if (l) setLogs(JSON.parse(l.value))
+            try { const l = await window.storage.get('laufplan_logs'); if (l) setLogs(JSON.parse(l.value)) } catch {}
           }
         } catch {
           try { const l = await window.storage.get('laufplan_logs'); if (l) setLogs(JSON.parse(l.value)) } catch {}
@@ -71,6 +94,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
         try { const l = await window.storage.get('laufplan_logs'); if (l) setLogs(JSON.parse(l.value)) } catch {}
       }
 
+      // Screenshots aus localStorage
       try {
         const skResult = await window.storage.get('laufplan_screenshot_keys')
         if (skResult) {
@@ -115,7 +139,22 @@ export default function TrainingPlan({ plan, onReset, user }) {
     return next
   }
 
-  const toggleDone = (key) => persistDone({ ...done, [key]: !done[key] })
+  const toggleDone = async (key) => {
+    const newValue = !done[key]
+    const nd = { ...done, [key]: newValue }
+    await persistDone(nd)
+
+    // In Supabase speichern
+    if (user) {
+      try {
+        await supabase.from('training_done').upsert({
+          user_id: user.id,
+          day_key: key,
+          done: newValue,
+        })
+      } catch (e) { console.error('Done Supabase Fehler:', e) }
+    }
+  }
 
   const openLog = (key, tag, einheit) => {
     const ex = logs[key] || {}
@@ -168,9 +207,17 @@ export default function TrainingPlan({ plan, onReset, user }) {
     const nl = { ...logs, [key]: { ...logInput } }
     await persistLogs(nl)
     await persistScreenshot(key, modalScreenshot, screenshots)
-    await persistDone({ ...done, [key]: true })
 
-    // In Supabase speichern
+    // Done setzen
+    const nd = { ...done, [key]: true }
+    await persistDone(nd)
+    if (user) {
+      try {
+        await supabase.from('training_done').upsert({ user_id: user.id, day_key: key, done: true })
+      } catch {}
+    }
+
+    // In Supabase speichern (inkl. schuh_id)
     if (user) {
       try {
         await supabase.from('logs').upsert({
@@ -180,7 +227,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
           km: logInput.km || null,
           bpm: logInput.bpm || null,
           note: logInput.note || null,
-          screenshot_url: null,
+          schuh_id: logInput.schuh_id || null,
         })
       } catch (e) { console.error('Log Supabase Fehler:', e) }
     }
@@ -192,7 +239,6 @@ export default function TrainingPlan({ plan, onReset, user }) {
         ? parseFloat(oldLog.km?.replace(',', '.')) || 0
         : 0
 
-      // Alte km vom alten Schuh abziehen falls Schuh gewechselt
       if (oldLog?.schuh_id && oldLog.schuh_id !== logInput.schuh_id) {
         const alteSchuhKm = parseFloat(oldLog.km?.replace(',', '.')) || 0
         const { data: alterSchuh } = await supabase.from('shoes').select('start_km').eq('id', oldLog.schuh_id).single()
@@ -218,6 +264,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
     if (user) {
       try {
         await supabase.from('logs').delete().eq('user_id', user.id).eq('day_key', key)
+        await supabase.from('training_done').upsert({ user_id: user.id, day_key: key, done: false })
       } catch (e) { console.error('Log delete Fehler:', e) }
     }
 
@@ -237,7 +284,8 @@ export default function TrainingPlan({ plan, onReset, user }) {
     const nl = { ...logs }; delete nl[key]
     await persistLogs(nl)
     await persistScreenshot(key, null, screenshots)
-    await persistDone({ ...done, [key]: false })
+    const nd = { ...done, [key]: false }
+    await persistDone(nd)
     setLogModal(null); setModalScreenshot(null); setModalPreview(null)
   }
 
@@ -275,7 +323,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
                 <button onClick={() => fileRef.current.click()} style={{ width: '100%', padding: '18px', borderRadius: 16, border: '2px dashed #F0E0D0', background: '#FFF8F5', color: '#C4A882', fontSize: 13, fontWeight: 'bold', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, fontFamily: 'sans-serif' }}>
                   <span style={{ fontSize: 28 }}>📸</span>
                   <span>Screenshot hochladen</span>
-                  <span style={{ fontSize: 11, color: '#D4C4B8', fontWeight: 'normal' }}>Polar · Garmin · Strava · Adidas Running</span>
+                  <span style={{ fontSize: 11, color: '#D4C4B8', fontWeight: 'normal' }}>Polar · Garmin · Strava</span>
                 </button>
               )}
               <input ref={fileRef} type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'none' }} />
@@ -337,7 +385,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
         <div style={{ position: 'absolute', bottom: -30, left: 40, width: 80, height: 80, background: 'rgba(255,255,255,0.08)', borderRadius: '50%' }} />
         <div style={{ maxWidth: 580, margin: '0 auto' }}>
           <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', margin: '0 0 4px', fontFamily: 'sans-serif' }}>
-            Halbmarathon · Ziel {plan.goal}
+            {plan.goal ? `Ziel: ${plan.goal}` : 'Trainingsplan'}
           </p>
           <h1 style={{ color: 'white', fontSize: 24, fontWeight: 'bold', margin: '0 0 4px' }}>
             {plan.title || 'Trainingsplan'}
@@ -423,7 +471,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
                       const hasLog = !!logs[key]
                       const hasShot = !!screenshots[key]
                       const s = typeStyle(day.einheit, day.optional, isDone)
-                      const loggedSchuh = hasLog && logs[key].schuh_id ? schuhe.find(sh => sh.id === logs[key].schuh_id) : null
+                      const loggedSchuh = hasLog && logs[key]?.schuh_id ? schuhe.find(sh => sh.id === logs[key].schuh_id) : null
 
                       return (
                         <div key={di} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 14, marginBottom: 8, background: s.bg, border: `1px solid ${isDone ? '#B8E4CC' : 'transparent'}`, transition: 'all 0.2s ease', opacity: day.optional ? 0.7 : 1 }}>
@@ -451,11 +499,11 @@ export default function TrainingPlan({ plan, onReset, user }) {
                             {hasLog && (
                               <div style={{ marginTop: 7, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                                 {hasShot && <img src={screenshots[key]} alt="" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 8, border: '1.5px solid #F0E8E0', flexShrink: 0 }} />}
-                                {logs[key].pace && <span style={{ fontSize: 10, background: '#E8F0FF', color: '#4060C0', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>⏱ {logs[key].pace}</span>}
-                                {logs[key].km && <span style={{ fontSize: 10, background: '#FFF0E6', color: '#C17A3A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>📍 {logs[key].km}</span>}
-                                {logs[key].bpm && <span style={{ fontSize: 10, background: '#FDECEA', color: '#B85464', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>❤️ {logs[key].bpm}</span>}
+                                {logs[key]?.pace && <span style={{ fontSize: 10, background: '#E8F0FF', color: '#4060C0', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>⏱ {logs[key].pace}</span>}
+                                {logs[key]?.km && <span style={{ fontSize: 10, background: '#FFF0E6', color: '#C17A3A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>📍 {logs[key].km}</span>}
+                                {logs[key]?.bpm && <span style={{ fontSize: 10, background: '#FDECEA', color: '#B85464', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>❤️ {logs[key].bpm}</span>}
                                 {loggedSchuh && <span style={{ fontSize: 10, background: '#FFF5EE', color: '#C17A3A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>👟 {loggedSchuh.marke} {loggedSchuh.modell}</span>}
-                                {logs[key].note && <span style={{ fontSize: 10, background: '#F5EDE8', color: '#8B6B5A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>💬 {logs[key].note.slice(0, 30)}{logs[key].note.length > 30 ? '…' : ''}</span>}
+                                {logs[key]?.note && <span style={{ fontSize: 10, background: '#F5EDE8', color: '#8B6B5A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>💬 {logs[key].note.slice(0, 30)}{logs[key].note.length > 30 ? '…' : ''}</span>}
                               </div>
                             )}
                           </div>
