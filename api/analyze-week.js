@@ -87,6 +87,15 @@ Anpassungsregeln:
 - Eine Woche perfekt → leichte Steigerung möglich (5-10% mehr Umfang oder leicht intensiver)
 - Mehrere Wochen perfekt → etwas mehr Steigerung (bis 10%), nächste Stufe der Periodisierung
 - Eine Woche schlecht/ausgefallen → sofort anpassen, nicht abwarten
+
+PACE-ANPASSUNG basierend auf HF und Notizen:
+- HF bei Zone 2 Lauf zu hoch (>70% HFmax oder Notiz "Puls hoch/anstrengend") → Zone 2 Pace um 10-15 sec/km reduzieren (langsamer)
+- HF bei Zone 2 Lauf zu niedrig (<60% HFmax oder Notiz "sehr leicht/zu leicht") → Zone 2 Pace um 10 sec/km erhöhen (schneller)
+- HF bei Intervallen/Tempo passt → Pace beibehalten
+- Keine HF-Daten aber Notiz "zu schnell/anstrengend" → Pace reduzieren
+- Keine HF-Daten aber Notiz "sehr leicht" → Pace erhöhen
+- Passe NUR Zone 2 und Langer Lauf Paces an – Intervall/Tempo Paces bleiben stabil
+- Schreibe die neue Pace explizit in die Details (z.B. "Zone 2 (8:10-8:40 min/km)" statt nur "Zone 2")
 - Erschöpfung in Notizen → Erholung priorisieren
 - Schuhwarnung vorhanden → explizit in Empfehlung erwähnen
 - Regenerationswoche (isRegenWeek): niedrigerer Umfang ist gewollt, keine Kritik daran

@@ -32,6 +32,75 @@ export default async function handler(req, res) {
         : Math.round(208 - 0.7 * parseInt(alter))
     : null)
 
+  // Trainingspaces berechnen
+  let paceInfo = ''
+  const fmt = (min) => {
+    const m = Math.floor(min)
+    const s = Math.round((min - m) * 60).toString().padStart(2, '0')
+    return m + ':' + s
+  }
+  const parseTime = (timeStr) => {
+    if (!timeStr) return null
+    const parts = timeStr.replace('h', '').trim().split(':')
+    if (parts.length === 3) return parseInt(parts[0])*60 + parseInt(parts[1]) + parseInt(parts[2])/60
+    if (parts.length === 2) return parseInt(parts[0])*60 + parseInt(parts[1])
+    return null
+  }
+  const distKm = goal === 'Marathon' ? 42.195 : goal === 'Halbmarathon' ? 21.0975 : goal === '10 km' ? 10 : 5
+
+  const prevMin = parseTime(previousTime)
+  const goalMin = parseTime(goalTime)
+
+  if (prevMin || goalMin) {
+    // Basis für Trainingspaces: bisherige Zeit bevorzugt, sonst Zielzeit
+    const baseMin = prevMin || goalMin
+    const basePace = baseMin / distKm
+
+    // Zielzeit für Renntempo-Einheiten
+    const goalPace = goalMin ? goalMin / distKm : basePace
+
+    // Zone 2: +1:20 bis +1:50 min/km zur Basis-Wettkampfpace
+    const easyLow = basePace + 1.33
+    const easyHigh = basePace + 1.83
+
+    // Langer Lauf: +1:30 bis +2:00 min/km
+    const longLow = basePace + 1.5
+    const longHigh = basePace + 2.0
+
+    // Tempo/Schwelle: +0:20 bis +0:40 min/km zur Basis
+    const tempoLow = basePace + 0.33
+    const tempoHigh = basePace + 0.67
+
+    // Intervalle: leicht schneller als Wettkampfpace
+    const intervalLow = basePace - 0.2
+    const intervalHigh = basePace + 0.1
+
+    // Renntempo-Einheiten: Zielwettkampfpace
+    const raceLow = goalPace - 0.1
+    const raceHigh = goalPace + 0.2
+
+    const basisText = prevMin
+      ? `bisherige Zeit (${previousTime})`
+      : `Zielzeit (${goalTime}) – da keine bisherige Zeit angegeben`
+
+    const zielText = goalMin && prevMin
+      ? `
+- Renntempo-Einheiten (Zielzeit ${goalTime}): ${fmt(raceLow)}-${fmt(raceHigh)} min/km`
+      : ''
+
+    paceInfo = `
+BERECHNETE TRAININGSPACES (Basis: ${basisText}, Wettkampfpace: ${fmt(basePace)} min/km):
+- Zone 2 / Lockerer Lauf: ${fmt(easyLow)}-${fmt(easyHigh)} min/km (+1:20 bis +1:50 zur Wettkampfpace)
+- Langer Lauf: ${fmt(longLow)}-${fmt(longHigh)} min/km (immer langsamer als lockere Läufe)
+- Tempodauerlauf: ${fmt(tempoLow)}-${fmt(tempoHigh)} min/km
+- Intervalle: ${fmt(intervalLow)}-${fmt(intervalHigh)} min/km${zielText}
+
+WICHTIG:
+- Zone 2 ist IMMER deutlich langsamer als Wettkampfpace – das fühlt sich zu langsam an, ist aber korrekt!
+- Langer Lauf ist IMMER langsamer als die lockeren Läufe
+- Renntempo-Einheiten erst in der spezifischen Phase einführen`
+  }
+
   const hfInfo = hfMax
     ? `Maximale Herzfrequenz: ${hfMax} bpm. Zone 1: <${Math.round(hfMax*0.6)} bpm, Zone 2: ${Math.round(hfMax*0.6)}-${Math.round(hfMax*0.7)} bpm, Zone 3: ${Math.round(hfMax*0.7)}-${Math.round(hfMax*0.8)} bpm, Zone 4: ${Math.round(hfMax*0.8)}-${Math.round(hfMax*0.9)} bpm, Zone 5: >${Math.round(hfMax*0.9)} bpm`
     : 'Keine HF-Angabe – Pace und Gefühlsangaben nutzen (Unterhaltungstempo für Zone 2)'
@@ -142,6 +211,8 @@ TAPERING (letzte 2-3 Wochen):
 TRAININGSPHILOSOPHIE – STRIKT EINHALTEN
 ═══════════════════════════════════════
 
+0. PACE-VORGABEN STRIKT EINHALTEN: Nutze die berechneten Trainingspaces exakt – Zone 2 ist IMMER deutlich langsamer als die Wettkampfpace. Nie schneller als angegeben für lockere Läufe!
+
 1. 80/20 REGEL: 80% Zone 1-2, maximal 20% Zone 4-5. Keine Zone 3 als eigenständige Einheit.
 
 2. KEINE AUFEINANDERFOLGENDEN HARTEN TAGE: Zwischen Intervallen/Tempo immer mindestens 1 lockerer Tag.
@@ -241,7 +312,8 @@ Tapering:
         messages: [{
           role: 'user',
           content: `Erstelle einen ${weeksUntilRace}-wöchigen Trainingsplan.
-Name: ${name || 'Läufer/in'}
+Name: ${name || 'Läufer/in'} (wird automatisch aus dem Profil übernommen)
+${paceInfo}
 Geschlecht: ${geschlechtInfo}
 Niveau: ${niveauBeschreibung}
 Ziel: ${name || 'die Person'} ${zielBeschreibung}
