@@ -76,6 +76,7 @@ Wichtige Regeln:
 - Bei "starten": kein Rennen, Fokus auf Gewohnheit aufbauen, Laufen/Gehen Wechsel
 - Nutze genau ${runsPerWeek} Pflichtläufe pro Woche (optional: 1 zusätzlicher)
 - Verwende KEINE Fahrtspiele als Trainingseinheit – nutze stattdessen Intervalle oder Tempodauerläufe
+- Jede Woche muss mindestens einen lockeren Zone 2 Lauf enthalten (60-70% maximale Herzfrequenz, sehr niedriges Tempo, man kann sich dabei noch gut unterhalten)
 - Berechne alle Datumsangaben ab Startdatum ${startDate}
 - Regenerationswochen (regen: true) alle 4 Wochen
 - Letzte Woche: race: true (außer bei zielTyp "starten")`
