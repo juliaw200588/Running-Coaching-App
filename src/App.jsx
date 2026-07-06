@@ -86,9 +86,10 @@ function App() {
 
     const dayInWeek = daysSinceStart % 7
     const isLastDay = dayInWeek === 6
-    const isFirstDayNextWeek = dayInWeek === 0 && daysSinceStart > 0
+    // Analyse-Fenster: erster, zweiter oder dritter Tag der neuen Woche (falls App nicht täglich geöffnet)
+    const isFirstDaysNextWeek = (dayInWeek === 0 || dayInWeek === 1 || dayInWeek === 2) && daysSinceStart > 0
 
-    if (!isLastDay && !isFirstDayNextWeek) return
+    if (!isLastDay && !isFirstDaysNextWeek) return
 
     const lastAnalysisKey = `last_week_analysis_${user.id}`
     const currentWeekInPlan = Math.floor(daysSinceStart / 7)
@@ -179,6 +180,9 @@ function App() {
       const nextWeekDays = nextWeek
         ? nextWeek.days.map((d, di) => ({ ...d, key: dayKey(nextPhase.id, nextWeek.n, di) })).filter(d => !d.optional)
         : null
+
+      const isRegenWeek = !!currentWeek.regen
+      const nextIsRegenWeek = !!nextWeek?.regen
 
       const response = await fetch('/api/analyze-week', {
         method: 'POST',

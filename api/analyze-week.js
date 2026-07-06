@@ -5,7 +5,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { weekLogs, plannedDays, weekNumber, plan, nextWeekDays, previousAnalyses, schuhWarnung } = req.body
+  const { weekLogs, plannedDays, weekNumber, plan, nextWeekDays, previousAnalyses, schuhWarnung, isRegenWeek, nextIsRegenWeek } = req.body
 
   try {
     const loggedCount = weekLogs.filter(l => l.logged).length
@@ -33,6 +33,14 @@ export default async function handler(req, res) {
       ? `\nVorherige Wochen (Kontext):\n${previousAnalyses.map(a => `- Woche ${a.week_number}: ${a.analysis} → ${a.next_week_adjustment || 'keine Anpassung'}`).join('\n')}`
       : ''
 
+    const regenContext = isRegenWeek
+      ? '
+⚡ Diese Woche war eine Regenerationswoche – niedrigerer Umfang ist normal und gewollt.'
+      : ''
+    const nextRegenContext = nextIsRegenWeek
+      ? '
+💤 Nächste Woche ist eine Regenerationswoche – Umfang soll bewusst reduziert bleiben, keine Steigerung!'
+      : ''
     const schuhContext = schuhWarnung
       ? `\n⚠️ Schuhwarnung: ${schuhWarnung} – Schuhe nähern sich dem Ende ihrer Laufzeit!`
       : ''
@@ -75,6 +83,8 @@ Anpassungsregeln:
 - Eine Woche schlecht/ausgefallen → sofort anpassen, nicht abwarten
 - Erschöpfung in Notizen → Erholung priorisieren
 - Schuhwarnung vorhanden → explizit in Empfehlung erwähnen
+- Regenerationswoche (isRegenWeek): niedrigerer Umfang ist gewollt, keine Kritik daran
+- Nächste Woche Regen (nextIsRegenWeek): KEINE Steigerung vorschlagen, Umfang bewusst niedrig lassen
 - Konservativ anpassen – Verletzungsprävention hat Vorrang
 - ALLE Einheiten zurückgeben, auch unveränderte (adjusted: false)
 - Nie auf KI oder Tools verweisen`,
@@ -91,6 +101,8 @@ ${logsDetail || 'Keine Logs vorhanden'}
 
 ${missedDetail}
 ${previousContext}
+${regenContext}
+${nextRegenContext}
 ${schuhContext}
 
 Nächste Woche (bitte anpassen falls nötig):

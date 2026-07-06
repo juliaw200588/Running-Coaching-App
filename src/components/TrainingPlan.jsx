@@ -47,7 +47,30 @@ export default function TrainingPlan({ plan, onReset, user }) {
   useEffect(() => {
     const load = async () => {
       try { const d = await window.storage.get('laufplan_done'); if (d) setDone(JSON.parse(d.value)) } catch {}
-      try { const l = await window.storage.get('laufplan_logs'); if (l) setLogs(JSON.parse(l.value)) } catch {}
+
+      // Logs: zuerst aus Supabase, dann localStorage als Fallback
+      if (user) {
+        try {
+          const { data: supaLogs } = await supabase.from('logs').select('*').eq('user_id', user.id)
+          if (supaLogs && supaLogs.length > 0) {
+            const logMap = {}
+            supaLogs.forEach(l => {
+              logMap[l.day_key] = { pace: l.pace || '', km: l.km || '', bpm: l.bpm || '', note: l.note || '', schuh_id: l.schuh_id || '' }
+            })
+            setLogs(logMap)
+            // Auch in localStorage cachen
+            try { await window.storage.set('laufplan_logs', JSON.stringify(logMap)) } catch {}
+          } else {
+            const l = await window.storage.get('laufplan_logs')
+            if (l) setLogs(JSON.parse(l.value))
+          }
+        } catch {
+          try { const l = await window.storage.get('laufplan_logs'); if (l) setLogs(JSON.parse(l.value)) } catch {}
+        }
+      } else {
+        try { const l = await window.storage.get('laufplan_logs'); if (l) setLogs(JSON.parse(l.value)) } catch {}
+      }
+
       try {
         const skResult = await window.storage.get('laufplan_screenshot_keys')
         if (skResult) {
@@ -147,6 +170,21 @@ export default function TrainingPlan({ plan, onReset, user }) {
     await persistScreenshot(key, modalScreenshot, screenshots)
     await persistDone({ ...done, [key]: true })
 
+    // In Supabase speichern
+    if (user) {
+      try {
+        await supabase.from('logs').upsert({
+          user_id: user.id,
+          day_key: key,
+          pace: logInput.pace || null,
+          km: logInput.km || null,
+          bpm: logInput.bpm || null,
+          note: logInput.note || null,
+          screenshot_url: null,
+        })
+      } catch (e) { console.error('Log Supabase Fehler:', e) }
+    }
+
     // Schuh-km updaten
     if (user && logInput.schuh_id && logInput.km) {
       const neueKm = parseFloat(logInput.km.replace(',', '.')) || 0
@@ -176,6 +214,13 @@ export default function TrainingPlan({ plan, onReset, user }) {
   }
 
   const deleteLog = async (key) => {
+    // Aus Supabase löschen
+    if (user) {
+      try {
+        await supabase.from('logs').delete().eq('user_id', user.id).eq('day_key', key)
+      } catch (e) { console.error('Log delete Fehler:', e) }
+    }
+
     const oldLog = logs[key]
 
     // Schuh-km zurückrechnen
