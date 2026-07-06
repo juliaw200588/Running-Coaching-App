@@ -395,8 +395,14 @@ export default function TrainingPlan({ plan, onReset, user }) {
                                 {day.optional ? 'Optional · ' : ''}{day.einheit}
                               </span>
                               {hasLog && <span style={{ fontSize: 9, background: '#E8F5EF', color: '#5BA88A', padding: '2px 7px', borderRadius: 99, fontWeight: 'bold', border: '1px solid #B8E4CC', fontFamily: 'sans-serif' }}>📊 Geloggt</span>}
+                              {day.adjusted && <span style={{ fontSize: 9, background: '#FFF5EE', color: '#FF8C69', padding: '2px 7px', borderRadius: 99, fontWeight: 'bold', border: '1px solid #FFE0CC', fontFamily: 'sans-serif' }}>✏️ Angepasst</span>}
                             </div>
                             <div style={{ color: isDone ? '#A8D8C0' : '#B8A090', fontSize: 11, fontFamily: 'sans-serif', marginTop: 3, lineHeight: 1.5 }}>{day.details}</div>
+                            {day.adjusted && day.adjustmentReason && (
+                              <div style={{ fontSize: 10, color: '#FF8C69', fontFamily: 'sans-serif', marginTop: 3, fontStyle: 'italic' }}>
+                                Grund: {day.adjustmentReason}
+                              </div>
+                            )}
                             {hasLog && (
                               <div style={{ marginTop: 7, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                                 {hasShot && <img src={screenshots[key]} alt="" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 8, border: '1.5px solid #F0E8E0', flexShrink: 0 }} />}

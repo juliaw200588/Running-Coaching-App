@@ -180,8 +180,13 @@ ANFÄNGER & FORTGESCHRITTEN – ähnliche Struktur, aber unterschiedliche Intens
 
 Basisphase (beide):
 - Zone 1-2, lockere Läufe, Strides, Kräftigung
-- Anfänger: Laufen/Gehen-Wechsel (3 min laufen, 2 min gehen × 6), keine Pace-Angaben
 - Fortgeschritten: durchgehende lockere Läufe mit Pace-Angaben
+- Anfänger: Laufen/Gehen-Wechsel abhängig vom Ausgangsumfang:
+  - 0 km/Woche (noch nie gelaufen): 4-5 Wochen Laufen/Gehen (z.B. 2 min laufen, 2 min gehen, progressiv steigern)
+  - 1-10 km/Woche (gelegentlich): 2-3 Wochen Laufen/Gehen, dann durchgehend
+  - 10+ km/Woche (läuft schon aber Anfänger-Niveau): 1 Woche Laufen/Gehen oder direkt durchgehend locker
+  - Keine Angabe: konservativ, 3 Wochen Laufen/Gehen
+  - Keine Pace-Angaben bei Anfänger, nur Zeit und Gefühl ("etwas schneller als normal")
 
 Entwicklungsphase (beide):
 - Intervalle werden eingeführt – aber unterschiedlich:
