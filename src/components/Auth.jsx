@@ -91,14 +91,14 @@ export default function Auth() {
               {mode === 'register' && (
                 <div style={{ marginBottom: 18 }}>
                   <label style={labelStyle}>Dein Name</label>
-                  <input style={inputStyle} placeholder="z.B. Julia" value={form.name}
+                  <input style={inputStyle} placeholder="Dein Name" value={form.name}
                     onChange={e => setForm({ ...form, name: e.target.value })} />
                 </div>
               )}
 
               <div style={{ marginBottom: 18 }}>
                 <label style={labelStyle}>E-Mail</label>
-                <input style={inputStyle} type="email" placeholder="julia@beispiel.de" value={form.email}
+                <input style={inputStyle} type="email" placeholder="E-Mail Adresse" value={form.email}
                   onChange={e => setForm({ ...form, email: e.target.value })} />
               </div>
 
