@@ -51,6 +51,11 @@ function App() {
     }
   }, [user])
 
+  const loadProfileName = async (userId) => {
+    const { data } = await supabase.from('profiles').select('name').eq('id', userId).single()
+    return data?.name || ''
+  }
+
   const loadPlan = async (userId) => {
     // Zuerst aus Supabase laden
     const { data } = await supabase
@@ -289,6 +294,9 @@ function App() {
   }
 
   const handlePlanGenerated = async (newPlan) => {
+    // Name aus Profil holen und in Plan eintragen
+    const profileName = await loadProfileName(user.id)
+    if (profileName) newPlan.name = profileName
     // In Supabase speichern
     const { data } = await supabase
       .from('plans')

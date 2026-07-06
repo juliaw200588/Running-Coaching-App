@@ -78,7 +78,7 @@ export default function Onboarding({ onPlanGenerated }) {
   }
   const optLabel = { fontSize: 10, color: '#D4C4B8', fontWeight: 'normal', letterSpacing: 0, textTransform: 'none', marginLeft: 6 }
 
-  const canProceedStep1 = form.name && form.zielTyp && form.niveau
+  const canProceedStep1 = form.zielTyp && form.niveau
   const showDistanz = form.zielTyp !== 'starten'
   const showZeiten = form.zielTyp !== 'starten' && form.goal
   const zeiten = zeitenConfig[form.goal]?.[form.niveau] || { zielzeit: 'z.B. 2:05', bisherige: 'z.B. 2:20' }
@@ -116,12 +116,6 @@ export default function Onboarding({ onPlanGenerated }) {
         {/* ── STEP 1 ── */}
         {step === 1 && (
           <div style={{ background: 'white', borderRadius: 24, padding: 24, boxShadow: '0 4px 32px rgba(255,140,105,0.12)', border: '1px solid #FFE8D8' }}>
-
-            <div style={{ marginBottom: 22 }}>
-              <label style={labelStyle}>Dein Name</label>
-              <input style={inputStyle} placeholder="z.B. Julia" value={form.name}
-                onChange={e => setForm({ ...form, name: e.target.value })} />
-            </div>
 
             <div style={{ marginBottom: 22 }}>
               <label style={labelStyle}>Was ist dein Ziel?</label>
