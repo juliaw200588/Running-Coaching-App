@@ -28,6 +28,16 @@ const compressImage = (dataUrl) => new Promise((resolve) => {
   img.src = dataUrl
 })
 
+const dataUrlToBlob = (dataUrl) => {
+  const arr = dataUrl.split(',')
+  const mime = arr[0].match(/:(.*?);/)[1]
+  const bstr = atob(arr[1])
+  let n = bstr.length
+  const u8arr = new Uint8Array(n)
+  while (n--) u8arr[n] = bstr.charCodeAt(n)
+  return new Blob([u8arr], { type: mime })
+}
+
 export default function TrainingPlan({ plan, onReset, user }) {
   const [activePhase, setActivePhase] = useState(0)
   const [openWeeks, setOpenWeeks] = useState({ 0: true })
@@ -94,18 +104,59 @@ export default function TrainingPlan({ plan, onReset, user }) {
         try { const l = await window.storage.get('laufplan_logs'); if (l) setLogs(JSON.parse(l.value)) } catch {}
       }
 
-      // Screenshots aus localStorage
-      try {
-        const skResult = await window.storage.get('laufplan_screenshot_keys')
-        if (skResult) {
-          const keys = JSON.parse(skResult.value)
-          const loaded = {}
-          for (const k of keys) {
-            try { const r = await window.storage.get(`screenshot_${k}`); if (r) loaded[k] = r.value } catch {}
+      // Screenshots: zuerst aus Supabase, dann localStorage als Fallback
+      if (user) {
+        try {
+          const { data: logScreenshots } = await supabase
+            .from('logs')
+            .select('day_key, screenshot_url')
+            .eq('user_id', user.id)
+            .not('screenshot_url', 'is', null)
+
+          if (logScreenshots && logScreenshots.length > 0) {
+            const loaded = {}
+            logScreenshots.forEach(l => { if (l.screenshot_url) loaded[l.day_key] = l.screenshot_url })
+            setScreenshots(loaded)
+          } else {
+            // Fallback localStorage
+            try {
+              const skResult = await window.storage.get('laufplan_screenshot_keys')
+              if (skResult) {
+                const keys = JSON.parse(skResult.value)
+                const loaded = {}
+                for (const k of keys) {
+                  try { const r = await window.storage.get(`screenshot_${k}`); if (r) loaded[k] = r.value } catch {}
+                }
+                setScreenshots(loaded)
+              }
+            } catch {}
           }
-          setScreenshots(loaded)
+        } catch {
+          try {
+            const skResult = await window.storage.get('laufplan_screenshot_keys')
+            if (skResult) {
+              const keys = JSON.parse(skResult.value)
+              const loaded = {}
+              for (const k of keys) {
+                try { const r = await window.storage.get(`screenshot_${k}`); if (r) loaded[k] = r.value } catch {}
+              }
+              setScreenshots(loaded)
+            }
+          } catch {}
         }
-      } catch {}
+      } else {
+        try {
+          const skResult = await window.storage.get('laufplan_screenshot_keys')
+          if (skResult) {
+            const keys = JSON.parse(skResult.value)
+            const loaded = {}
+            for (const k of keys) {
+              try { const r = await window.storage.get(`screenshot_${k}`); if (r) loaded[k] = r.value } catch {}
+            }
+            setScreenshots(loaded)
+          }
+        } catch {}
+      }
 
       if (user) {
         const { data } = await supabase.from('shoes').select('*').eq('user_id', user.id).order('created_at')
@@ -129,9 +180,32 @@ export default function TrainingPlan({ plan, onReset, user }) {
     const next = { ...currentScreenshots }
     if (base64OrNull) {
       next[key] = base64OrNull
+      // In Supabase Storage hochladen
+      if (user) {
+        try {
+          const blob = dataUrlToBlob(base64OrNull)
+          const path = `${user.id}/${key.replace(/[^a-zA-Z0-9_-]/g, '_')}.jpg`
+          await supabase.storage.from('screenshots').upload(path, blob, { upsert: true, contentType: 'image/jpeg' })
+          // URL in logs Tabelle speichern
+          const { data: urlData } = supabase.storage.from('screenshots').getPublicUrl(path)
+          await supabase.from('logs').upsert({
+            user_id: user.id,
+            day_key: key,
+            screenshot_url: urlData?.publicUrl || null,
+          })
+        } catch (e) { console.error('Screenshot Upload Fehler:', e) }
+      }
       try { await window.storage.set(`screenshot_${key}`, base64OrNull) } catch {}
     } else {
       delete next[key]
+      // Aus Supabase Storage löschen
+      if (user) {
+        try {
+          const path = `${user.id}/${key.replace(/[^a-zA-Z0-9_-]/g, '_')}.jpg`
+          await supabase.storage.from('screenshots').remove([path])
+          await supabase.from('logs').upsert({ user_id: user.id, day_key: key, screenshot_url: null })
+        } catch (e) { console.error('Screenshot Delete Fehler:', e) }
+      }
       try { await window.storage.delete(`screenshot_${key}`) } catch {}
     }
     setScreenshots(next)

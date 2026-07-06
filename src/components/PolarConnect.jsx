@@ -25,22 +25,30 @@ export default function PolarConnect({ user }) {
   }, [user])
 
   const checkConnection = async () => {
-const { data } = await supabase
-  .from('integrations')
-  .select('polar_connected_at, polar_user_id, polar_access_token')
-  .eq('user_id', user.id)
-  .single()
+    const { data } = await supabase
+      .from('integrations')
+      .select('polar_connected_at, polar_user_id, polar_access_token')
+      .eq('user_id', user.id)
+      .single()
 
-if (data?.polar_user_id) {
+    if (data?.polar_user_id || data?.polar_access_token) {
       setConnected(true)
       setLastSync(data.polar_connected_at)
     }
     setLoading(false)
   }
 
-  const handleConnect = () => {
-    // User ID als state mitgeben damit callback weiß wer sich verbindet
-    window.location.href = `/api/polar/auth?state=${user.id}`
+  const handleConnect = async () => {
+    // Sicherer State: zufälliger Token der in Supabase gespeichert wird
+    const stateToken = crypto.randomUUID()
+    
+    // Token in Supabase speichern mit user_id
+    await supabase.from('integrations').upsert({
+      user_id: user.id,
+      polar_state_token: stateToken,
+    })
+
+    window.location.href = `/api/polar/auth?state=${stateToken}`
   }
 
   const handleDisconnect = async () => {
@@ -63,7 +71,7 @@ if (data?.polar_user_id) {
 
       if (data.error) {
         setMessage({ type: 'error', text: `Fehler: ${data.error}` })
-      } else if (data.activities?.length === 0) {
+      } else if (!data.activities?.length) {
         setMessage({ type: 'info', text: 'Keine neuen Läufe gefunden.' })
       } else {
         setActivities(data.activities || [])
@@ -76,11 +84,7 @@ if (data?.polar_user_id) {
   }
 
   const msgStyle = (type) => ({
-    padding: '10px 14px',
-    borderRadius: 12,
-    fontSize: 13,
-    fontFamily: 'sans-serif',
-    marginBottom: 16,
+    padding: '10px 14px', borderRadius: 12, fontSize: 13, fontFamily: 'sans-serif', marginBottom: 16,
     background: type === 'success' ? '#F0FAF4' : type === 'error' ? '#FDECEA' : '#FFF5EE',
     color: type === 'success' ? '#5BA88A' : type === 'error' ? '#B85464' : '#C17A3A',
     border: `1px solid ${type === 'success' ? '#B8E4CC' : type === 'error' ? '#F5C4CC' : '#FFD4B0'}`,
@@ -92,9 +96,8 @@ if (data?.polar_user_id) {
     <div>
       {message && <div style={msgStyle(message.type)}>{message.text}</div>}
 
-      {/* Polar Card */}
       <div style={{ background: connected ? '#F0FAF4' : 'white', borderRadius: 16, padding: '18px 20px', border: `1.5px solid ${connected ? '#B8E4CC' : '#F0E8E0'}`, marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: connected ? 14 : 0 }}>
           <div style={{ width: 48, height: 48, borderRadius: 14, background: connected ? '#5BA88A' : '#F0E8E0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>
             🏔️
           </div>
@@ -123,16 +126,13 @@ if (data?.polar_user_id) {
         </div>
 
         {connected && (
-          <>
-            <button onClick={handleSync} disabled={syncing}
-              style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none', background: syncing ? '#F0E8E0' : 'linear-gradient(135deg,#7EC8A4,#5BA88A)', color: syncing ? '#C4A882' : 'white', fontSize: 14, fontWeight: 'bold', cursor: syncing ? 'default' : 'pointer', fontFamily: 'sans-serif', boxShadow: syncing ? 'none' : '0 4px 14px rgba(126,200,164,0.4)', transition: 'all 0.2s' }}>
-              {syncing ? '⏳ Synchronisiere…' : '🔄 Läufe synchronisieren'}
-            </button>
-          </>
+          <button onClick={handleSync} disabled={syncing}
+            style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none', background: syncing ? '#F0E8E0' : 'linear-gradient(135deg,#7EC8A4,#5BA88A)', color: syncing ? '#C4A882' : 'white', fontSize: 14, fontWeight: 'bold', cursor: syncing ? 'default' : 'pointer', fontFamily: 'sans-serif', transition: 'all 0.2s' }}>
+            {syncing ? '⏳ Synchronisiere…' : '🔄 Läufe synchronisieren'}
+          </button>
         )}
       </div>
 
-      {/* Synchronisierte Läufe */}
       {activities.length > 0 && (
         <div>
           <div style={{ fontSize: 13, fontWeight: 'bold', color: '#5C3D2E', fontFamily: 'sans-serif', marginBottom: 10 }}>
@@ -157,7 +157,6 @@ if (data?.polar_user_id) {
         </div>
       )}
 
-      {/* Garmin Platzhalter */}
       <div style={{ background: '#F5EDE8', borderRadius: 16, padding: '18px 20px', border: '1.5px solid #F0E0D0', opacity: 0.7 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <div style={{ width: 48, height: 48, borderRadius: 14, background: '#F0E8E0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>⌚</div>
@@ -169,7 +168,7 @@ if (data?.polar_user_id) {
       </div>
 
       <div style={{ marginTop: 16, padding: '12px 16px', background: '#F0FAF4', border: '1px solid #B8E4CC', borderRadius: 12, fontSize: 12, color: '#5BA88A', fontFamily: 'sans-serif', lineHeight: 1.6 }}>
-        💡 Verbinde deine Sportuhr um Läufe automatisch zu synchronisieren und direkt in deinen Trainingsplan einzutragen.
+        💡 Verbinde deine Sportuhr um Läufe automatisch zu synchronisieren.
       </div>
     </div>
   )

@@ -8,11 +8,23 @@ const supabase = createClient(
 export default async function handler(req, res) {
   const { code, state } = req.query
 
-  if (!code) {
-    return res.redirect('https://running-coaching-app.vercel.app?polar_error=no_code')
+  if (!code || !state) {
+    return res.redirect('https://running-coaching-app.vercel.app?polar_error=missing_params')
   }
 
   try {
+    // State Token verifizieren – user_id aus Supabase holen statt aus URL
+    const { data: integration } = await supabase
+      .from('integrations')
+      .select('user_id')
+      .eq('polar_state_token', state)
+      .single()
+
+    if (!integration?.user_id) {
+      return res.redirect('https://running-coaching-app.vercel.app?polar_error=invalid_state')
+    }
+
+    const userId = integration.user_id
     const clientId = process.env.POLAR_CLIENT_ID
     const clientSecret = process.env.POLAR_CLIENT_SECRET
     const redirectUri = 'https://running-coaching-app.vercel.app/auth/polar/callback'
@@ -46,20 +58,18 @@ export default async function handler(req, res) {
         'Authorization': `Bearer ${tokenData.access_token}`,
         'Accept': 'application/json',
       },
-      body: JSON.stringify({ 'member-id': tokenData.x_user_id?.toString() || 'user' })
+      body: JSON.stringify({ 'member-id': tokenData.x_user_id?.toString() || userId })
     })
 
-    // In Supabase speichern – user_id aus state Parameter
-    const userId = state
-    if (userId) {
-      await supabase.from('integrations').upsert({
-        user_id: userId,
-        polar_access_token: tokenData.access_token,
-        polar_refresh_token: tokenData.refresh_token || null,
-        polar_user_id: tokenData.x_user_id?.toString(),
-        polar_connected_at: new Date().toISOString(),
-      })
-    }
+    // In Supabase speichern
+    await supabase.from('integrations').upsert({
+      user_id: userId,
+      polar_access_token: tokenData.access_token,
+      polar_refresh_token: tokenData.refresh_token || null,
+      polar_user_id: tokenData.x_user_id?.toString(),
+      polar_connected_at: new Date().toISOString(),
+      polar_state_token: null, // Token löschen nach Verwendung
+    })
 
     res.redirect('https://running-coaching-app.vercel.app?polar_connected=true')
   } catch (e) {
