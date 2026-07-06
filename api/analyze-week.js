@@ -5,7 +5,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { weekLogs, plannedDays, weekNumber, plan, nextWeekDays, previousAnalyses, schuhWarnung, isRegenWeek, nextIsRegenWeek } = req.body
+  const { weekLogs, plannedDays, weekNumber, plan, nextWeekDays, previousAnalyses, schuhWarnung, isRegenWeek, nextIsRegenWeek, currentHFMax, aktuelleWochenKm } = req.body
 
   try {
     const loggedCount = weekLogs.filter(l => l.logged).length
@@ -33,6 +33,12 @@ export default async function handler(req, res) {
       ? `\nVorherige Wochen (Kontext):\n${previousAnalyses.map(a => `- Woche ${a.week_number}: ${a.analysis} → ${a.next_week_adjustment || 'keine Anpassung'}`).join('\n')}`
       : ''
 
+    const hfContext = currentHFMax
+      ? `\nAktuelle maximale Herzfrequenz: ${currentHFMax} bpm. Zone 2: ${Math.round(currentHFMax*0.6)}-${Math.round(currentHFMax*0.7)} bpm, Zone 4: ${Math.round(currentHFMax*0.8)}-${Math.round(currentHFMax*0.9)} bpm`
+      : ''
+    const kmContext = aktuelleWochenKm
+      ? `\nAktuelle Wochenkilometer laut Profil: ${aktuelleWochenKm} km`
+      : ''
     const regenContext = isRegenWeek
       ? '
 ⚡ Diese Woche war eine Regenerationswoche – niedrigerer Umfang ist normal und gewollt.'
@@ -101,6 +107,8 @@ ${logsDetail || 'Keine Logs vorhanden'}
 
 ${missedDetail}
 ${previousContext}
+${hfContext}
+${kmContext}
 ${regenContext}
 ${nextRegenContext}
 ${schuhContext}

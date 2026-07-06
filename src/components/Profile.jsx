@@ -130,7 +130,7 @@ function SchuhForm({ schuh, onSave, onCancel }) {
 
 export default function Profile({ user, onClose }) {
   const [activeTab, setActiveTab] = useState('profil')
-  const [profile, setProfile] = useState({ name: '', wohnort: '', geburtsdatum: '', groesse: '', gewicht: '' })
+  const [profile, setProfile] = useState({ name: '', wohnort: '', geburtsdatum: '', groesse: '', gewicht: '', max_hf: '', ruhe_hf: '', wochen_km: '' })
   const [privacy, setPrivacy] = useState({ plan: 'freunde', fortschritt: 'freunde', logs: 'freunde', schuhe: 'freunde' })
   const [avatarUrl, setAvatarUrl] = useState(null)
   const [schuhe, setSchuhe] = useState([])
@@ -146,7 +146,7 @@ export default function Profile({ user, onClose }) {
     const load = async () => {
       const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
       if (data) {
-        setProfile({ name: data.name || '', wohnort: data.wohnort || '', geburtsdatum: data.geburtsdatum || '', groesse: data.groesse || '', gewicht: data.gewicht || '' })
+        setProfile({ name: data.name || '', wohnort: data.wohnort || '', geburtsdatum: data.geburtsdatum || '', groesse: data.groesse || '', gewicht: data.gewicht || '', max_hf: data.max_hf || '', ruhe_hf: data.ruhe_hf || '', wochen_km: data.wochen_km || '' })
         if (data.avatar_url) setAvatarUrl(data.avatar_url)
         setPrivacy({ plan: data.privacy_plan || 'freunde', fortschritt: data.privacy_fortschritt || 'freunde', logs: data.privacy_logs || 'freunde', schuhe: data.privacy_schuhe || 'freunde' })
       }
@@ -182,6 +182,9 @@ export default function Profile({ user, onClose }) {
       geburtsdatum: profile.geburtsdatum || null,
       groesse: profile.groesse ? parseInt(profile.groesse) : null,
       gewicht: profile.gewicht ? parseFloat(profile.gewicht) : null,
+      max_hf: profile.max_hf ? parseInt(profile.max_hf) : null,
+      ruhe_hf: profile.ruhe_hf ? parseInt(profile.ruhe_hf) : null,
+      wochen_km: profile.wochen_km ? parseFloat(profile.wochen_km) : null,
       avatar_url: avatarUrl || null,
       privacy_plan: privacy.plan,
       privacy_fortschritt: privacy.fortschritt,
@@ -308,6 +311,33 @@ export default function Profile({ user, onClose }) {
                 </div>
               </div>
 
+
+              {/* Laufwerte */}
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'sans-serif', marginBottom: 12 }}>
+                  🏃‍♀️ Laufwerte
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                  <div>
+                    <label style={labelStyle}>Max. Herzfrequenz <span style={optLabel}>optional</span></label>
+                    <input style={inputStyle} type="number" placeholder="z.B. 185 bpm" value={profile.max_hf}
+                      onChange={e => setProfile({ ...profile, max_hf: e.target.value })} />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Ruhe-HF <span style={optLabel}>optional</span></label>
+                    <input style={inputStyle} type="number" placeholder="z.B. 52 bpm" value={profile.ruhe_hf}
+                      onChange={e => setProfile({ ...profile, ruhe_hf: e.target.value })} />
+                  </div>
+                </div>
+                <div style={{ marginBottom: 10 }}>
+                  <label style={labelStyle}>Aktuelle Wochenkilometer <span style={optLabel}>optional</span></label>
+                  <input style={inputStyle} type="number" placeholder="z.B. 30 km" value={profile.wochen_km}
+                    onChange={e => setProfile({ ...profile, wochen_km: e.target.value })} />
+                </div>
+                <div style={{ padding: '10px 14px', background: '#F0FAF4', border: '1px solid #B8E4CC', borderRadius: 12, fontSize: 12, color: '#5BA88A', fontFamily: 'sans-serif', lineHeight: 1.6 }}>
+                  💡 Aktualisierte Werte fließen automatisch in die nächste Wochenanalyse ein.
+                </div>
+              </div>
 
               {/* Privatsphäre */}
               <div style={{ marginBottom: 24 }}>

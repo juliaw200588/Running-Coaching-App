@@ -176,6 +176,22 @@ function App() {
         return
       }
 
+      // Aktuelle Profilwerte laden (HFmax könnte aktualisiert worden sein)
+      const { data: currentProfile } = await supabase
+        .from('profiles')
+        .select('max_hf, ruhe_hf, wochen_km, geburtsdatum, geschlecht')
+        .eq('id', user.id)
+        .single()
+
+      // HFmax aktuell berechnen
+      let currentHFMax = null
+      if (currentProfile?.max_hf) {
+        currentHFMax = currentProfile.max_hf
+      } else if (currentProfile?.geburtsdatum) {
+        const age = new Date().getFullYear() - new Date(currentProfile.geburtsdatum).getFullYear()
+        currentHFMax = Math.round(208 - 0.7 * age)
+      }
+
       // Vorherige Analysen laden für Kontext
       const { data: previousAnalyses } = await supabase
         .from('week_analyses')
