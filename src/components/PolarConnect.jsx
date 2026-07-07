@@ -38,9 +38,6 @@ function getPlanDayDates(plan) {
 
 const diffDays = (a, b) => Math.round((new Date(a) - new Date(b)) / 86400000)
 
-// Stabile ID für eine Polar-Aktivität, um Duplikate über mehrere Syncs zu erkennen
-const activityId = (a) => `${a.datum}_${a.distanz}_${a.dauer}`.replace(/\s/g, '')
-
 export default function PolarConnect({ user, plan }) {
   const [connected, setConnected] = useState(false)
   const [syncing, setSyncing] = useState(false)
@@ -52,13 +49,24 @@ export default function PolarConnect({ user, plan }) {
   const [occupiedKeys, setOccupiedKeys] = useState(new Set())
   const [assigning, setAssigning] = useState(null)
 
-  const pendingStorageKey = `polar_pending_${user.id}`
   const planDays = plan ? getPlanDayDates(plan) : []
 
   useEffect(() => {
     checkConnection()
     loadOccupiedKeys()
-    loadPendingFromStorage()
+    loadPending()
+
+    // Live-Updates: neue Läufe (z.B. automatisch vom Polar-Webhook eingetragen)
+    // tauchen sofort auf, ohne dass die Seite neu geladen werden muss.
+    const channel = supabase
+      .channel('polar_pending_activities_' + user.id)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'polar_pending_activities',
+        filter: `user_id=eq.${user.id}`,
+      }, () => loadPending())
+      .subscribe()
 
     const params = new URLSearchParams(window.location.search)
     if (params.get('polar_connected') === 'true') {
@@ -69,18 +77,21 @@ export default function PolarConnect({ user, plan }) {
       setMessage({ type: 'error', text: '❌ Verbindung fehlgeschlagen. Bitte erneut versuchen.' })
       window.history.replaceState({}, '', window.location.pathname)
     }
+
+    return () => supabase.removeChannel(channel)
   }, [user])
 
-  const loadPendingFromStorage = () => {
+  const loadPending = async () => {
     try {
-      const raw = localStorage.getItem(pendingStorageKey)
-      if (raw) setPending(JSON.parse(raw))
-    } catch {}
-  }
-
-  const savePending = (list) => {
-    setPending(list)
-    try { localStorage.setItem(pendingStorageKey, JSON.stringify(list)) } catch {}
+      const { data } = await supabase
+        .from('polar_pending_activities')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('datum', { ascending: false })
+      if (data) setPending(data)
+    } catch (e) {
+      console.error('Pending Aktivitäten laden fehlgeschlagen:', e)
+    }
   }
 
   const loadOccupiedKeys = async () => {
@@ -150,11 +161,7 @@ export default function PolarConnect({ user, plan }) {
       } else if (!data.activities?.length) {
         setMessage({ type: 'info', text: 'Keine neuen Läufe gefunden.' })
       } else {
-        // Mit bereits wartenden Aktivitäten zusammenführen (Duplikate vermeiden)
-        const existingIds = new Set(pending.map(activityId))
-        const fresh = data.activities.filter(a => !existingIds.has(activityId(a)))
-        const merged = [...pending, ...fresh]
-        savePending(merged)
+        await loadPending() // Server hat bereits in polar_pending_activities gespeichert
         setMessage({ type: 'success', text: `✅ ${data.count} neue Läufe gefunden – bitte zuordnen.` })
       }
     } catch (e) {
@@ -175,7 +182,7 @@ export default function PolarConnect({ user, plan }) {
   const weekdayLabel = (d) => d.date.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' })
 
   const assignActivity = async (activity, chosenKey) => {
-    setAssigning(activityId(activity))
+    setAssigning(activity.id)
     try {
       if (chosenKey === 'extra') {
         const extraKey = `extra_polar_${activity.datum}_${crypto.randomUUID().slice(0, 8)}`
@@ -204,8 +211,8 @@ export default function PolarConnect({ user, plan }) {
         setOccupiedKeys(prev => new Set([...prev, chosenKey]))
       }
 
-      const remaining = pending.filter(a => activityId(a) !== activityId(activity))
-      savePending(remaining)
+      await supabase.from('polar_pending_activities').delete().eq('id', activity.id)
+      setPending(prev => prev.filter(a => a.id !== activity.id))
       setMessage({ type: 'success', text: '✅ Zugeordnet! Seite wird aktualisiert…' })
       setTimeout(() => window.location.reload(), 900)
     } catch (e) {
@@ -215,9 +222,9 @@ export default function PolarConnect({ user, plan }) {
     }
   }
 
-  const discardActivity = (activity) => {
-    const remaining = pending.filter(a => activityId(a) !== activityId(activity))
-    savePending(remaining)
+  const discardActivity = async (activity) => {
+    await supabase.from('polar_pending_activities').delete().eq('id', activity.id)
+    setPending(prev => prev.filter(a => a.id !== activity.id))
   }
 
   const msgStyle = (type) => ({
@@ -275,8 +282,8 @@ export default function PolarConnect({ user, plan }) {
           <div style={{ fontSize: 13, fontWeight: 'bold', color: '#5C3D2E', fontFamily: 'sans-serif', marginBottom: 10 }}>
             Läufe zuordnen ({pending.length})
           </div>
-          {pending.map((a, i) => {
-            const id = activityId(a)
+          {pending.map((a) => {
+            const id = a.id
             const candidates = getCandidates(a)
             const selected = selections[id] ?? (candidates[0]?.key || '')
             const isAssigning = assigning === id
