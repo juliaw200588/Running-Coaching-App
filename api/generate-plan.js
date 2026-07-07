@@ -51,6 +51,12 @@ export default async function handler(req, res) {
   const prevMin = parseTime(previousTime)
   const goalMin = parseTime(goalTime)
 
+  // Riegel-Formel (Riegel 1977): T2 = T1 × (D2/D1)^k – sagt die Wettkampfzeit für eine
+  // ANDERE Distanz aus einer bekannten Zeit voraus. Exponent leicht nach Niveau angepasst
+  // (weniger trainierte Läufer:innen bauen bei zunehmender Distanz stärker ab).
+  const riegelExponent = niveau === 'Erfahren' ? 1.04 : niveau === 'Anfänger' ? 1.08 : 1.06
+  const predictMin = (knownMin, knownKm, targetKm) => knownMin * Math.pow(targetKm / knownKm, riegelExponent)
+
   if (prevMin || goalMin) {
     // Basis für Trainingspaces: bisherige Zeit bevorzugt, sonst Zielzeit
     const baseMin = prevMin || goalMin
@@ -58,6 +64,13 @@ export default async function handler(req, res) {
 
     // Zielzeit für Renntempo-Einheiten
     const goalPace = goalMin ? goalMin / distKm : basePace
+
+    // 5-km-äquivalente Pace (für Intervalle/VO2max-Reize) und Halbmarathon-äquivalente
+    // Pace (für Tempodauerlauf/Schwelle) – NICHT einfach von der Zieldistanz-Pace ableiten!
+    // Sonst würden z.B. bei einem Marathon-Ziel "Intervalle" nur knapp über Marathontempo
+    // liegen und der eigentliche VO2max-Reiz würde komplett ausbleiben.
+    const pace5k = predictMin(baseMin, distKm, 5) / 5
+    const paceHm = predictMin(baseMin, distKm, 21.0975) / 21.0975
 
     // Zone 2: +1:20 bis +1:50 min/km zur Basis-Wettkampfpace
     const easyLow = basePace + 1.33
@@ -67,13 +80,14 @@ export default async function handler(req, res) {
     const longLow = basePace + 1.5
     const longHigh = basePace + 2.0
 
-    // Tempo/Schwelle: +0:20 bis +0:40 min/km zur Basis
-    const tempoLow = basePace + 0.33
-    const tempoHigh = basePace + 0.67
+    // Tempo/Schwelle: an die HM-äquivalente Pace gekoppelt (Schwellenpace ≈ HM-Renntempo
+    // ist ein etablierter Richtwert), NICHT an die Zieldistanz-Pace
+    const tempoLow = paceHm - 0.05
+    const tempoHigh = paceHm + 0.15
 
-    // Intervalle: leicht schneller als Wettkampfpace
-    const intervalLow = basePace - 0.2
-    const intervalHigh = basePace + 0.1
+    // Intervalle: an die 5-km-äquivalente Pace gekoppelt (VO2max-Reiz), NICHT an die Zieldistanz-Pace
+    const intervalLow = pace5k - 0.05
+    const intervalHigh = pace5k + 0.1
 
     // Renntempo-Einheiten: Zielwettkampfpace
     const raceLow = goalPace - 0.1
@@ -92,12 +106,13 @@ export default async function handler(req, res) {
 BERECHNETE TRAININGSPACES (Basis: ${basisText}, Wettkampfpace: ${fmt(basePace)} min/km):
 - Zone 2 / Lockerer Lauf: ${fmt(easyLow)}-${fmt(easyHigh)} min/km (+1:20 bis +1:50 zur Wettkampfpace)
 - Langer Lauf: ${fmt(longLow)}-${fmt(longHigh)} min/km (immer langsamer als lockere Läufe)
-- Tempodauerlauf: ${fmt(tempoLow)}-${fmt(tempoHigh)} min/km
-- Intervalle: ${fmt(intervalLow)}-${fmt(intervalHigh)} min/km${zielText}
+- Tempodauerlauf/Schwelle: ${fmt(tempoLow)}-${fmt(tempoHigh)} min/km (entspricht der halbmarathon-äquivalenten Renntempo, per Riegel-Formel aus der Zielzeit hochgerechnet)
+- Intervalle: ${fmt(intervalLow)}-${fmt(intervalHigh)} min/km (entspricht der 5-km-äquivalenten Renntempo, per Riegel-Formel aus der Zielzeit hochgerechnet – deutlich schneller als die Zieldistanz-Pace bei HM/Marathon-Zielen!)${zielText}
 
 WICHTIG:
 - Zone 2 ist IMMER deutlich langsamer als Wettkampfpace – das fühlt sich zu langsam an, ist aber korrekt!
 - Langer Lauf ist IMMER langsamer als die lockeren Läufe
+- Intervalle sind bei HM-/Marathon-Zielen SPÜRBAR SCHNELLER als die Zieldistanz-Wettkampfpace – das ist beabsichtigt (VO2max-Training), NICHT anpassen!
 - Renntempo-Einheiten erst in der spezifischen Phase einführen`
   }
 
@@ -212,7 +227,7 @@ TAPERING (letzte 2-3 Wochen):
 TRAININGSPHILOSOPHIE – STRIKT EINHALTEN
 ═══════════════════════════════════════
 
-0. PACE-VORGABEN STRIKT EINHALTEN: Nutze die berechneten Trainingspaces exakt – Zone 2 ist IMMER deutlich langsamer als die Wettkampfpace. Nie schneller als angegeben für lockere Läufe!
+0. PACE-VORGABEN STRIKT EINHALTEN: Nutze die berechneten Trainingspaces exakt – Zone 2 ist IMMER deutlich langsamer als die Wettkampfpace. Nie schneller als angegeben für lockere Läufe! Die Intervall- und Tempopace sind bewusst NICHT von der Zieldistanz-Pace abgeleitet, sondern von der 5-km- bzw. Halbmarathon-äquivalenten Pace – bei HM-/Marathon-Zielen sind Intervalle daher deutlich schneller als die Zieldistanz-Wettkampfpace. Das ist korrekt so, nicht anpassen!
 
 1. 80/20 REGEL: 80% Zone 1-2, maximal 20% Zone 4-5. Keine Zone 3 als eigenständige Einheit.
 
