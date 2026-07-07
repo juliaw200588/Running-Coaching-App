@@ -569,10 +569,23 @@ export default function TrainingPlan({ plan, onReset, user }) {
                     {allDone ? '✓' : week.n}
                   </div>
                   <div style={{ flex: 1, textAlign: 'left' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <span style={{ fontWeight: 'bold', color: '#3D2B1F', fontSize: 15 }}>Woche {week.n}</span>
                       {week.regen && <span style={{ fontSize: 10, color: '#B8A090', background: '#F5EDE8', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>Regeneration</span>}
                       {week.race && <span style={{ fontSize: 10, color: '#A78BCA', background: '#F5F0FF', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>Rennwoche 🏁</span>}
+                      {(() => {
+                        let km = 0
+                        week.days?.forEach(day => {
+                          if (day.optional) return
+                          const kmMatch = day.details?.match(/(\d+(?:[.,]\d+)?)\s*km/)
+                          if (kmMatch) { km += parseFloat(kmMatch[1].replace(',', '.')) }
+                          else {
+                            const minMatch = day.details?.match(/(\d+)\s*min/)
+                            if (minMatch) km += parseInt(minMatch[1]) / 8
+                          }
+                        })
+                        return km > 0 ? <span style={{ fontSize: 10, color: '#FF8C69', background: '#FFF5EE', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif', border: '1px solid #FFE0CC' }}>ca. {Math.round(km)} km</span> : null
+                      })()}
                     </div>
                     <div style={{ color: '#B8A090', fontSize: 11, fontFamily: 'sans-serif', marginTop: 2 }}>{week.dateRange} · {weekDone}/{weekTotal} erledigt</div>
                   </div>

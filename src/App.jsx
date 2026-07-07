@@ -372,7 +372,7 @@ function App() {
       )}
 
       {showNotifications && <Notifications user={user} onClose={() => setShowNotifications(false)} />}
-      {showProfile && <Profile user={user} onClose={() => setShowProfile(false)} />}
+      {showProfile && <Profile user={user} onClose={() => setShowProfile(false)} plan={plan} />}
 
       {plan
         ? <TrainingPlan plan={plan} onReset={handleReset} user={user} />
