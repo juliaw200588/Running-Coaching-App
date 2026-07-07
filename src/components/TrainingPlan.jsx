@@ -3,6 +3,51 @@ import { supabase } from '../lib/supabase.js'
 
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
+// Schätzt die Distanz eines Trainingstages aus dem Freitext in `details`.
+// Berücksichtigt:
+// - Intervall-Wiederholungen wie "5x1 km" oder "4×800m" (Reps × Distanz)
+// - übrige km-Angaben (z.B. "14 km" beim langen Lauf)
+// - übrige Minutenangaben (Einlaufen, Auslaufen, lockere Läufe) grob mit 8 min/km
+// Klammerinhalte wie "(7:41-8:11 min/km, 116-135 bpm)" werden vorher entfernt,
+// da sonst Zahlen aus Pace-/HF-Bereichen fälschlich als Minuten gezählt würden.
+const estimateDayKm = (details) => {
+  if (!details) return 0
+  const clean = details.replace(/\([^)]*\)/g, '')
+  let km = 0
+
+  const repRegex = /(\d+)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*(km|m)\b/gi
+  let m
+  while ((m = repRegex.exec(clean))) {
+    const reps = parseInt(m[1])
+    let dist = parseFloat(m[2].replace(',', '.'))
+    if (m[3].toLowerCase() === 'm') dist = dist / 1000
+    km += reps * dist
+  }
+  let rest = clean.replace(repRegex, '')
+
+  const kmRegex = /(\d+(?:[.,]\d+)?)\s*km\b/g
+  while ((m = kmRegex.exec(rest))) {
+    km += parseFloat(m[1].replace(',', '.'))
+  }
+  rest = rest.replace(kmRegex, '')
+
+  const minRegex = /(\d+)\s*min\b/g
+  while ((m = minRegex.exec(rest))) {
+    km += parseInt(m[1]) / 8
+  }
+
+  return km
+}
+
+const estimateWeekKm = (week) => {
+  let km = 0
+  week.days?.forEach(day => {
+    if (day.optional) return
+    km += estimateDayKm(day.details)
+  })
+  return km
+}
+
 const typeStyle = (einheit, optional, isDone) => {
   if (isDone) return { bg: '#F0FAF4', text: '#5BA88A', border: '#B8E4CC', dot: '#7EC8A4' }
   if (optional) return { bg: '#FFF8F5', text: '#C4A882', border: '#F0E8E0', dot: '#D4C4B8' }
@@ -560,6 +605,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
             const allDone = weekDone === weekTotal && weekTotal > 0
             const isOpen = !!openWeeks[wi]
             const phaseColor = phase.accent || phaseTabColors[activePhase] || '#FF8C69'
+            const weekKm = estimateWeekKm(week)
 
             return (
               <div key={week.n} style={{ background: 'white', borderRadius: 20, marginBottom: 12, overflow: 'hidden', boxShadow: isOpen ? '0 8px 32px rgba(255,140,105,0.15)' : '0 2px 12px rgba(0,0,0,0.06)', border: isOpen ? '2px solid #FFD4C0' : '2px solid transparent', transition: 'all 0.3s ease' }}>
@@ -573,19 +619,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
                       <span style={{ fontWeight: 'bold', color: '#3D2B1F', fontSize: 15 }}>Woche {week.n}</span>
                       {week.regen && <span style={{ fontSize: 10, color: '#B8A090', background: '#F5EDE8', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>Regeneration</span>}
                       {week.race && <span style={{ fontSize: 10, color: '#A78BCA', background: '#F5F0FF', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>Rennwoche 🏁</span>}
-                      {(() => {
-                        let km = 0
-                        week.days?.forEach(day => {
-                          if (day.optional) return
-                          const kmMatch = day.details?.match(/(\d+(?:[.,]\d+)?)\s*km/)
-                          if (kmMatch) { km += parseFloat(kmMatch[1].replace(',', '.')) }
-                          else {
-                            const minMatch = day.details?.match(/(\d+)\s*min/)
-                            if (minMatch) km += parseInt(minMatch[1]) / 8
-                          }
-                        })
-                        return km > 0 ? <span style={{ fontSize: 10, color: '#FF8C69', background: '#FFF5EE', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif', border: '1px solid #FFE0CC' }}>ca. {Math.round(km)} km</span> : null
-                      })()}
+                      {weekKm > 0 && <span style={{ fontSize: 10, color: '#FF8C69', background: '#FFF5EE', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif', border: '1px solid #FFE0CC' }}>ca. {Math.round(weekKm)} km</span>}
                     </div>
                     <div style={{ color: '#B8A090', fontSize: 11, fontFamily: 'sans-serif', marginTop: 2 }}>{week.dateRange} · {weekDone}/{weekTotal} erledigt</div>
                   </div>
