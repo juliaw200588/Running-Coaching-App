@@ -1,18 +1,65 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase.js'
 
-export default function PolarConnect({ user }) {
+const TAG_OFFSET = { Mo: 0, Di: 1, Mi: 2, Do: 3, Fr: 4, Sa: 5, So: 6 }
+const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
+
+// Berechnet für jeden (nicht-optionalen) Plan-Tag ein echtes Kalenderdatum,
+// basierend auf plan.startDate + kumuliertem Wochen-Offset über alle Phasen hinweg.
+function getPlanDayDates(plan) {
+  const result = []
+  if (!plan?.startDate) return result
+  const start = new Date(plan.startDate + 'T00:00:00')
+  let weekCounter = 0
+  for (const phase of plan.phases || []) {
+    for (const week of phase.weeks || []) {
+      const weekStart = new Date(start)
+      weekStart.setDate(weekStart.getDate() + weekCounter * 7)
+      ;(week.days || []).forEach((day, di) => {
+        if (day.optional) return
+        const offset = TAG_OFFSET[day.tag] ?? 0
+        const d = new Date(weekStart)
+        d.setDate(d.getDate() + offset)
+        result.push({
+          date: d,
+          dateStr: d.toISOString().split('T')[0],
+          key: dayKey(phase.id, week.n, di),
+          tag: day.tag,
+          einheit: day.einheit,
+          weekN: week.n,
+          phaseLabel: phase.label,
+        })
+      })
+      weekCounter++
+    }
+  }
+  return result
+}
+
+const diffDays = (a, b) => Math.round((new Date(a) - new Date(b)) / 86400000)
+
+// Stabile ID für eine Polar-Aktivität, um Duplikate über mehrere Syncs zu erkennen
+const activityId = (a) => `${a.datum}_${a.distanz}_${a.dauer}`.replace(/\s/g, '')
+
+export default function PolarConnect({ user, plan }) {
   const [connected, setConnected] = useState(false)
   const [syncing, setSyncing] = useState(false)
-  const [activities, setActivities] = useState([])
-  const [lastSync, setLastSync] = useState(null)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState(null)
+  const [lastSync, setLastSync] = useState(null)
+  const [pending, setPending] = useState([])
+  const [selections, setSelections] = useState({})
+  const [occupiedKeys, setOccupiedKeys] = useState(new Set())
+  const [assigning, setAssigning] = useState(null)
+
+  const pendingStorageKey = `polar_pending_${user.id}`
+  const planDays = plan ? getPlanDayDates(plan) : []
 
   useEffect(() => {
     checkConnection()
+    loadOccupiedKeys()
+    loadPendingFromStorage()
 
-    // Polar callback aus URL erkennen
     const params = new URLSearchParams(window.location.search)
     if (params.get('polar_connected') === 'true') {
       setMessage({ type: 'success', text: '✅ Polar erfolgreich verbunden!' })
@@ -23,6 +70,25 @@ export default function PolarConnect({ user }) {
       window.history.replaceState({}, '', window.location.pathname)
     }
   }, [user])
+
+  const loadPendingFromStorage = () => {
+    try {
+      const raw = localStorage.getItem(pendingStorageKey)
+      if (raw) setPending(JSON.parse(raw))
+    } catch {}
+  }
+
+  const savePending = (list) => {
+    setPending(list)
+    try { localStorage.setItem(pendingStorageKey, JSON.stringify(list)) } catch {}
+  }
+
+  const loadOccupiedKeys = async () => {
+    try {
+      const { data } = await supabase.from('logs').select('day_key').eq('user_id', user.id)
+      if (data) setOccupiedKeys(new Set(data.map(l => l.day_key)))
+    } catch {}
+  }
 
   const checkConnection = async () => {
     const { data } = await supabase
@@ -39,15 +105,10 @@ export default function PolarConnect({ user }) {
   }
 
   const handleConnect = async () => {
-    // User-ID direkt als State verwenden (sicher weil User eingeloggt ist)
-    // Zusätzlich in Supabase speichern als Verifikation
     const stateToken = crypto.randomUUID()
-    
-    // State in localStorage speichern als Fallback
     localStorage.setItem('polar_state_token', stateToken)
     localStorage.setItem('polar_user_id', user.id)
 
-    // In Supabase speichern
     try {
       const { data: existing } = await supabase
         .from('integrations')
@@ -56,27 +117,20 @@ export default function PolarConnect({ user }) {
         .single()
 
       if (existing) {
-        const { error } = await supabase.from('integrations')
-          .update({ polar_state_token: stateToken })
-          .eq('user_id', user.id)
-        console.log('Update error:', error)
+        await supabase.from('integrations').update({ polar_state_token: stateToken }).eq('user_id', user.id)
       } else {
-        const { error } = await supabase.from('integrations')
-          .insert({ user_id: user.id, polar_state_token: stateToken })
-        console.log('Insert error:', error)
+        await supabase.from('integrations').insert({ user_id: user.id, polar_state_token: stateToken })
       }
     } catch (e) {
       console.error('Supabase error:', e)
     }
 
-    // State als user_id:token Format übergeben
     window.location.href = `/api/polar/auth?state=${user.id}:${stateToken}`
   }
 
   const handleDisconnect = async () => {
     await supabase.from('integrations').delete().eq('user_id', user.id)
     setConnected(false)
-    setActivities([])
     setMessage({ type: 'info', text: 'Polar Verbindung getrennt.' })
   }
 
@@ -96,13 +150,74 @@ export default function PolarConnect({ user }) {
       } else if (!data.activities?.length) {
         setMessage({ type: 'info', text: 'Keine neuen Läufe gefunden.' })
       } else {
-        setActivities(data.activities || [])
-        setMessage({ type: 'success', text: `✅ ${data.count} neue Läufe synchronisiert!` })
+        // Mit bereits wartenden Aktivitäten zusammenführen (Duplikate vermeiden)
+        const existingIds = new Set(pending.map(activityId))
+        const fresh = data.activities.filter(a => !existingIds.has(activityId(a)))
+        const merged = [...pending, ...fresh]
+        savePending(merged)
+        setMessage({ type: 'success', text: `✅ ${data.count} neue Läufe gefunden – bitte zuordnen.` })
       }
     } catch (e) {
       setMessage({ type: 'error', text: 'Verbindungsfehler. Bitte erneut versuchen.' })
     }
     setSyncing(false)
+  }
+
+  const getCandidates = (activity) => {
+    if (!activity.datum) return []
+    return planDays
+      .filter(d => !occupiedKeys.has(d.key))
+      .map(d => ({ ...d, dist: diffDays(d.dateStr, activity.datum) }))
+      .filter(d => Math.abs(d.dist) <= 3)
+      .sort((a, b) => Math.abs(a.dist) - Math.abs(b.dist))
+  }
+
+  const weekdayLabel = (d) => d.date.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' })
+
+  const assignActivity = async (activity, chosenKey) => {
+    setAssigning(activityId(activity))
+    try {
+      if (chosenKey === 'extra') {
+        const extraKey = `extra_polar_${activity.datum}_${crypto.randomUUID().slice(0, 8)}`
+        await supabase.from('logs').upsert({
+          user_id: user.id,
+          day_key: extraKey,
+          pace: activity.pace || null,
+          km: activity.distanz || null,
+          bpm: activity.herzfrequenz || null,
+          note: 'Extra-Lauf, automatisch von Polar importiert (kein Plan-Tag)',
+        })
+      } else {
+        await supabase.from('logs').upsert({
+          user_id: user.id,
+          day_key: chosenKey,
+          pace: activity.pace || null,
+          km: activity.distanz || null,
+          bpm: activity.herzfrequenz || null,
+          note: 'Automatisch von Polar synchronisiert',
+        })
+        await supabase.from('training_done').upsert({
+          user_id: user.id,
+          day_key: chosenKey,
+          done: true,
+        })
+        setOccupiedKeys(prev => new Set([...prev, chosenKey]))
+      }
+
+      const remaining = pending.filter(a => activityId(a) !== activityId(activity))
+      savePending(remaining)
+      setMessage({ type: 'success', text: '✅ Zugeordnet! Seite wird aktualisiert…' })
+      setTimeout(() => window.location.reload(), 900)
+    } catch (e) {
+      console.error('Zuordnung fehlgeschlagen:', e)
+      setMessage({ type: 'error', text: 'Zuordnung fehlgeschlagen. Bitte erneut versuchen.' })
+      setAssigning(null)
+    }
+  }
+
+  const discardActivity = (activity) => {
+    const remaining = pending.filter(a => activityId(a) !== activityId(activity))
+    savePending(remaining)
   }
 
   const msgStyle = (type) => ({
@@ -155,27 +270,61 @@ export default function PolarConnect({ user }) {
         )}
       </div>
 
-      {activities.length > 0 && (
+      {pending.length > 0 && (
         <div>
           <div style={{ fontSize: 13, fontWeight: 'bold', color: '#5C3D2E', fontFamily: 'sans-serif', marginBottom: 10 }}>
-            Neue Läufe von Polar
+            Läufe zuordnen ({pending.length})
           </div>
-          {activities.map((a, i) => (
-            <div key={i} style={{ background: 'white', borderRadius: 14, padding: '14px 16px', border: '1.5px solid #F0E8E0', marginBottom: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <div style={{ fontSize: 13, fontWeight: 'bold', color: '#3D2B1F', fontFamily: 'sans-serif' }}>
-                  🏃‍♀️ {a.datum ? new Date(a.datum).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Unbekannt'}
+          {pending.map((a, i) => {
+            const id = activityId(a)
+            const candidates = getCandidates(a)
+            const selected = selections[id] ?? (candidates[0]?.key || '')
+            const isAssigning = assigning === id
+
+            return (
+              <div key={id} style={{ background: 'white', borderRadius: 14, padding: '14px 16px', border: '1.5px solid #F0E8E0', marginBottom: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 'bold', color: '#3D2B1F', fontFamily: 'sans-serif' }}>
+                    🏃‍♀️ {a.datum ? new Date(a.datum).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Unbekannt'}
+                  </div>
+                  {a.dauer && <div style={{ fontSize: 12, color: '#B8A090', fontFamily: 'sans-serif' }}>{a.dauer}</div>}
                 </div>
-                {a.dauer && <div style={{ fontSize: 12, color: '#B8A090', fontFamily: 'sans-serif' }}>{a.dauer}</div>}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                  {a.distanz && <span style={{ fontSize: 11, background: '#FFF0E6', color: '#C17A3A', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>📍 {a.distanz}</span>}
+                  {a.pace && <span style={{ fontSize: 11, background: '#E8F0FF', color: '#4060C0', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>⏱ {a.pace}</span>}
+                  {a.herzfrequenz && <span style={{ fontSize: 11, background: '#FDECEA', color: '#B85464', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>❤️ {a.herzfrequenz}</span>}
+                  {a.kalorien && <span style={{ fontSize: 11, background: '#F0FAF4', color: '#5BA88A', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>🔥 {a.kalorien} kcal</span>}
+                </div>
+
+                <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>
+                  Welchem Plan-Tag zuordnen?
+                </label>
+                <select
+                  value={selected}
+                  onChange={e => setSelections(p => ({ ...p, [id]: e.target.value }))}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 13, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', cursor: 'pointer', marginBottom: 10 }}>
+                  {candidates.length === 0 && <option value="">Kein passender offener Tag gefunden</option>}
+                  {candidates.map(c => (
+                    <option key={c.key} value={c.key}>
+                      {weekdayLabel(c)} · {c.einheit} {c.dist !== 0 ? `(${c.dist > 0 ? '+' : ''}${c.dist} Tag${Math.abs(c.dist) !== 1 ? 'e' : ''})` : '(genau passend)'}
+                    </option>
+                  ))}
+                  <option value="extra">— Als Extra-Lauf speichern (kein Plan-Tag) —</option>
+                </select>
+
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => discardActivity(a)}
+                    style={{ padding: '10px 14px', borderRadius: 10, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+                    Verwerfen
+                  </button>
+                  <button onClick={() => assignActivity(a, selected)} disabled={!selected || isAssigning}
+                    style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: 'none', background: !selected || isAssigning ? '#F0E8E0' : 'linear-gradient(135deg,#FF8C69,#FFB347)', color: !selected || isAssigning ? '#C4A882' : 'white', fontSize: 12, fontWeight: 'bold', cursor: !selected || isAssigning ? 'default' : 'pointer', fontFamily: 'sans-serif' }}>
+                    {isAssigning ? '⏳ Speichere…' : '✓ Zuordnen'}
+                  </button>
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {a.distanz && <span style={{ fontSize: 11, background: '#FFF0E6', color: '#C17A3A', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>📍 {a.distanz}</span>}
-                {a.pace && <span style={{ fontSize: 11, background: '#E8F0FF', color: '#4060C0', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>⏱ {a.pace}</span>}
-                {a.herzfrequenz && <span style={{ fontSize: 11, background: '#FDECEA', color: '#B85464', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>❤️ {a.herzfrequenz}</span>}
-                {a.kalorien && <span style={{ fontSize: 11, background: '#F0FAF4', color: '#5BA88A', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>🔥 {a.kalorien} kcal</span>}
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -190,7 +339,7 @@ export default function PolarConnect({ user }) {
       </div>
 
       <div style={{ marginTop: 16, padding: '12px 16px', background: '#F0FAF4', border: '1px solid #B8E4CC', borderRadius: 12, fontSize: 12, color: '#5BA88A', fontFamily: 'sans-serif', lineHeight: 1.6 }}>
-        💡 Verbinde deine Sportuhr um Läufe automatisch zu synchronisieren.
+        💡 Nach dem Sync erscheinen deine Läufe hier zur Zuordnung – auch wenn du an einem anderen Tag als geplant gelaufen bist.
       </div>
     </div>
   )

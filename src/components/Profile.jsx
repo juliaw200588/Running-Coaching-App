@@ -435,7 +435,7 @@ export default function Profile({ user, onClose, plan }) {
 
           {/* ── GERÄTE TAB ── */}
           {activeTab === 'geraete' && (
-            <PolarConnect user={user} />
+            <PolarConnect user={user} plan={plan} />
           )}
         </div>
       </div>
