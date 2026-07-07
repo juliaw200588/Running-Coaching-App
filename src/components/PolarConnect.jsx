@@ -39,16 +39,38 @@ export default function PolarConnect({ user }) {
   }
 
   const handleConnect = async () => {
-    // Sicherer State: zufälliger Token der in Supabase gespeichert wird
+    // User-ID direkt als State verwenden (sicher weil User eingeloggt ist)
+    // Zusätzlich in Supabase speichern als Verifikation
     const stateToken = crypto.randomUUID()
     
-    // Token in Supabase speichern mit user_id
-    await supabase.from('integrations').upsert({
-      user_id: user.id,
-      polar_state_token: stateToken,
-    })
+    // State in localStorage speichern als Fallback
+    localStorage.setItem('polar_state_token', stateToken)
+    localStorage.setItem('polar_user_id', user.id)
 
-    window.location.href = `/api/polar/auth?state=${stateToken}`
+    // In Supabase speichern
+    try {
+      const { data: existing } = await supabase
+        .from('integrations')
+        .select('id')
+        .eq('user_id', user.id)
+        .single()
+
+      if (existing) {
+        const { error } = await supabase.from('integrations')
+          .update({ polar_state_token: stateToken })
+          .eq('user_id', user.id)
+        console.log('Update error:', error)
+      } else {
+        const { error } = await supabase.from('integrations')
+          .insert({ user_id: user.id, polar_state_token: stateToken })
+        console.log('Insert error:', error)
+      }
+    } catch (e) {
+      console.error('Supabase error:', e)
+    }
+
+    // State als user_id:token Format übergeben
+    window.location.href = `/api/polar/auth?state=${user.id}:${stateToken}`
   }
 
   const handleDisconnect = async () => {
