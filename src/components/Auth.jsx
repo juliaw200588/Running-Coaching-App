@@ -19,6 +19,24 @@ export default function Auth() {
     setLoading(false)
   }
 
+  const handlePasswordReset = async () => {
+    if (!form.email) {
+      setError('Bitte zuerst deine E-Mail-Adresse eingeben.')
+      return
+    }
+    setLoading(true)
+    setError(null)
+    const { error } = await supabase.auth.resetPasswordForEmail(form.email, {
+      redirectTo: 'https://running-coaching-app.vercel.app/reset-password',
+    })
+    if (error) {
+      setError(error.message)
+    } else {
+      setSuccess('E-Mail zum Zurücksetzen des Passworts wurde gesendet!')
+    }
+    setLoading(false)
+  }
+
   const handleRegister = async () => {
     setLoading(true)
     setError(null)
@@ -111,6 +129,15 @@ export default function Auth() {
               {error && (
                 <div style={{ marginBottom: 16, padding: '12px 16px', background: '#FDECEA', border: '1px solid #F5C4CC', borderRadius: 12, fontSize: 13, color: '#B85464', fontFamily: 'sans-serif' }}>
                   {error}
+                </div>
+              )}
+
+              {mode === 'login' && (
+                <div style={{ textAlign: 'right', marginBottom: 16, marginTop: -8 }}>
+                  <button onClick={handlePasswordReset} disabled={loading}
+                    style={{ background: 'none', border: 'none', color: '#FF8C69', fontSize: 12, cursor: 'pointer', fontFamily: 'sans-serif', fontWeight: 'bold' }}>
+                    Passwort vergessen?
+                  </button>
                 </div>
               )}
 

@@ -40,6 +40,8 @@ const dataUrlToBlob = (dataUrl) => {
 
 export default function TrainingPlan({ plan, onReset, user }) {
   const [activePhase, setActivePhase] = useState(0)
+  const [showPauseModal, setShowPauseModal] = useState(false)
+  const [pauseWeeks, setPauseWeeks] = useState(1)
   const [openWeeks, setOpenWeeks] = useState({ 0: true })
   const [done, setDone] = useState({})
   const [logs, setLogs] = useState({})
@@ -53,6 +55,46 @@ export default function TrainingPlan({ plan, onReset, user }) {
   const fileRef = useRef()
 
   const phases = plan.phases || []
+
+  const handlePausePlan = async () => {
+    // Alle Datumsangaben im Plan um pauseWeeks Wochen verschieben
+    const shiftDays = pauseWeeks * 7
+    const shiftDate = (dateStr) => {
+      if (!dateStr) return dateStr
+      const d = new Date(dateStr)
+      d.setDate(d.getDate() + shiftDays)
+      return d.toISOString().split('T')[0]
+    }
+    const shiftDisplayDate = (str) => {
+      if (!str) return str
+      // Versuche Datumsangaben im Format "08.06." zu verschieben
+      return str.replace(/(\d{2})\.(\d{2})\./g, (match, day, month) => {
+        const year = new Date().getFullYear()
+        const d = new Date(year, parseInt(month)-1, parseInt(day))
+        d.setDate(d.getDate() + shiftDays)
+        return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.`
+      })
+    }
+
+    const updatedPlan = JSON.parse(JSON.stringify(plan))
+    updatedPlan.startDate = shiftDate(updatedPlan.startDate)
+
+    for (const phase of updatedPlan.phases || []) {
+      phase.dateRange = shiftDisplayDate(phase.dateRange)
+      for (const week of phase.weeks || []) {
+        week.dateRange = shiftDisplayDate(week.dateRange)
+      }
+    }
+
+    // Speichern
+    localStorage.setItem(`runcoaching_plan_${user?.id}`, JSON.stringify(updatedPlan))
+    if (user) {
+      const { data } = await supabase.from('plans').select('id').eq('user_id', user.id).single()
+      if (data) await supabase.from('plans').update({ plan_data: updatedPlan }).eq('id', data.id)
+    }
+
+    window.location.reload()
+  }
 
   useEffect(() => {
     const load = async () => {
@@ -598,10 +640,50 @@ export default function TrainingPlan({ plan, onReset, user }) {
         </div>
 
         <div style={{ padding: '8px 16px' }}>
+          <button onClick={() => setShowPauseModal(true)}
+            style={{ width: '100%', background: 'white', border: '1.5px solid #F0E0D0', borderRadius: 20, padding: '14px', fontSize: 14, cursor: 'pointer', fontFamily: 'sans-serif', fontWeight: 'bold', color: '#C4A882', marginBottom: 10 }}>
+            ⏸ Plan pausieren
+          </button>
           <button onClick={onReset} style={{ width: '100%', background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)', color: 'white', border: 'none', borderRadius: 20, padding: '16px', fontSize: 15, cursor: 'pointer', fontFamily: 'sans-serif', fontWeight: 'bold', boxShadow: '0 8px 24px rgba(255,107,157,0.4)', letterSpacing: 0.5 }}>
             🏃‍♀️ Neuen Plan erstellen
           </button>
         </div>
+
+        {/* Pause Modal */}
+        {showPauseModal && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(60,30,20,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+            <div style={{ background: 'white', borderRadius: '28px 28px 0 0', padding: '24px 24px 48px', width: '100%', maxWidth: 520, boxShadow: '0 -8px 40px rgba(255,140,105,0.2)' }}>
+              <div style={{ width: 36, height: 4, background: '#F0E8E0', borderRadius: 99, margin: '0 auto 20px' }} />
+              <h3 style={{ fontSize: 18, fontWeight: 'bold', color: '#3D2B1F', marginBottom: 8 }}>⏸ Plan pausieren</h3>
+              <p style={{ fontSize: 13, color: '#8B6B5A', fontFamily: 'sans-serif', marginBottom: 20, lineHeight: 1.6 }}>
+                Verletzt, krank oder im Urlaub? Verschiebe deinen Plan um die gewünschte Anzahl Wochen – alle Termine passen sich automatisch an.
+              </p>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 1, display: 'block', marginBottom: 8, fontFamily: 'sans-serif' }}>
+                  Wie viele Wochen pausieren?
+                </label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {[1, 2, 3, 4].map(w => (
+                    <button key={w} onClick={() => setPauseWeeks(w)}
+                      style={{ flex: 1, padding: '12px 0', borderRadius: 12, border: `2px solid ${pauseWeeks === w ? '#FF8C69' : '#F0E0D0'}`, background: pauseWeeks === w ? 'linear-gradient(135deg,#FF8C69,#FFB347)' : 'white', color: pauseWeeks === w ? 'white' : '#C4A882', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', transition: 'all 0.2s' }}>
+                      {w} {w === 1 ? 'Woche' : 'Wochen'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => setShowPauseModal(false)}
+                  style={{ flex: 1, padding: '15px', borderRadius: 16, border: '1.5px solid #F0E0D0', background: 'white', color: '#C4A882', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+                  Abbrechen
+                </button>
+                <button onClick={() => { setShowPauseModal(false); handlePausePlan() }}
+                  style={{ flex: 2, padding: '15px', borderRadius: 16, border: 'none', background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)', color: 'white', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', boxShadow: '0 6px 20px rgba(255,107,157,0.4)' }}>
+                  Plan um {pauseWeeks} {pauseWeeks === 1 ? 'Woche' : 'Wochen'} verschieben
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
