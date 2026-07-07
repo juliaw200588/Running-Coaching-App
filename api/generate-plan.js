@@ -244,14 +244,18 @@ TRAININGSPHILOSOPHIE – STRIKT EINHALTEN
 
 15. JEDE EINHEIT hat einen Zweck in den Details (z.B. "Ziel: Fettstoffwechsel trainieren").
 
-16. EINHEITEN-FORMAT – strikt einhalten:
-- Lockere Läufe & Regeneration: immer in MINUTEN (z.B. "35 min Zone 2") – flexibler bei unterschiedlichem Gelände/Wetter
-- Langer Lauf: immer in KM (z.B. "14 km Zone 2") – greifbarer und motivierender
-- Intervalle: in KM oder Wiederholungen (z.B. "6×1 km Zone 4" oder "8×400m") – nie in Minuten
-- Tempodauerläufe: in KM (z.B. "8 km Tempo") – präziser
-- Renntempo-Einheiten: in KM (z.B. "3×3 km HM-Pace")
-- Aufwärmen/Auslaufen bei Intervallen: immer in MINUTEN (z.B. "10 min einlaufen")
+16. EINHEITEN-FORMAT – STRIKT EINHALTEN, KEINE AUSNAHMEN:
+- Lockere Läufe & Regeneration: immer in MINUTEN (z.B. "35 min Zone 2")
+- Langer Lauf: immer in KM (z.B. "14 km Zone 2")
+- Intervalle: IMMER in KM oder METERN – NIEMALS in Minuten!
+  ✅ Richtig: "6×1 km Zone 4", "8×400m Zone 4", "5×800m Zone 4"
+  ❌ Falsch: "5×3 min Zone 4", "6×4 min Zone 4" – VERBOTEN!
+- Tempodauerläufe: in KM (z.B. "8 km Tempodauerlauf Zone 3-4")
+- Renntempo-Einheiten: in KM (z.B. "3×3 km HM-Pace", "4×2 km Renntempo")
+- Aufwärmen/Auslaufen: immer in MINUTEN (z.B. "10 min einlaufen Zone 2")
 - Strides: immer in METERN (z.B. "6×80m Strides")
+
+MERKE: Nur lockere Läufe und Aufwärmen/Auslaufen in Minuten – alles andere in km oder Metern!
 
 ═══════════════════════════════════════
 NIVEAU-SPEZIFISCHE ANPASSUNGEN
