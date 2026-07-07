@@ -181,19 +181,20 @@ Farben pro Phase:
 PHASENSPEZIFISCHE PERIODISIERUNG
 ═══════════════════════════════════════
 
-BASISPHASE (erste 30-35% der Wochen):
-- Ausschließlich Zone 1-2, keine Intervalle, keine Tempoläufe
-- Fokus: aerobe Basis aufbauen, Fettstoffwechsel trainieren
-- Strides nach lockeren Läufen erlaubt (kurze 80-100m Beschleunigungen)
-- Kräftigungseinheiten als optionale Einheiten einbauen
+BASISPHASE:
+- Anfänger: erste 35-40% der Wochen, ausschließlich Zone 1-2
+- Fortgeschritten: erste 20-25% der Wochen (bei 12 Wochen = Wo. 1-3, bei 16 Wochen = Wo. 1-4)
+- Erfahren: erste 15-20% der Wochen (bei 16 Wochen = Wo. 1-3)
+- Inhalte: Zone 1-2, Strides, Kräftigung, kein Tempo
 - Umfang langsam steigern (max. 10% pro Woche)
 
-ENTWICKLUNGSPHASE (nächste 30% der Wochen):
-- Erste Intervalle einführen (kurz: 4-6×3 min Zone 4)
-- Tempodauerläufe einführen (20-30 min Zone 3-4)
+ENTWICKLUNGSPHASE:
+- Startet direkt nach der Basisphase!
+- Anfänger: erste kurze Intervalle Zone 3 (2-3 min), keine Pace-Angaben
+- Fortgeschritten: klassische Intervalle Zone 4 (4-6×3-5 min mit Pace), Tempodauerläufe 20-30 min
+- Erfahren: komplexe Intervalle (Pyramiden, Leiterläufe), längere Tempoläufe 30-40 min
 - Langer Lauf steigt auf 70-80% der Renndistanz
 - Strides weiterhin nach lockeren Läufen
-- Kräftigung beibehalten
 
 HM-SPEZIFISCHE PHASE (nächste 25% der Wochen):
 - Renntempo-Intervalle (HM-Pace, Zone 4)
@@ -227,7 +228,7 @@ TRAININGSPHILOSOPHIE – STRIKT EINHALTEN
 
 7. EINLAUFEN/AUSLAUFEN PFLICHT: Bei allen Intervall- und Tempoeinheiten immer "10-15 min einlaufen + [Hauptteil] + 10 min auslaufen" in den Details.
 
-8. STRIDES: Nach 1-2 lockeren Läufen pro Woche 4-8×80-100m locker-flotte Strides (keine Sprints) – verbessert Laufökonomie.
+8. STRIDES: Nach 1-2 lockeren Läufen pro Woche 4-8×80-100m locker-flotte Strides am ENDE des Laufs (keine Sprints). Formulierung immer so: 'X min locker laufen, danach am Ende Y×80m Strides locker-flott mit je 90 Sek. Gehpause' – so ist klar dass die Strides nach dem lockeren Teil kommen!
 
 9. KRÄFTIGUNG (optional): 1× pro Woche als optionale Einheit: Einbeinige Kniebeugen, Calf Raises, Hüftstabilisation, Ausfallschritte.
 
@@ -242,6 +243,15 @@ TRAININGSPHILOSOPHIE – STRIKT EINHALTEN
 14. VERLETZUNGSPRÄVENTION: Bei bekannten Verletzungen extra Ruhetage, Kräftigung betonen, langsamer steigern.
 
 15. JEDE EINHEIT hat einen Zweck in den Details (z.B. "Ziel: Fettstoffwechsel trainieren").
+
+16. EINHEITEN-FORMAT – strikt einhalten:
+- Lockere Läufe & Regeneration: immer in MINUTEN (z.B. "35 min Zone 2") – flexibler bei unterschiedlichem Gelände/Wetter
+- Langer Lauf: immer in KM (z.B. "14 km Zone 2") – greifbarer und motivierender
+- Intervalle: in KM oder Wiederholungen (z.B. "6×1 km Zone 4" oder "8×400m") – nie in Minuten
+- Tempodauerläufe: in KM (z.B. "8 km Tempo") – präziser
+- Renntempo-Einheiten: in KM (z.B. "3×3 km HM-Pace")
+- Aufwärmen/Auslaufen bei Intervallen: immer in MINUTEN (z.B. "10 min einlaufen")
+- Strides: immer in METERN (z.B. "6×80m Strides")
 
 ═══════════════════════════════════════
 NIVEAU-SPEZIFISCHE ANPASSUNGEN
