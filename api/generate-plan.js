@@ -274,12 +274,29 @@ Basisphase (beide):
   - Keine Pace-Angaben bei Anfänger, nur Zeit und Gefühl ("etwas schneller als normal")
 
 Entwicklungsphase (beide):
-- Intervalle werden eingeführt – aber unterschiedlich:
-  - Anfänger: kurze Intervalle Zone 3 (2-3 min etwas schneller als normal, kein genaues Tempo), Laufen/Gehen endet
-  - Fortgeschritten: klassische Intervalle Zone 4 (4-6×3-5 min mit Pace-Angaben)
+- Intervalle werden eingeführt – Progression ist PFLICHT, nie sofort mit langen Intervallen starten!
+
+ANFÄNGER Intervall-Progression:
+- Erste Intervallwoche: 4×300m Zone 3 (etwas schneller als normal, kein genaues Tempo)
+- Zweite Intervallwoche: 5×300m oder 4×400m Zone 3
+- Danach: 4-5×400m Zone 3
+- Keine Pace-Angaben, nur Gefühl ("etwas schneller als Unterhaltungstempo")
+
+FORTGESCHRITTEN Intervall-Progression:
+- Erste Intervallwoche: 4×800m Zone 4 (NICHT mehr als 4 Wiederholungen!)
+- Zweite Intervallwoche: 5×800m Zone 4
+- Dritte Intervallwoche: 4×1 km Zone 4
+- Danach: 5×1 km oder 6×800m Zone 4
+- Immer mit Pace-Angaben
+
+ERFAHREN Intervall-Progression:
+- Erste Intervallwoche: 5×1 km Zone 4
+- Danach: 6×1 km, Pyramiden, Leiterläufe
+
 - Tempodauerläufe:
-  - Anfänger: 15-20 min "etwas zügiger als gewohnt"
-  - Fortgeschritten: 25-35 min mit Pace-Angabe
+  - Anfänger: 15-20 min "etwas zügiger als gewohnt", keine Pace
+  - Fortgeschritten: 5-8 km mit Pace-Angabe, progressiv steigern
+  - Erfahren: 8-12 km mit Pace-Angabe
 
 Spezifische Phase (beide):
 - Anfänger: erste Renntempo-Einheiten sehr kurz (2-3×5 min), Fokus auf Finishen
