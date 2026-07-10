@@ -61,7 +61,7 @@ function getPlanDayDates(plan) {
         d.setDate(d.getDate() + offset)
         result.push({
           date: d,
-          dateStr: d.toISOString().split('T')[0],
+          dateStr: toLocalDateStr(d),
           key: dayKey(phase.id, week.n, di),
           tag: dayObj.tag,
           einheit: dayObj.einheit,
@@ -76,6 +76,11 @@ function getPlanDayDates(plan) {
 }
 
 const diffDays = (a, b) => Math.round((new Date(a) - new Date(b)) / 86400000)
+
+// Baut "YYYY-MM-DD" aus den LOKALEN Datumsteilen statt über toISOString() (das erst
+// in UTC umrechnet und dadurch bei positiven Zeitzonen wie Deutschland (UTC+1/+2) um
+// einen Tag zurückspringen kann - z.B. lokale Mitternacht 14.07. wird zu 13.07. 22:00 UTC).
+const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
 export default function PolarConnect({ user, plan }) {
   const [connected, setConnected] = useState(false)
