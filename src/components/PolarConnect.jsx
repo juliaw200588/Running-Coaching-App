@@ -64,6 +64,13 @@ export default function PolarConnect({ user, plan }) {
   const [occupiedKeys, setOccupiedKeys] = useState(new Set())
   const [assigning, setAssigning] = useState(null)
   const [schuhe, setSchuhe] = useState([])
+  const [showHistory, setShowHistory] = useState(false)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyActivities, setHistoryActivities] = useState([])
+  const [historySelections, setHistorySelections] = useState({})
+  const [historyShoeSelections, setHistoryShoeSelections] = useState({})
+  const [historyAssigning, setHistoryAssigning] = useState(null)
+  const [historyAssignedIds, setHistoryAssignedIds] = useState(new Set())
 
   const planDays = plan ? getPlanDayDates(plan) : []
 
@@ -265,6 +272,82 @@ export default function PolarConnect({ user, plan }) {
     setPending(prev => prev.filter(a => a.id !== activity.id))
   }
 
+  const loadHistory = async () => {
+    setShowHistory(true)
+    setHistoryLoading(true)
+    setMessage(null)
+    try {
+      const response = await fetch('/api/polar/history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id })
+      })
+      const data = await response.json()
+      if (data.error) {
+        setMessage({ type: 'error', text: `Fehler: ${data.error}` })
+      } else {
+        setHistoryActivities(data.activities || [])
+      }
+    } catch (e) {
+      setMessage({ type: 'error', text: 'Verlauf konnte nicht geladen werden.' })
+    }
+    setHistoryLoading(false)
+  }
+
+  const assignHistoryActivity = async (activity, chosenKey) => {
+    const historyId = activity.polar_exercise_id
+    setHistoryAssigning(historyId)
+    const schuhId = historyShoeSelections[historyId] || null
+    try {
+      if (chosenKey === 'extra') {
+        const extraKey = `extra_polar_${activity.datum}_${crypto.randomUUID().slice(0, 8)}`
+        await supabase.from('logs').upsert({
+          user_id: user.id,
+          day_key: extraKey,
+          pace: activity.pace || null,
+          km: activity.distanz || null,
+          bpm: activity.herzfrequenz || null,
+          note: 'Extra-Lauf, aus Polar-Verlauf nachgetragen (kein Plan-Tag)',
+          schuh_id: schuhId,
+        }, { onConflict: 'user_id,day_key' })
+      } else {
+        await supabase.from('logs').upsert({
+          user_id: user.id,
+          day_key: chosenKey,
+          pace: activity.pace || null,
+          km: activity.distanz || null,
+          bpm: activity.herzfrequenz || null,
+          note: 'Aus Polar-Verlauf nachgetragen',
+          schuh_id: schuhId,
+        }, { onConflict: 'user_id,day_key' })
+        await supabase.from('training_done').upsert({
+          user_id: user.id,
+          day_key: chosenKey,
+          done: true,
+        }, { onConflict: 'user_id,day_key' })
+        setOccupiedKeys(prev => new Set([...prev, chosenKey]))
+      }
+
+      if (schuhId && activity.distanz) {
+        const gelaufeneKm = parseFloat(String(activity.distanz).replace(',', '.')) || 0
+        if (gelaufeneKm > 0) {
+          const { data: schuh } = await supabase.from('shoes').select('start_km').eq('id', schuhId).single()
+          if (schuh) {
+            await supabase.from('shoes').update({ start_km: (schuh.start_km || 0) + gelaufeneKm }).eq('id', schuhId)
+          }
+        }
+      }
+
+      setHistoryAssignedIds(prev => new Set([...prev, historyId]))
+      setMessage({ type: 'success', text: '✅ Zugeordnet! Seite wird aktualisiert…' })
+      setTimeout(() => window.location.reload(), 900)
+    } catch (e) {
+      console.error('Zuordnung aus Verlauf fehlgeschlagen:', e)
+      setMessage({ type: 'error', text: 'Zuordnung fehlgeschlagen. Bitte erneut versuchen.' })
+      setHistoryAssigning(null)
+    }
+  }
+
   const msgStyle = (type) => ({
     padding: '10px 14px', borderRadius: 12, fontSize: 13, fontFamily: 'sans-serif', marginBottom: 16,
     background: type === 'success' ? '#F0FAF4' : type === 'error' ? '#FDECEA' : '#FFF5EE',
@@ -387,6 +470,97 @@ export default function PolarConnect({ user, plan }) {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {connected && (
+        <div style={{ marginBottom: 16 }}>
+          {!showHistory ? (
+            <button onClick={loadHistory}
+              style={{ width: '100%', padding: '10px', borderRadius: 12, border: '1.5px solid #F0E0D0', background: 'white', color: '#8B7355', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+              🕘 Verlauf durchsuchen (falls ein Lauf fehlt oder falsch zugeordnet wurde)
+            </button>
+          ) : (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 'bold', color: '#5C3D2E', fontFamily: 'sans-serif' }}>
+                  🕘 Verlauf (letzte Läufe von Polar)
+                </div>
+                <button onClick={() => setShowHistory(false)}
+                  style={{ background: 'none', border: 'none', color: '#C4A882', cursor: 'pointer', fontSize: 12, fontFamily: 'sans-serif' }}>
+                  Schließen
+                </button>
+              </div>
+
+              {historyLoading && (
+                <div style={{ textAlign: 'center', padding: 16, color: '#B8A090', fontFamily: 'sans-serif', fontSize: 13 }}>⏳ Lade Verlauf…</div>
+              )}
+
+              {!historyLoading && historyActivities.length === 0 && (
+                <div style={{ textAlign: 'center', padding: 16, color: '#B8A090', fontFamily: 'sans-serif', fontSize: 13 }}>Keine Läufe im Verlauf gefunden.</div>
+              )}
+
+              {!historyLoading && historyActivities.map((a) => {
+                const hid = a.polar_exercise_id
+                const alreadyAssigned = historyAssignedIds.has(hid)
+                const hCandidates = getCandidates(a)
+                const hSelected = historySelections[hid] ?? (hCandidates[0]?.key || '')
+                const isHAssigning = historyAssigning === hid
+
+                return (
+                  <div key={hid} style={{ background: 'white', borderRadius: 14, padding: '14px 16px', border: '1.5px solid #F0E8E0', marginBottom: 10, opacity: alreadyAssigned ? 0.5 : 1 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <div style={{ fontSize: 13, fontWeight: 'bold', color: '#3D2B1F', fontFamily: 'sans-serif' }}>
+                        🏃‍♀️ {a.datum ? new Date(a.datum).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Unbekannt'}
+                      </div>
+                      {a.dauer && <div style={{ fontSize: 12, color: '#B8A090', fontFamily: 'sans-serif' }}>{a.dauer}</div>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                      {a.distanz && <span style={{ fontSize: 11, background: '#FFF0E6', color: '#C17A3A', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>📍 {a.distanz}</span>}
+                      {a.pace && <span style={{ fontSize: 11, background: '#E8F0FF', color: '#4060C0', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>⏱ {a.pace}</span>}
+                      {a.herzfrequenz && <span style={{ fontSize: 11, background: '#FDECEA', color: '#B85464', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>❤️ {a.herzfrequenz}</span>}
+                    </div>
+
+                    {alreadyAssigned ? (
+                      <div style={{ fontSize: 12, color: '#5BA88A', fontFamily: 'sans-serif', fontWeight: 'bold' }}>✓ Bereits zugeordnet</div>
+                    ) : (
+                      <>
+                        <select
+                          value={hSelected}
+                          onChange={e => setHistorySelections(p => ({ ...p, [hid]: e.target.value }))}
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 13, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', cursor: 'pointer', marginBottom: 10 }}>
+                          {hCandidates.length === 0 && <option value="">Kein passender offener Tag gefunden</option>}
+                          {hCandidates.map(c => (
+                            <option key={c.key} value={c.key}>
+                              Wo. {c.weekN} · {weekdayLabel(c)} · {c.einheit} {c.dist !== 0 ? `(${c.dist > 0 ? '+' : ''}${c.dist} Tag${Math.abs(c.dist) !== 1 ? 'e' : ''})` : '(genau passend)'}
+                            </option>
+                          ))}
+                          <option value="extra">— Als Extra-Lauf speichern (kein Plan-Tag) —</option>
+                        </select>
+
+                        {schuhe.length > 0 && (
+                          <select
+                            value={historyShoeSelections[hid] || ''}
+                            onChange={e => setHistoryShoeSelections(p => ({ ...p, [hid]: e.target.value }))}
+                            style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 13, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', cursor: 'pointer', marginBottom: 10 }}>
+                            <option value="">Kein Schuh ausgewählt</option>
+                            {schuhe.map(s => (
+                              <option key={s.id} value={s.id}>{s.marke} {s.modell} ({Math.round(s.start_km || 0)} km)</option>
+                            ))}
+                          </select>
+                        )}
+
+                        <button onClick={() => assignHistoryActivity(a, hSelected)} disabled={!hSelected || isHAssigning}
+                          style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: 'none', background: !hSelected || isHAssigning ? '#F0E8E0' : 'linear-gradient(135deg,#FF8C69,#FFB347)', color: !hSelected || isHAssigning ? '#C4A882' : 'white', fontSize: 12, fontWeight: 'bold', cursor: !hSelected || isHAssigning ? 'default' : 'pointer', fontFamily: 'sans-serif' }}>
+                          {isHAssigning ? '⏳ Speichere…' : '✓ Zuordnen'}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 
