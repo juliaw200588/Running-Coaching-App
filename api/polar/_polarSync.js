@@ -5,6 +5,20 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 )
 
+// Polar liefert "duration" als ISO-8601-Dauer (z.B. "PT47M36S" = 47 Min 36 Sek),
+// nicht als einfache Sekundenzahl. Reines "/60" auf einen solchen String ergibt NaN,
+// wodurch die Pace-Berechnung bisher stillschweigend übersprungen wurde.
+function parseIsoDurationToSeconds(duration) {
+  if (duration == null) return null
+  if (typeof duration === 'number') return duration // falls doch mal eine reine Zahl kommt
+  const match = String(duration).match(/^P(?:\d+D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/)
+  if (!match) return null
+  const hours = parseFloat(match[1] || '0')
+  const minutes = parseFloat(match[2] || '0')
+  const seconds = parseFloat(match[3] || '0')
+  return hours * 3600 + minutes * 60 + seconds
+}
+
 // Holt neue Läufe von Polar für einen User und speichert sie in polar_pending_activities.
 // Wird sowohl vom manuellen Sync-Button als auch vom Webhook aufgerufen.
 export async function fetchAndPersistPolarActivities(userId) {
@@ -48,10 +62,11 @@ export async function fetchAndPersistPolarActivities(userId) {
 
     if (ex.sport?.toLowerCase().includes('running') || ex.sport?.toLowerCase().includes('lauf')) {
       const distanceKm = ex.distance ? (ex.distance / 1000).toFixed(2) : null
-      const durationMin = ex.duration ? Math.round(ex.duration / 60) : null
-      const pace = distanceKm && durationMin
+      const durationSeconds = parseIsoDurationToSeconds(ex.duration)
+      const durationMin = durationSeconds != null ? Math.round(durationSeconds / 60) : null
+      const pace = distanceKm && durationSeconds != null
         ? (() => {
-            const paceMin = durationMin / parseFloat(distanceKm)
+            const paceMin = (durationSeconds / 60) / parseFloat(distanceKm)
             const paceM = Math.floor(paceMin)
             const paceS = Math.round((paceMin - paceM) * 60).toString().padStart(2, '0')
             return `${paceM}:${paceS} min/km`

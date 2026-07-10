@@ -4,33 +4,47 @@ import { supabase } from '../lib/supabase.js'
 const TAG_OFFSET = { Mo: 0, Di: 1, Mi: 2, Do: 3, Fr: 4, Sa: 5, So: 6 }
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
-// Berechnet für jeden (nicht-optionalen) Plan-Tag ein echtes Kalenderdatum,
-// basierend auf plan.startDate + kumuliertem Wochen-Offset über alle Phasen hinweg.
+// Berechnet für jeden (nicht-optionalen) Plan-Tag ein echtes Kalenderdatum.
+// Liest bewusst das ECHTE, angezeigte week.dateRange jeder Woche aus (z.B. "13.07. – 19.07.")
+// statt es aus plan.startDate + hochgezähltem Wochen-Offset zu rekonstruieren – die KI
+// schreibt startDate und dateRange unabhängig voneinander beim Planerstellen, sie können
+// also auseinanderdriften. Das Parsen des angezeigten dateRange garantiert, dass die
+// berechneten Daten immer exakt zu dem passen, was der Nutzer tatsächlich sieht.
 function getPlanDayDates(plan) {
   const result = []
-  if (!plan?.startDate) return result
-  const start = new Date(plan.startDate + 'T00:00:00')
-  let weekCounter = 0
+  if (!plan) return result
+  const fallbackYear = plan.startDate ? new Date(plan.startDate + 'T00:00:00').getFullYear() : new Date().getFullYear()
+  const startMonth = plan.startDate ? new Date(plan.startDate + 'T00:00:00').getMonth() : null
+
   for (const phase of plan.phases || []) {
     for (const week of phase.weeks || []) {
-      const weekStart = new Date(start)
-      weekStart.setDate(weekStart.getDate() + weekCounter * 7)
-      ;(week.days || []).forEach((day, di) => {
-        if (day.optional) return
-        const offset = TAG_OFFSET[day.tag] ?? 0
+      const match = week.dateRange?.match(/(\d{1,2})\.(\d{1,2})\./)
+      if (!match) continue
+      const day = parseInt(match[1])
+      const month = parseInt(match[2]) - 1
+
+      // Jahreswechsel-Heuristik: falls der Wochenmonat deutlich vor dem Startmonat liegt
+      // (z.B. Plan startet im November, diese Woche zeigt Januar), ist es das Folgejahr.
+      let year = fallbackYear
+      if (startMonth !== null && month < startMonth - 6) year = fallbackYear + 1
+
+      const weekStart = new Date(year, month, day)
+
+      ;(week.days || []).forEach((dayObj, di) => {
+        if (dayObj.optional) return
+        const offset = TAG_OFFSET[dayObj.tag] ?? 0
         const d = new Date(weekStart)
         d.setDate(d.getDate() + offset)
         result.push({
           date: d,
           dateStr: d.toISOString().split('T')[0],
           key: dayKey(phase.id, week.n, di),
-          tag: day.tag,
-          einheit: day.einheit,
+          tag: dayObj.tag,
+          einheit: dayObj.einheit,
           weekN: week.n,
           phaseLabel: phase.label,
         })
       })
-      weekCounter++
     }
   }
   return result
@@ -46,8 +60,10 @@ export default function PolarConnect({ user, plan }) {
   const [lastSync, setLastSync] = useState(null)
   const [pending, setPending] = useState([])
   const [selections, setSelections] = useState({})
+  const [shoeSelections, setShoeSelections] = useState({})
   const [occupiedKeys, setOccupiedKeys] = useState(new Set())
   const [assigning, setAssigning] = useState(null)
+  const [schuhe, setSchuhe] = useState([])
 
   const planDays = plan ? getPlanDayDates(plan) : []
 
@@ -55,6 +71,7 @@ export default function PolarConnect({ user, plan }) {
     checkConnection()
     loadOccupiedKeys()
     loadPending()
+    loadSchuhe()
 
     // Live-Updates: neue Läufe (z.B. automatisch vom Polar-Webhook eingetragen)
     // tauchen sofort auf, ohne dass die Seite neu geladen werden muss.
@@ -98,6 +115,13 @@ export default function PolarConnect({ user, plan }) {
     try {
       const { data } = await supabase.from('logs').select('day_key').eq('user_id', user.id)
       if (data) setOccupiedKeys(new Set(data.map(l => l.day_key)))
+    } catch {}
+  }
+
+  const loadSchuhe = async () => {
+    try {
+      const { data } = await supabase.from('shoes').select('*').eq('user_id', user.id).order('created_at')
+      if (data) setSchuhe(data)
     } catch {}
   }
 
@@ -183,6 +207,7 @@ export default function PolarConnect({ user, plan }) {
 
   const assignActivity = async (activity, chosenKey) => {
     setAssigning(activity.id)
+    const schuhId = shoeSelections[activity.id] || null
     try {
       if (chosenKey === 'extra') {
         const extraKey = `extra_polar_${activity.datum}_${crypto.randomUUID().slice(0, 8)}`
@@ -193,6 +218,7 @@ export default function PolarConnect({ user, plan }) {
           km: activity.distanz || null,
           bpm: activity.herzfrequenz || null,
           note: 'Extra-Lauf, automatisch von Polar importiert (kein Plan-Tag)',
+          schuh_id: schuhId,
         })
       } else {
         await supabase.from('logs').upsert({
@@ -202,6 +228,7 @@ export default function PolarConnect({ user, plan }) {
           km: activity.distanz || null,
           bpm: activity.herzfrequenz || null,
           note: 'Automatisch von Polar synchronisiert',
+          schuh_id: schuhId,
         })
         await supabase.from('training_done').upsert({
           user_id: user.id,
@@ -209,6 +236,17 @@ export default function PolarConnect({ user, plan }) {
           done: true,
         })
         setOccupiedKeys(prev => new Set([...prev, chosenKey]))
+      }
+
+      // Schuh-km hochzählen, genau wie beim manuellen Log (TrainingPlan.jsx)
+      if (schuhId && activity.distanz) {
+        const gelaufeneKm = parseFloat(String(activity.distanz).replace(',', '.')) || 0
+        if (gelaufeneKm > 0) {
+          const { data: schuh } = await supabase.from('shoes').select('start_km').eq('id', schuhId).single()
+          if (schuh) {
+            await supabase.from('shoes').update({ start_km: (schuh.start_km || 0) + gelaufeneKm }).eq('id', schuhId)
+          }
+        }
       }
 
       await supabase.from('polar_pending_activities').delete().eq('id', activity.id)
@@ -313,11 +351,28 @@ export default function PolarConnect({ user, plan }) {
                   {candidates.length === 0 && <option value="">Kein passender offener Tag gefunden</option>}
                   {candidates.map(c => (
                     <option key={c.key} value={c.key}>
-                      {weekdayLabel(c)} · {c.einheit} {c.dist !== 0 ? `(${c.dist > 0 ? '+' : ''}${c.dist} Tag${Math.abs(c.dist) !== 1 ? 'e' : ''})` : '(genau passend)'}
+                      Wo. {c.weekN} · {weekdayLabel(c)} · {c.einheit} {c.dist !== 0 ? `(${c.dist > 0 ? '+' : ''}${c.dist} Tag${Math.abs(c.dist) !== 1 ? 'e' : ''})` : '(genau passend)'}
                     </option>
                   ))}
                   <option value="extra">— Als Extra-Lauf speichern (kein Plan-Tag) —</option>
                 </select>
+
+                {schuhe.length > 0 && (
+                  <div style={{ marginBottom: 10 }}>
+                    <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>
+                      Laufschuhe
+                    </label>
+                    <select
+                      value={shoeSelections[id] || ''}
+                      onChange={e => setShoeSelections(p => ({ ...p, [id]: e.target.value }))}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 13, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', cursor: 'pointer' }}>
+                      <option value="">Kein Schuh ausgewählt</option>
+                      {schuhe.map(s => (
+                        <option key={s.id} value={s.id}>{s.marke} {s.modell} ({Math.round(s.start_km || 0)} km)</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button onClick={() => discardActivity(a)}
