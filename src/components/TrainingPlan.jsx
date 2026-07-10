@@ -279,7 +279,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
             user_id: user.id,
             day_key: key,
             screenshot_url: urlData?.publicUrl || null,
-          })
+          }, { onConflict: 'user_id,day_key' })
         } catch (e) { console.error('Screenshot Upload Fehler:', e) }
       }
       try { await window.storage.set(`screenshot_${key}`, base64OrNull) } catch {}
@@ -290,7 +290,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
         try {
           const path = `${user.id}/${key.replace(/[^a-zA-Z0-9_-]/g, '_')}.jpg`
           await supabase.storage.from('screenshots').remove([path])
-          await supabase.from('logs').upsert({ user_id: user.id, day_key: key, screenshot_url: null })
+          await supabase.from('logs').upsert({ user_id: user.id, day_key: key, screenshot_url: null }, { onConflict: 'user_id,day_key' })
         } catch (e) { console.error('Screenshot Delete Fehler:', e) }
       }
       try { await window.storage.delete(`screenshot_${key}`) } catch {}
@@ -312,7 +312,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
           user_id: user.id,
           day_key: key,
           done: newValue,
-        })
+        }, { onConflict: 'user_id,day_key' })
       } catch (e) { console.error('Done Supabase Fehler:', e) }
     }
   }
@@ -374,7 +374,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
     await persistDone(nd)
     if (user) {
       try {
-        await supabase.from('training_done').upsert({ user_id: user.id, day_key: key, done: true })
+        await supabase.from('training_done').upsert({ user_id: user.id, day_key: key, done: true }, { onConflict: 'user_id,day_key' })
       } catch {}
     }
 
@@ -389,7 +389,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
           bpm: logInput.bpm || null,
           note: logInput.note || null,
           schuh_id: logInput.schuh_id || null,
-        })
+        }, { onConflict: 'user_id,day_key' })
       } catch (e) { console.error('Log Supabase Fehler:', e) }
     }
 
@@ -425,7 +425,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
     if (user) {
       try {
         await supabase.from('logs').delete().eq('user_id', user.id).eq('day_key', key)
-        await supabase.from('training_done').upsert({ user_id: user.id, day_key: key, done: false })
+        await supabase.from('training_done').upsert({ user_id: user.id, day_key: key, done: false }, { onConflict: 'user_id,day_key' })
       } catch (e) { console.error('Log delete Fehler:', e) }
     }
 

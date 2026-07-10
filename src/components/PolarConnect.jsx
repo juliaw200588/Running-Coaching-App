@@ -219,7 +219,7 @@ export default function PolarConnect({ user, plan }) {
           bpm: activity.herzfrequenz || null,
           note: 'Extra-Lauf, automatisch von Polar importiert (kein Plan-Tag)',
           schuh_id: schuhId,
-        })
+        }, { onConflict: 'user_id,day_key' })
       } else {
         await supabase.from('logs').upsert({
           user_id: user.id,
@@ -229,12 +229,12 @@ export default function PolarConnect({ user, plan }) {
           bpm: activity.herzfrequenz || null,
           note: 'Automatisch von Polar synchronisiert',
           schuh_id: schuhId,
-        })
+        }, { onConflict: 'user_id,day_key' })
         await supabase.from('training_done').upsert({
           user_id: user.id,
           day_key: chosenKey,
           done: true,
-        })
+        }, { onConflict: 'user_id,day_key' })
         setOccupiedKeys(prev => new Set([...prev, chosenKey]))
       }
 
