@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Friends from './Friends.jsx'
 import PolarConnect from './PolarConnect.jsx'
-import Laeufe from './Laeufe.jsx
+import Laeufe from './Laeufe.jsx'
 import Statistics from './Statistics.jsx'
 import { supabase } from '../lib/supabase.js'
 
@@ -439,7 +439,7 @@ export default function Profile({ user, onClose, plan }) {
           {activeTab === 'laeufe' && (
             <Laeufe user={user} plan={plan} />
           )}
-          
+
           {/* ── GERÄTE TAB ── */}
           {activeTab === 'geraete' && (
             <PolarConnect user={user} plan={plan} />
