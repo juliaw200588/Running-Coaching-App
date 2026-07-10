@@ -58,8 +58,15 @@ export default async function handler(req, res) {
   const predictMin = (knownMin, knownKm, targetKm) => knownMin * Math.pow(targetKm / knownKm, riegelExponent)
 
   if (prevMin || goalMin) {
-    // Basis für Trainingspaces: bisherige Zeit bevorzugt, sonst Zielzeit
-    const baseMin = prevMin || goalMin
+    // Basis für Trainingspaces: bisherige Zeit bevorzugt, sonst Zielzeit.
+    // Ohne bisherige Zeit ist die Zielzeit eine unbewiesene Wunschvorstellung, kein
+    // echter Fitness-Datenpunkt – deshalb wird sie niveau-abhängig gedämpft, bevor sie
+    // als Basis für die ALLTÄGLICHEN Trainingsbereiche (Zone 2, Tempo, Intervalle) dient.
+    // Erfahrenere Läufer:innen kalibrieren Zielzeiten realistischer, daher kleinerer Abschlag.
+    const sicherheitsfaktor = prevMin
+      ? 1
+      : (niveau === 'Erfahren' ? 1.04 : niveau === 'Anfänger' ? 1.12 : 1.08)
+    const baseMin = (prevMin || goalMin) * sicherheitsfaktor
     const basePace = baseMin / distKm
 
     // Zielzeit für Renntempo-Einheiten
