@@ -426,6 +426,13 @@ export default function TrainingPlan({ plan, onReset, user }) {
       try {
         await supabase.from('logs').delete().eq('user_id', user.id).eq('day_key', key)
         await supabase.from('training_done').upsert({ user_id: user.id, day_key: key, done: false }, { onConflict: 'user_id,day_key' })
+        // Screenshot-Datei direkt aus dem Storage entfernen - OHNE persistScreenshot()/logs.upsert()
+        // zu nutzen, da die logs-Zeile gerade gelöscht wurde. Ein Upsert hier würde sonst
+        // (ohne passende Konfliktzeile) eine neue, leere Ersatz-Zeile anlegen.
+        try {
+          const path = `${user.id}/${key.replace(/[^a-zA-Z0-9_-]/g, '_')}.jpg`
+          await supabase.storage.from('screenshots').remove([path])
+        } catch (e) { console.error('Screenshot-Datei löschen fehlgeschlagen:', e) }
       } catch (e) { console.error('Log delete Fehler:', e) }
     }
 
@@ -444,7 +451,12 @@ export default function TrainingPlan({ plan, onReset, user }) {
 
     const nl = { ...logs }; delete nl[key]
     await persistLogs(nl)
-    await persistScreenshot(key, null, screenshots)
+    // Lokalen Screenshot-State bereinigen, ohne persistScreenshot() (siehe oben)
+    const nextScreenshots = { ...screenshots }
+    delete nextScreenshots[key]
+    setScreenshots(nextScreenshots)
+    try { await window.storage.delete(`screenshot_${key}`) } catch {}
+    try { await window.storage.set('laufplan_screenshot_keys', JSON.stringify(Object.keys(nextScreenshots))) } catch {}
     const nd = { ...done, [key]: false }
     await persistDone(nd)
     setLogModal(null); setModalScreenshot(null); setModalPreview(null)
