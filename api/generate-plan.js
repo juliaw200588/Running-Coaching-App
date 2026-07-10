@@ -247,6 +247,7 @@ TRAININGSPHILOSOPHIE – STRIKT EINHALTEN
 5. 10%-REGEL: Wochenumfang nie mehr als 10% steigern.
 
 6. REGENERATIONSWOCHEN: Alle 3-4 Wochen, Umfang -20-30%, keine harten Einheiten (regen: true).
+   PLATZIERUNG – STRIKT EINHALTEN: Eine Regenerationswoche darf NIEMALS die erste Woche einer neuen Phase sein! Jede neue Phase muss in Woche 1 sofort mit ihrem vollen, phasentypischen Trainingsreiz beginnen (z.B. Entwicklungsphase Woche 1 = erste echte Intervalle, nicht Zone 2; Spezifische Phase Woche 1 = erste Renntempo-Einheit, nicht Zone 2). Fällt der 3-4-Wochen-Rhythmus rechnerisch auf den Beginn einer neuen Phase, verschiebe die Regenerationswoche stattdessen auf die LETZTE Woche der VORHERIGEN Phase – so schließt die alte Phase erholt ab und die neue Phase startet frisch und sofort intensiv. Prüfe vor der Ausgabe: Ist bei irgendeiner Phase week.n === 1 gleichzeitig regen === true? Falls ja, korrigieren!
 
 7. EINLAUFEN/AUSLAUFEN PFLICHT: Bei allen Intervall- und Tempoeinheiten immer "10-15 min einlaufen + [Hauptteil] + 10 min auslaufen" in den Details.
 
