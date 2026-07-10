@@ -137,10 +137,16 @@ export async function fetchPolarHistory(userId) {
   if (!res.ok) throw new Error(`Polar API Fehler (${res.status})`)
 
   const data = await res.json()
-  const exercises = data.exercises || data || []
+  console.log('[Polar History] Rohe API-Antwort:', JSON.stringify(data).slice(0, 3000))
 
-  return exercises
-    .filter(isRunning)
+  const exercises = data.exercises || data || []
+  console.log('[Polar History] Anzahl Einträge:', exercises.length)
+  if (exercises[0]) console.log('[Polar History] Erster Eintrag (roh):', JSON.stringify(exercises[0]))
+
+  const running = exercises.filter(isRunning)
+  console.log('[Polar History] Davon als "running" erkannt:', running.length)
+
+  return running
     .map(ex => mapExercise(ex, String(ex.id ?? ex['start-time'])))
     .filter(a => a.datum)
     .sort((a, b) => (a.datum < b.datum ? 1 : -1))
