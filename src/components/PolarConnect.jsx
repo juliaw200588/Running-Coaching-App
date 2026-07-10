@@ -268,6 +268,7 @@ export default function PolarConnect({ user, plan }) {
           bpm: activity.herzfrequenz || null,
           note: 'Extra-Lauf, automatisch von Polar importiert (kein Plan-Tag)',
           schuh_id: schuhId,
+          actual_date: activity.datum || null,
         }, { onConflict: 'user_id,day_key' })
       } else {
         await supabase.from('logs').upsert({
@@ -278,6 +279,7 @@ export default function PolarConnect({ user, plan }) {
           bpm: activity.herzfrequenz || null,
           note: 'Automatisch von Polar synchronisiert',
           schuh_id: schuhId,
+          actual_date: activity.datum || null,
         }, { onConflict: 'user_id,day_key' })
         await supabase.from('training_done').upsert({
           user_id: user.id,
@@ -351,6 +353,7 @@ export default function PolarConnect({ user, plan }) {
           bpm: activity.herzfrequenz || null,
           note: 'Extra-Lauf, aus Polar-Verlauf nachgetragen (kein Plan-Tag)',
           schuh_id: schuhId,
+          actual_date: activity.datum || null,
         }, { onConflict: 'user_id,day_key' })
       } else {
         await supabase.from('logs').upsert({
@@ -361,6 +364,7 @@ export default function PolarConnect({ user, plan }) {
           bpm: activity.herzfrequenz || null,
           note: 'Aus Polar-Verlauf nachgetragen',
           schuh_id: schuhId,
+          actual_date: activity.datum || null,
         }, { onConflict: 'user_id,day_key' })
         await supabase.from('training_done').upsert({
           user_id: user.id,
