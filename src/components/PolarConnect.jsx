@@ -4,6 +4,30 @@ import { supabase } from '../lib/supabase.js'
 const TAG_OFFSET = { Mo: 0, Di: 1, Mi: 2, Do: 3, Fr: 4, Sa: 5, So: 6 }
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
+// Schätzt die geplante Distanz eines Tages aus dem Freitext (gleiche Logik wie in
+// TrainingPlan.jsx für die "ca. X km"-Wochenanzeige) - wird hier genutzt, um Polar-Läufe
+// nicht nur nach Datum, sondern auch nach Distanz-Ähnlichkeit zuzuordnen.
+const estimateDayKm = (details) => {
+  if (!details) return 0
+  const clean = details.replace(/\([^)]*\)/g, '')
+  let km = 0
+  const repRegex = /(\d+)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*(km|m)\b/gi
+  let m
+  while ((m = repRegex.exec(clean))) {
+    const reps = parseInt(m[1])
+    let dist = parseFloat(m[2].replace(',', '.'))
+    if (m[3].toLowerCase() === 'm') dist = dist / 1000
+    km += reps * dist
+  }
+  let rest = clean.replace(repRegex, '')
+  const kmRegex = /(\d+(?:[.,]\d+)?)\s*km\b/g
+  while ((m = kmRegex.exec(rest))) km += parseFloat(m[1].replace(',', '.'))
+  rest = rest.replace(kmRegex, '')
+  const minRegex = /(\d+)\s*min\b/g
+  while ((m = minRegex.exec(rest))) km += parseInt(m[1]) / 8
+  return km
+}
+
 // Berechnet für jeden (nicht-optionalen) Plan-Tag ein echtes Kalenderdatum.
 // Liest bewusst das ECHTE, angezeigte week.dateRange jeder Woche aus (z.B. "13.07. – 19.07.")
 // statt es aus plan.startDate + hochgezähltem Wochen-Offset zu rekonstruieren – die KI
@@ -41,6 +65,7 @@ function getPlanDayDates(plan) {
           key: dayKey(phase.id, week.n, di),
           tag: dayObj.tag,
           einheit: dayObj.einheit,
+          plannedKm: estimateDayKm(dayObj.details),
           weekN: week.n,
           phaseLabel: phase.label,
         })
@@ -203,14 +228,31 @@ export default function PolarConnect({ user, plan }) {
 
   const getCandidates = (activity) => {
     if (!activity.datum) return []
+    const actualKm = activity.distanz ? parseFloat(String(activity.distanz).replace(',', '.')) : null
     return planDays
       .filter(d => !occupiedKeys.has(d.key))
-      .map(d => ({ ...d, dist: diffDays(d.dateStr, activity.datum) }))
+      .map(d => {
+        const dist = diffDays(d.dateStr, activity.datum)
+        // km-Differenz nur einbeziehen, wenn beide Werte bekannt sind - sonst würde ein
+        // Tag mit nicht-parsbarer Distanz (z.B. "Laufen/Gehen" bei Anfängern) fälschlich
+        // benachteiligt werden.
+        const kmDiff = (actualKm != null && d.plannedKm > 0) ? Math.abs(d.plannedKm - actualKm) : 0
+        // Score kombiniert beides: 1 Tag Abstand wiegt wie ca. 1,5 km Distanz-Abweichung.
+        // Ein exaktes Datum gewinnt also meist, außer die Distanz passt fundamental nicht.
+        const score = Math.abs(dist) * 1.5 + kmDiff
+        return { ...d, dist, kmDiff, score }
+      })
       .filter(d => Math.abs(d.dist) <= 3)
-      .sort((a, b) => Math.abs(a.dist) - Math.abs(b.dist))
+      .sort((a, b) => a.score - b.score)
   }
 
   const weekdayLabel = (d) => d.date.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' })
+
+  const candidateLabel = (c) => {
+    const dayPart = c.dist !== 0 ? `${c.dist > 0 ? '+' : ''}${c.dist} Tag${Math.abs(c.dist) !== 1 ? 'e' : ''}` : 'genau passend'
+    const kmPart = c.kmDiff > 0.5 ? `, Δ${c.kmDiff.toFixed(1)} km` : ''
+    return `Wo. ${c.weekN} · ${weekdayLabel(c)} · ${c.einheit} (${dayPart}${kmPart})`
+  }
 
   const assignActivity = async (activity, chosenKey) => {
     setAssigning(activity.id)
@@ -434,7 +476,7 @@ export default function PolarConnect({ user, plan }) {
                   {candidates.length === 0 && <option value="">Kein passender offener Tag gefunden</option>}
                   {candidates.map(c => (
                     <option key={c.key} value={c.key}>
-                      Wo. {c.weekN} · {weekdayLabel(c)} · {c.einheit} {c.dist !== 0 ? `(${c.dist > 0 ? '+' : ''}${c.dist} Tag${Math.abs(c.dist) !== 1 ? 'e' : ''})` : '(genau passend)'}
+                      {candidateLabel(c)}
                     </option>
                   ))}
                   <option value="extra">— Als Extra-Lauf speichern (kein Plan-Tag) —</option>
@@ -532,7 +574,7 @@ export default function PolarConnect({ user, plan }) {
                           {hCandidates.length === 0 && <option value="">Kein passender offener Tag gefunden</option>}
                           {hCandidates.map(c => (
                             <option key={c.key} value={c.key}>
-                              Wo. {c.weekN} · {weekdayLabel(c)} · {c.einheit} {c.dist !== 0 ? `(${c.dist > 0 ? '+' : ''}${c.dist} Tag${Math.abs(c.dist) !== 1 ? 'e' : ''})` : '(genau passend)'}
+                              {candidateLabel(c)}
                             </option>
                           ))}
                           <option value="extra">— Als Extra-Lauf speichern (kein Plan-Tag) —</option>
