@@ -97,6 +97,9 @@ export default function TrainingPlan({ plan, onReset, user }) {
   const [modalScreenshot, setModalScreenshot] = useState(null)
   const [modalPreview, setModalPreview] = useState(null)
   const [analyzing, setAnalyzing] = useState(false)
+  const [skipped, setSkipped] = useState({})
+  const [skipModal, setSkipModal] = useState(null)
+  const [skipReasonInput, setSkipReasonInput] = useState('')
   const fileRef = useRef()
 
   const phases = plan.phases || []
@@ -248,6 +251,13 @@ export default function TrainingPlan({ plan, onReset, user }) {
       if (user) {
         const { data } = await supabase.from('shoes').select('*').eq('user_id', user.id).order('created_at')
         if (data) setSchuhe(data)
+
+        const { data: skippedData } = await supabase.from('skipped_days').select('day_key, reason').eq('user_id', user.id)
+        if (skippedData) {
+          const skippedMap = {}
+          skippedData.forEach(s => { skippedMap[s.day_key] = { reason: s.reason || '' } })
+          setSkipped(skippedMap)
+        }
       }
     }
     load()
@@ -314,6 +324,55 @@ export default function TrainingPlan({ plan, onReset, user }) {
           done: newValue,
         }, { onConflict: 'user_id,day_key' })
       } catch (e) { console.error('Done Supabase Fehler:', e) }
+    }
+
+    // Falls der Tag zuvor übersprungen war, Skip-Status entfernen (schließen sich gegenseitig aus)
+    if (newValue && skipped[key]) {
+      await unskipDay(key)
+    }
+  }
+
+  const openSkip = (key) => {
+    setSkipReasonInput(skipped[key]?.reason || '')
+    setSkipModal(key)
+  }
+
+  const confirmSkip = async () => {
+    const key = skipModal
+    const reason = skipReasonInput.trim()
+    const ns = { ...skipped, [key]: { reason } }
+    setSkipped(ns)
+    if (user) {
+      try {
+        await supabase.from('skipped_days').upsert({
+          user_id: user.id,
+          day_key: key,
+          reason: reason || null,
+        }, { onConflict: 'user_id,day_key' })
+      } catch (e) { console.error('Skip Supabase Fehler:', e) }
+    }
+    // Falls der Tag zuvor abgehakt war, done zurücksetzen (schließen sich gegenseitig aus)
+    if (done[key]) {
+      const nd = { ...done, [key]: false }
+      await persistDone(nd)
+      if (user) {
+        try {
+          await supabase.from('training_done').upsert({ user_id: user.id, day_key: key, done: false }, { onConflict: 'user_id,day_key' })
+        } catch {}
+      }
+    }
+    setSkipModal(null)
+    setSkipReasonInput('')
+  }
+
+  const unskipDay = async (key) => {
+    const ns = { ...skipped }
+    delete ns[key]
+    setSkipped(ns)
+    if (user) {
+      try {
+        await supabase.from('skipped_days').delete().eq('user_id', user.id).eq('day_key', key)
+      } catch (e) { console.error('Unskip Supabase Fehler:', e) }
     }
   }
 
@@ -552,6 +611,30 @@ export default function TrainingPlan({ plan, onReset, user }) {
         </div>
       )}
 
+      {/* Skip Modal */}
+      {skipModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(60,30,20,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ background: 'white', borderRadius: '28px 28px 0 0', padding: '24px 24px 44px', width: '100%', maxWidth: 520, boxShadow: '0 -8px 40px rgba(255,140,105,0.2)' }}>
+            <div style={{ width: 36, height: 4, background: '#F0E8E0', borderRadius: 99, margin: '0 auto 18px' }} />
+            <h3 style={{ fontSize: 18, fontWeight: 'bold', color: '#3D2B1F', marginBottom: 8 }}>⏭ Einheit überspringen</h3>
+            <p style={{ fontSize: 13, color: '#8B6B5A', fontFamily: 'sans-serif', marginBottom: 16, lineHeight: 1.6 }}>
+              Diese Einheit wird als bewusst ausgelassen markiert. Deine Wochenanalyse wartet dann nicht mehr darauf.
+            </p>
+            <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>
+              Grund <span style={{ fontWeight: 'normal', color: '#D4C4B8', textTransform: 'none' }}>optional</span>
+            </label>
+            <textarea value={skipReasonInput} onChange={e => setSkipReasonInput(e.target.value)} placeholder="z.B. Erkältung, keine Zeit, Verletzung…" rows={2}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 14, color: '#3D2B1F', resize: 'none', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', marginBottom: 20 }} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => { setSkipModal(null); setSkipReasonInput('') }} style={{ flex: 1, padding: 14, borderRadius: 16, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>Abbrechen</button>
+              <button onClick={confirmSkip} style={{ flex: 2, padding: 14, borderRadius: 16, border: 'none', background: '#A89A88', color: 'white', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+                ⏭ Überspringen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ background: 'linear-gradient(135deg, #FF8C69 0%, #FFB347 50%, #FF6B9D 100%)', padding: '36px 20px 28px', borderRadius: '0 0 32px 32px', boxShadow: '0 8px 32px rgba(255,140,105,0.3)', position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', top: -20, right: -20, width: 120, height: 120, background: 'rgba(255,255,255,0.1)', borderRadius: '50%' }} />
@@ -645,30 +728,39 @@ export default function TrainingPlan({ plan, onReset, user }) {
                       const isDone = !!done[key]
                       const hasLog = !!logs[key]
                       const hasShot = !!screenshots[key]
-                      const s = typeStyle(day.einheit, day.optional, isDone)
+                      const isSkipped = !isDone && !!skipped[key]
+                      const s = isSkipped
+                        ? { bg: '#F5F0EA', text: '#A89A88', border: '#E0D8CC', dot: '#C4BCAE' }
+                        : typeStyle(day.einheit, day.optional, isDone)
                       const loggedSchuh = hasLog && logs[key]?.schuh_id ? schuhe.find(sh => sh.id === logs[key].schuh_id) : null
 
                       return (
-                        <div key={di} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 14, marginBottom: 8, background: s.bg, border: `1px solid ${isDone ? '#B8E4CC' : 'transparent'}`, transition: 'all 0.2s ease', opacity: day.optional ? 0.7 : 1 }}>
+                        <div key={di} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 14, marginBottom: 8, background: s.bg, border: `1px solid ${isDone ? '#B8E4CC' : isSkipped ? '#E0D8CC' : 'transparent'}`, transition: 'all 0.2s ease', opacity: day.optional ? 0.7 : isSkipped ? 0.85 : 1 }}>
                           {!day.optional ? (
-                            <button onClick={() => toggleDone(key)} style={{ width: 24, height: 24, borderRadius: '50%', border: `2px solid ${isDone ? '#5BA88A' : '#D4C4B8'}`, background: isDone ? '#5BA88A' : 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 12, flexShrink: 0, transition: 'all 0.2s ease' }}>
-                              {isDone ? '✓' : ''}
+                            <button onClick={() => toggleDone(key)} style={{ width: 24, height: 24, borderRadius: '50%', border: `2px solid ${isDone ? '#5BA88A' : isSkipped ? '#C4BCAE' : '#D4C4B8'}`, background: isDone ? '#5BA88A' : isSkipped ? '#C4BCAE' : 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 12, flexShrink: 0, transition: 'all 0.2s ease' }}>
+                              {isDone ? '✓' : isSkipped ? '⏭' : ''}
                             </button>
                           ) : <div style={{ width: 24, flexShrink: 0 }} />}
 
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                               <span style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', fontFamily: 'sans-serif', minWidth: 20 }}>{day.tag}</span>
-                              <span style={{ fontSize: 13, fontWeight: 'bold', color: isDone ? '#5BA88A' : s.text, textDecoration: isDone ? 'line-through' : 'none' }}>
+                              <span style={{ fontSize: 13, fontWeight: 'bold', color: isDone ? '#5BA88A' : isSkipped ? '#A89A88' : s.text, textDecoration: isDone || isSkipped ? 'line-through' : 'none' }}>
                                 {day.optional ? 'Optional · ' : ''}{day.einheit}
                               </span>
                               {hasLog && <span style={{ fontSize: 9, background: '#E8F5EF', color: '#5BA88A', padding: '2px 7px', borderRadius: 99, fontWeight: 'bold', border: '1px solid #B8E4CC', fontFamily: 'sans-serif' }}>📊 Geloggt</span>}
+                              {isSkipped && <span style={{ fontSize: 9, background: '#EFE9E1', color: '#A89A88', padding: '2px 7px', borderRadius: 99, fontWeight: 'bold', border: '1px solid #E0D8CC', fontFamily: 'sans-serif' }}>⏭ Übersprungen</span>}
                               {day.adjusted && <span style={{ fontSize: 9, background: '#FFF5EE', color: '#FF8C69', padding: '2px 7px', borderRadius: 99, fontWeight: 'bold', border: '1px solid #FFE0CC', fontFamily: 'sans-serif' }}>✏️ Angepasst</span>}
                             </div>
-                            <div style={{ color: isDone ? '#A8D8C0' : '#B8A090', fontSize: 11, fontFamily: 'sans-serif', marginTop: 3, lineHeight: 1.5 }}>{day.details}</div>
+                            <div style={{ color: isDone ? '#A8D8C0' : isSkipped ? '#B8AC9E' : '#B8A090', fontSize: 11, fontFamily: 'sans-serif', marginTop: 3, lineHeight: 1.5 }}>{day.details}</div>
                             {day.adjusted && day.adjustmentReason && (
                               <div style={{ fontSize: 10, color: '#FF8C69', fontFamily: 'sans-serif', marginTop: 3, fontStyle: 'italic' }}>
                                 Grund: {day.adjustmentReason}
+                              </div>
+                            )}
+                            {isSkipped && skipped[key]?.reason && (
+                              <div style={{ fontSize: 10, color: '#A89A88', fontFamily: 'sans-serif', marginTop: 3, fontStyle: 'italic' }}>
+                                Grund: {skipped[key].reason}
                               </div>
                             )}
                             {hasLog && (
@@ -684,9 +776,22 @@ export default function TrainingPlan({ plan, onReset, user }) {
                           </div>
 
                           {!day.optional && (
-                            <button onClick={() => openLog(key, day.tag, day.einheit)} style={{ flexShrink: 0, padding: '6px 12px', borderRadius: 10, border: 'none', background: hasLog ? '#E8F5EF' : 'linear-gradient(135deg,#FF8C69,#FFB347)', color: hasLog ? '#5BA88A' : 'white', fontSize: 11, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', boxShadow: hasLog ? 'none' : '0 2px 8px rgba(255,140,105,0.4)' }}>
-                              {hasLog ? '✏️' : '+ Log'}
-                            </button>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end', flexShrink: 0 }}>
+                              <button onClick={() => openLog(key, day.tag, day.einheit)} style={{ padding: '6px 12px', borderRadius: 10, border: 'none', background: hasLog ? '#E8F5EF' : 'linear-gradient(135deg,#FF8C69,#FFB347)', color: hasLog ? '#5BA88A' : 'white', fontSize: 11, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', boxShadow: hasLog ? 'none' : '0 2px 8px rgba(255,140,105,0.4)' }}>
+                                {hasLog ? '✏️' : '+ Log'}
+                              </button>
+                              {!hasLog && (
+                                isSkipped ? (
+                                  <button onClick={() => unskipDay(key)} style={{ padding: '3px 8px', borderRadius: 8, border: 'none', background: 'none', color: '#A89A88', fontSize: 10, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', textDecoration: 'underline' }}>
+                                    Rückgängig
+                                  </button>
+                                ) : (
+                                  <button onClick={() => openSkip(key)} style={{ padding: '3px 8px', borderRadius: 8, border: 'none', background: 'none', color: '#C4A882', fontSize: 10, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', textDecoration: 'underline' }}>
+                                    Überspringen
+                                  </button>
+                                )
+                              )}
+                            </div>
                           )}
                         </div>
                       )

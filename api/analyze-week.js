@@ -9,21 +9,26 @@ export default async function handler(req, res) {
 
   try {
     const loggedCount = weekLogs.filter(l => l.logged).length
+    const skippedCount = weekLogs.filter(l => l.skipped).length
     const plannedCount = plannedDays.length
-    const missedDays = plannedDays.filter(d => !weekLogs.find(l => l.key === d.key && l.logged))
+    const missedDays = plannedDays.filter(d => !weekLogs.find(l => l.key === d.key && (l.logged || l.skipped)))
 
     const logsDetail = weekLogs
       .filter(l => l.logged)
       .map(l => `- ${l.tag} ${l.einheit}: ${l.pace ? `Pace ${l.pace}` : ''} ${l.km ? `/ ${l.km}` : ''} ${l.bpm ? `/ HF ${l.bpm}` : ''} ${l.note ? `/ Notiz: "${l.note}"` : ''}`)
       .join('\n')
 
+    const skippedDetail = skippedCount > 0
+      ? `\nBewusst übersprungene Einheiten (NICHT als Versagen werten, sondern als bewusste Entscheidung respektieren):\n${weekLogs.filter(l => l.skipped).map(l => `- ${l.tag} ${l.einheit}${l.skipReason ? ` (Grund: "${l.skipReason}")` : ' (kein Grund angegeben)'}`).join('\n')}`
+      : ''
+
     const plannedDetail = plannedDays
       .map(d => `- ${d.tag} ${d.einheit}: ${d.details}`)
       .join('\n')
 
     const missedDetail = missedDays.length > 0
-      ? `Ausgefallene Einheiten:\n${missedDays.map(d => `- ${d.tag} ${d.einheit}`).join('\n')}`
-      : 'Alle Einheiten absolviert!'
+      ? `Ausgefallene Einheiten (weder geloggt noch bewusst übersprungen - hier nachfragen/sanft ansprechen):\n${missedDays.map(d => `- ${d.tag} ${d.einheit}`).join('\n')}`
+      : (skippedCount > 0 ? 'Alle übrigen Einheiten absolviert!' : 'Alle Einheiten absolviert!')
 
     const nextWeekDetail = nextWeekDays
       ? nextWeekDays.map(d => `- ${d.tag} ${d.einheit}: ${d.details}`).join('\n')
@@ -40,12 +45,10 @@ export default async function handler(req, res) {
       ? `\nAktuelle Wochenkilometer laut Profil: ${aktuelleWochenKm} km`
       : ''
     const regenContext = isRegenWeek
-      ? '
-⚡ Diese Woche war eine Regenerationswoche – niedrigerer Umfang ist normal und gewollt.'
+      ? '\n⚡ Diese Woche war eine Regenerationswoche – niedrigerer Umfang ist normal und gewollt.'
       : ''
     const nextRegenContext = nextIsRegenWeek
-      ? '
-💤 Nächste Woche ist eine Regenerationswoche – Umfang soll bewusst reduziert bleiben, keine Steigerung!'
+      ? '\n💤 Nächste Woche ist eine Regenerationswoche – Umfang soll bewusst reduziert bleiben, keine Steigerung!'
       : ''
     const schuhContext = schuhWarnung
       ? `\n⚠️ Schuhwarnung: ${schuhWarnung} – Schuhe nähern sich dem Ende ihrer Laufzeit!`
@@ -83,10 +86,11 @@ Antworte NUR mit validem JSON ohne Markdown:
 Anpassungsregeln:
 - HF dauerhaft zu hoch (mehrere Wochen) → stärker reduzieren
 - Pace zu schnell → Details anpassen, Zone 2 betonen
-- Einheiten ausgefallen → Umfang reduzieren, Regeneration
+- Einheiten ausgefallen (weder geloggt noch bewusst übersprungen) → Umfang reduzieren, Regeneration, sanft nachfragen was los war
+- Einheiten BEWUSST übersprungen (mit oder ohne Grund) → NICHT wie ein Versagen behandeln! Das war eine informierte Entscheidung der Person, keine Nachlässigkeit. Erkenne es wertschätzend an ("Gut, dass du auf deinen Körper gehört hast" bei Krankheit/Verletzung, oder einfach neutral "Diese Woche hattest du weniger Zeit" bei anderen Gründen). Bei Krankheit/Verletzung als Grund: nächste Woche vorsichtiger/konservativer steigern, nicht einfach da weitermachen wo der Plan stand. Bei anderen Gründen (Zeitmangel etc.): normal weitermachen, keine Dramatisierung.
 - Eine Woche perfekt → leichte Steigerung möglich (5-10% mehr Umfang oder leicht intensiver)
 - Mehrere Wochen perfekt → etwas mehr Steigerung (bis 10%), nächste Stufe der Periodisierung
-- Eine Woche schlecht/ausgefallen → sofort anpassen, nicht abwarten
+- Eine Woche schlecht/ausgefallen (unentschuldigt) → sofort anpassen, nicht abwarten
 
 PACE-ANPASSUNG basierend auf HF und Notizen:
 - HF bei Zone 2 Lauf zu hoch (>70% HFmax oder Notiz "Puls hoch/anstrengend") → Zone 2 Pace um 10-15 sec/km reduzieren (langsamer)
@@ -113,6 +117,7 @@ ${plannedDetail}
 
 Absolvierte Einheiten (${loggedCount}/${plannedCount}):
 ${logsDetail || 'Keine Logs vorhanden'}
+${skippedDetail}
 
 ${missedDetail}
 ${previousContext}

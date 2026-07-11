@@ -129,6 +129,15 @@ function App() {
         logs = JSON.parse(localStorage.getItem('laufplan_logs') || '{}')
       }
 
+      // Übersprungene Tage laden (bewusst ausgelassen, sollen die Analyse nicht blockieren)
+      let skipped = {}
+      try {
+        const { data: skippedData } = await supabase.from('skipped_days').select('day_key, reason').eq('user_id', user.id)
+        if (skippedData) {
+          skippedData.forEach(s => { skipped[s.day_key] = s.reason || '' })
+        }
+      } catch (e) { console.error('Skipped Days laden fehlgeschlagen:', e) }
+
       const startDate = new Date(plan.startDate || today)
       const daysSinceStart = Math.floor((today - startDate) / 86400000)
       const analyzeWeek = isLastDay ? currentWeekInPlan : currentWeekInPlan - 1
@@ -156,16 +165,21 @@ function App() {
       const weekLogs = plannedDays.map(d => ({
         ...d,
         logged: !!logs[d.key],
+        skipped: !logs[d.key] && skipped[d.key] !== undefined,
+        skipReason: skipped[d.key] || '',
         pace: logs[d.key]?.pace,
         km: logs[d.key]?.km,
         bpm: logs[d.key]?.bpm,
         note: logs[d.key]?.note,
       }))
 
-      const unloggedCount = weekLogs.filter(l => !l.logged).length
+      // Nur Tage, die WEDER geloggt NOCH bewusst übersprungen wurden, blockieren die Analyse.
+      const unloggedCount = weekLogs.filter(l => !l.logged && !l.skipped).length
 
-      // Reminder am letzten Tag
-      if (isLastDay && unloggedCount > 0) {
+      // Reminder, solange noch Logs fehlen - unabhängig davon, ob heute der letzte Tag der
+      // Woche (So) oder einer der Folgetage (Mo/Di/Mi) ist. Vorher galt das nur für Sonntag,
+      // wodurch die Analyse an Mo/Di/Mi auch mit unvollständigen Daten durchlaufen konnte.
+      if (unloggedCount > 0) {
         await supabase.from('notifications').insert({
           user_id: user.id,
           type: 'week_reminder',
