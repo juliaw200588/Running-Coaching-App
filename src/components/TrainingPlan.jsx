@@ -626,7 +626,20 @@ export default function TrainingPlan({ plan, onReset, user }) {
               Grund <span style={{ fontWeight: 'normal', color: '#D4C4B8', textTransform: 'none' }}>optional</span>
             </label>
             <textarea value={skipReasonInput} onChange={e => setSkipReasonInput(e.target.value)} placeholder="z.B. Erkältung, keine Zeit, Verletzung…" rows={2}
-              style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 14, color: '#3D2B1F', resize: 'none', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', marginBottom: 20 }} />
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 14, color: '#3D2B1F', resize: 'none', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', marginBottom: 12 }} />
+
+            {/(krank|erkält|erkalt|schnupfen|fieber|husten|grippe|infekt|hals)/i.test(skipReasonInput) && (
+              <div style={{ padding: '10px 14px', background: '#F0FAF4', border: '1px solid #B8E4CC', borderRadius: 12, fontSize: 12, color: '#5BA88A', fontFamily: 'sans-serif', lineHeight: 1.6, marginBottom: 12 }}>
+                💡 <strong>Faustregel bei Erkältung:</strong> Nur Symptome oberhalb des Halses (Schnupfen, leichtes Halskratzen)? Lockeres Laufen ist meist okay – bei Verschlechterung sofort abbrechen. Symptome unterhalb des Halses (Fieber, Gliederschmerzen, Husten, Brustschmerzen)? Dann lieber ganz pausieren, bis es abklingt.
+              </div>
+            )}
+
+            {/(verletz|schmerz|zerrung|umgeknickt|knie|sehne|muskel|zerrissen|gerissen)/i.test(skipReasonInput) && (
+              <div style={{ padding: '10px 14px', background: '#FFF5EE', border: '1px solid #FFE0CC', borderRadius: 12, fontSize: 12, color: '#C17A3A', fontFamily: 'sans-serif', lineHeight: 1.6, marginBottom: 12 }}>
+                💡 <strong>Bei einer Verletzung:</strong> Falls schmerzfrei möglich, kann Alternativtraining die Fitness erhalten, ohne die Stelle zu belasten – z.B. Schwimmen, Radfahren, Aquajogging (kein Aufprall). Bei akuten oder starken Schmerzen hat Ruhe und ggf. eine ärztliche Abklärung aber immer Vorrang.
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => { setSkipModal(null); setSkipReasonInput('') }} style={{ flex: 1, padding: 14, borderRadius: 16, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>Abbrechen</button>
               <button onClick={confirmSkip} style={{ flex: 2, padding: 14, borderRadius: 16, border: 'none', background: '#A89A88', color: 'white', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
