@@ -165,6 +165,17 @@ WICHTIG:
       })()
     : 'Keine Zielzeit – Rennstrategie: Erste 3 km sehr konservativ, dann nach Gefühl steigern.'
 
+  // Verpflegungs-/Hydrationsstrategie für den Renntag, distanzabhängig berechnet
+  const renntagFueling = goal === 'Marathon'
+    ? 'Ab ca. 45 Min alle 20-25 Min 20-30g Kohlenhydrate (Gel/Riegel/Sportgetränk), insgesamt 60-90g KH/Stunde anstreben. An jedem Verpflegungsstand trinken, bei Hitze zusätzlich Elektrolyte. Verpflegungsstrategie UNBEDINGT vorher in den langen Läufen exakt getestet haben – nichts Neues am Renntag ausprobieren!'
+    : goal === 'Halbmarathon'
+      ? 'Nach ca. 45-60 Min 1 Gel/Riegel (~25-30g KH), danach je nach Bedarf alle 30-40 Min. An Verpflegungsständen in kleinen Schlucken trinken. Verpflegungsstrategie vorher im Training testen – nichts Neues am Renntag ausprobieren!'
+      : 'Bei dieser Distanz meist keine Verpflegung während des Rennens nötig. 2-3 Std. vorher letzte kohlenhydratreiche Mahlzeit, ab 60 Min vorher nur noch trinken.'
+
+  const carbLoadingHinweis = (goal === 'Marathon' || goal === 'Halbmarathon')
+    ? 'In den letzten 2 Tagen vor dem Rennen: bewusst kohlenhydratreicher essen (Nudeln, Reis, Brot), dabei Ballaststoffe und Fett etwas reduzieren, um am Renntag Magen-Darm-Probleme zu vermeiden.'
+    : null
+
   const systemPrompt = `Du bist ein professioneller Lauftrainer mit tiefem Wissen in Sportphysiologie, Periodisierung und Verletzungsprävention. Erstelle einen wissenschaftlich fundierten, personalisierten Trainingsplan als JSON.
 
 Antworte NUR mit validem JSON, kein Markdown, keine Erklärungen.
@@ -238,6 +249,8 @@ TAPERING (letzte 2-3 Wochen):
 - Umfang um 30-40% reduzieren, Intensität BEIBEHALTEN
 - Kurze scharfe Einheiten um Beine frisch zu halten
 - 1 Woche vor Rennen: Rennstrategie-Analyse in der Details-Beschreibung: "${rennstrategie}"
+- 1 Woche vor Rennen: Verpflegungs-/Hydrationsstrategie ebenfalls in die Renntag-Vorbereitung einbauen: "${renntagFueling}"${carbLoadingHinweis ? `
+- 2 Tage vor Rennen: Carb-Loading-Hinweis in die Details der jeweiligen Einheit einbauen: "${carbLoadingHinweis}"` : ''}
 - Letzte 3 Tage: nur sehr lockere kurze Läufe oder Pause
 
 ═══════════════════════════════════════
@@ -269,7 +282,7 @@ TRAININGSPHILOSOPHIE – STRIKT EINHALTEN
 
 11. ANFÄNGER-SPEZIFISCH: Laufen/Gehen-Intervalle in Woche 1-4 (z.B. "3 min laufen, 2 min gehen × 6"). Keine Pace-Angaben, nur Zeitangaben und Gefühlsangaben.
 
-12. RENNSTRATEGIE: In der letzten Woche vor dem Renntag in der Einheit "Renntag-Vorbereitung" die konkrete Strategie einbauen: "${rennstrategie}"
+12. RENNSTRATEGIE: In der letzten Woche vor dem Renntag in der Einheit "Renntag-Vorbereitung" die konkrete Strategie einbauen: "${rennstrategie}" Zusätzlich die Verpflegungs-/Hydrationsstrategie ergänzen: "${renntagFueling}"${carbLoadingHinweis ? ` Außerdem 2 Tage vorher einen Carb-Loading-Hinweis einbauen: "${carbLoadingHinweis}"` : ''}
 
 13. KEINE FAHRTSPIELE – nur Intervalle oder Tempodauerläufe.
 
@@ -289,6 +302,8 @@ TRAININGSPHILOSOPHIE – STRIKT EINHALTEN
 - Strides: immer in METERN (z.B. "6×80m Strides")
 
 MERKE: Nur lockere Läufe und Aufwärmen/Auslaufen in Minuten – alles andere in km oder Metern!
+
+17. VERPFLEGUNG BEI LANGEN LÄUFEN: Bei jedem "Langer Lauf" ab 12 km bzw. ab ca. 75 Minuten IMMER einen kurzen Verpflegungs-/Hydrationshinweis ans Ende der Details anhängen, z.B. "Ab 60 Min: alle 20-25 Min ca. 20-30g Kohlenhydrate (Gel/Riegel) + regelmäßig trinken (150-250ml alle 15-20 Min)". Bei kürzeren Läufen (unter 12 km) NICHT nötig, da unnötige Zusatzinfo die Details überladen würde. Dient auch dazu, die Renntag-Verpflegungsstrategie vorher im Training zu testen.
 
 ═══════════════════════════════════════
 NIVEAU-SPEZIFISCHE ANPASSUNGEN
