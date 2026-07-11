@@ -5,7 +5,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { name, zielTyp, niveau, goal, goalTime, previousTime, startDate, weeksUntilRace, runsPerWeek, alter, aktuelleWochenKm, verletzungen, maxHF, geschlecht, wohnort } = req.body
+  const { name, zielTyp, niveau, goal, goalTime, previousTime, startDate, weeksUntilRace, runsPerWeek, alter, aktuelleWochenKm, verletzungen, maxHF, ruheHF, geschlecht, wohnort } = req.body
 
   const zielBeschreibung = {
     rennen: 'hat ein bevorstehendes Rennen und möchte sich gezielt darauf vorbereiten',
@@ -123,8 +123,18 @@ WICHTIG:
 - Renntempo-Einheiten erst in der spezifischen Phase einführen`
   }
 
+  const ruheHFNum = ruheHF ? parseInt(ruheHF) : null
+
+  // Karvonen-Methode (Herzfrequenzreserve): Zielwert = (HFmax - Ruhe-HF) × Intensität + Ruhe-HF.
+  // Präziser als reine %HFmax-Zonen, weil sie die individuelle Fitness (niedrige Ruhe-HF bei
+  // gut Trainierten) mit einbezieht. Nur nutzbar, wenn beide Werte vorliegen - sonst Fallback
+  // auf die einfache %HFmax-Methode.
+  const karvonenZone = (pct) => Math.round((hfMax - ruheHFNum) * pct + ruheHFNum)
+
   const hfInfo = hfMax
-    ? `Maximale Herzfrequenz: ${hfMax} bpm. Zone 1: <${Math.round(hfMax*0.6)} bpm, Zone 2: ${Math.round(hfMax*0.6)}-${Math.round(hfMax*0.7)} bpm, Zone 3: ${Math.round(hfMax*0.7)}-${Math.round(hfMax*0.8)} bpm, Zone 4: ${Math.round(hfMax*0.8)}-${Math.round(hfMax*0.9)} bpm, Zone 5: >${Math.round(hfMax*0.9)} bpm`
+    ? (ruheHFNum
+        ? `Maximale Herzfrequenz: ${hfMax} bpm, Ruhe-Herzfrequenz: ${ruheHFNum} bpm (Herzfrequenzreserve-Methode/Karvonen genutzt - präziser als reine %HFmax-Zonen). Zone 1: <${karvonenZone(0.6)} bpm, Zone 2: ${karvonenZone(0.6)}-${karvonenZone(0.7)} bpm, Zone 3: ${karvonenZone(0.7)}-${karvonenZone(0.8)} bpm, Zone 4: ${karvonenZone(0.8)}-${karvonenZone(0.9)} bpm, Zone 5: >${karvonenZone(0.9)} bpm`
+        : `Maximale Herzfrequenz: ${hfMax} bpm (keine Ruhe-HF angegeben, einfache %HFmax-Methode). Zone 1: <${Math.round(hfMax*0.6)} bpm, Zone 2: ${Math.round(hfMax*0.6)}-${Math.round(hfMax*0.7)} bpm, Zone 3: ${Math.round(hfMax*0.7)}-${Math.round(hfMax*0.8)} bpm, Zone 4: ${Math.round(hfMax*0.8)}-${Math.round(hfMax*0.9)} bpm, Zone 5: >${Math.round(hfMax*0.9)} bpm`)
     : 'Keine HF-Angabe – Pace und Gefühlsangaben nutzen (Unterhaltungstempo für Zone 2)'
 
   const geschlechtInfo = geschlecht === 'w' ? 'Weiblich' : geschlecht === 'm' ? 'Männlich' : 'Divers/nicht angegeben'

@@ -5,7 +5,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { weekLogs, plannedDays, weekNumber, plan, nextWeekDays, previousAnalyses, schuhWarnung, isRegenWeek, nextIsRegenWeek, currentHFMax, aktuelleWochenKm } = req.body
+  const { weekLogs, plannedDays, weekNumber, plan, nextWeekDays, previousAnalyses, schuhWarnung, isRegenWeek, nextIsRegenWeek, currentHFMax, currentRuheHF, aktuelleWochenKm } = req.body
 
   try {
     const loggedCount = weekLogs.filter(l => l.logged).length
@@ -15,7 +15,7 @@ export default async function handler(req, res) {
 
     const logsDetail = weekLogs
       .filter(l => l.logged)
-      .map(l => `- ${l.tag} ${l.einheit}: ${l.pace ? `Pace ${l.pace}` : ''} ${l.km ? `/ ${l.km}` : ''} ${l.bpm ? `/ HF ${l.bpm}` : ''} ${l.note ? `/ Notiz: "${l.note}"` : ''}`)
+      .map(l => `- ${l.tag} ${l.einheit}: ${l.pace ? `Pace ${l.pace}` : ''} ${l.km ? `/ ${l.km}` : ''} ${l.bpm ? `/ HF ${l.bpm}` : ''}${l.running_index ? ` / Running Index ${l.running_index}` : ''}${l.cadence ? ` / Kadenz ${l.cadence} spm` : ''} ${l.note ? `/ Notiz: "${l.note}"` : ''}`)
       .join('\n')
 
     const skippedDetail = skippedCount > 0
@@ -38,8 +38,11 @@ export default async function handler(req, res) {
       ? `\nVorherige Wochen (Kontext):\n${previousAnalyses.map(a => `- Woche ${a.week_number}: ${a.analysis} → ${a.next_week_adjustment || 'keine Anpassung'}`).join('\n')}`
       : ''
 
+    const karvonenZone = (pct) => Math.round((currentHFMax - currentRuheHF) * pct + currentRuheHF)
     const hfContext = currentHFMax
-      ? `\nAktuelle maximale Herzfrequenz: ${currentHFMax} bpm. Zone 2: ${Math.round(currentHFMax*0.6)}-${Math.round(currentHFMax*0.7)} bpm, Zone 4: ${Math.round(currentHFMax*0.8)}-${Math.round(currentHFMax*0.9)} bpm`
+      ? (currentRuheHF
+          ? `\nAktuelle maximale Herzfrequenz: ${currentHFMax} bpm, Ruhe-HF: ${currentRuheHF} bpm (Herzfrequenzreserve-Methode). Zone 2: ${karvonenZone(0.6)}-${karvonenZone(0.7)} bpm, Zone 4: ${karvonenZone(0.8)}-${karvonenZone(0.9)} bpm`
+          : `\nAktuelle maximale Herzfrequenz: ${currentHFMax} bpm. Zone 2: ${Math.round(currentHFMax*0.6)}-${Math.round(currentHFMax*0.7)} bpm, Zone 4: ${Math.round(currentHFMax*0.8)}-${Math.round(currentHFMax*0.9)} bpm`)
       : ''
     const kmContext = aktuelleWochenKm
       ? `\nAktuelle Wochenkilometer laut Profil: ${aktuelleWochenKm} km`
@@ -85,6 +88,7 @@ Antworte NUR mit validem JSON ohne Markdown:
 
 Anpassungsregeln:
 - HF dauerhaft zu hoch (mehrere Wochen) → stärker reduzieren
+- Running Index über mehrere Wochen steigend → objektives Zeichen für Fitnessfortschritt, positiv erwähnen, auch wenn sich die Person selbst unsicher fühlt. Fallend oder stagnierend über mehrere Wochen bei hohem Trainingsumfang → möglicher Hinweis auf Übertraining, in der Analyse ansprechen und ggf. mehr Erholung einbauen
 - Pace zu schnell → Details anpassen, Zone 2 betonen
 - Einheiten ausgefallen (weder geloggt noch bewusst übersprungen) → Umfang reduzieren, Regeneration, sanft nachfragen was los war
 - Einheiten BEWUSST übersprungen (mit oder ohne Grund) → NICHT wie ein Versagen behandeln! Das war eine informierte Entscheidung der Person, keine Nachlässigkeit. Erkenne es wertschätzend an ("Gut, dass du auf deinen Körper gehört hast" bei Krankheit/Verletzung, oder einfach neutral "Diese Woche hattest du weniger Zeit" bei anderen Gründen). Bei Krankheit/Verletzung als Grund: nächste Woche vorsichtiger/konservativer steigern, nicht einfach da weitermachen wo der Plan stand. Bei anderen Gründen (Zeitmangel etc.): normal weitermachen, keine Dramatisierung.

@@ -34,6 +34,25 @@ function mapExercise(ex, exerciseId) {
       })()
     : null
 
+  // Running Index & Cadence: Feldnamen noch nicht 100% verifiziert (im Gegensatz zu
+  // pace/duration). Versucht mehrere plausible Varianten, bricht bei keinem Treffer
+  // nicht ab, sondern loggt die komplette Rohantwort - damit wir die echten Feldnamen
+  // beim nächsten echten Sync in den Vercel-Logs ablesen und ggf. korrigieren können.
+  const runningIndex = ex['running-index']?.score
+    ?? ex['running-index']
+    ?? ex.runningIndex
+    ?? ex['training-load-pro']?.['running-index']
+    ?? null
+  const cadence = ex['average-cadence']
+    ?? ex.cadence
+    ?? ex['running-cadence']
+    ?? ex['average-running-cadence']
+    ?? null
+
+  if (runningIndex == null && cadence == null) {
+    console.log('[Polar mapExercise] Running Index/Cadence nicht gefunden. Rohes Exercise-Objekt:', JSON.stringify(ex).slice(0, 2000))
+  }
+
   return {
     polar_exercise_id: exerciseId,
     datum: ex['start-time']?.split('T')[0] || null,
@@ -43,6 +62,8 @@ function mapExercise(ex, exerciseId) {
     kalorien: ex.calories != null ? String(ex.calories) : null,
     dauer: durationMin ? `${durationMin} min` : null,
     sport: ex.sport || null,
+    running_index: runningIndex != null ? String(runningIndex) : null,
+    cadence: cadence != null ? String(cadence) : null,
   }
 }
 

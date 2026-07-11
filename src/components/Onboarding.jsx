@@ -42,7 +42,7 @@ export default function Onboarding({ onPlanGenerated }) {
     goal: '', goalTime: '', previousTime: '',
     startDate: new Date().toISOString().split('T')[0],
     weeksUntilRace: 12, runsPerWeek: 3,
-    alter: '', aktuelleWochenKm: '', verletzungen: '', maxHF: '', geschlecht: '', wohnort: '',
+    alter: '', aktuelleWochenKm: '', verletzungen: '', maxHF: '', ruheHF: '', geschlecht: '', wohnort: '',
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -83,19 +83,17 @@ export default function Onboarding({ onPlanGenerated }) {
   const showZeiten = form.zielTyp !== 'starten' && form.goal
   const zeiten = zeitenConfig[form.goal]?.[form.niveau] || { zielzeit: 'z.B. 2:05', bisherige: 'z.B. 2:20' }
 
-  // HFmax berechnen nach Geschlecht
   const berechneteHF = form.alter
     ? form.geschlecht === 'w'
       ? Math.round(206 - 0.88 * parseInt(form.alter))
       : form.geschlecht === 'm'
         ? Math.round(220 - parseInt(form.alter))
-        : Math.round(208 - 0.7 * parseInt(form.alter)) // geschlechtsneutral
+        : Math.round(208 - 0.7 * parseInt(form.alter))
     : null
 
   return (
     <div style={{ fontFamily: "'Georgia', 'Times New Roman', serif", background: 'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 50%, #FFF0F5 100%)', minHeight: '100vh' }}>
 
-      {/* Header */}
       <div style={{ background: 'linear-gradient(135deg, #FF8C69 0%, #FFB347 50%, #FF6B9D 100%)', padding: '44px 24px 36px', borderRadius: '0 0 40px 40px', boxShadow: '0 8px 32px rgba(255,140,105,0.3)', position: 'relative', overflow: 'hidden', textAlign: 'center' }}>
         <div style={{ position: 'absolute', top: -30, right: -30, width: 160, height: 160, background: 'rgba(255,255,255,0.08)', borderRadius: '50%' }} />
         <div style={{ position: 'absolute', bottom: -40, left: 20, width: 100, height: 100, background: 'rgba(255,255,255,0.06)', borderRadius: '50%' }} />
@@ -103,7 +101,6 @@ export default function Onboarding({ onPlanGenerated }) {
         <h1 style={{ color: 'white', fontSize: 26, fontWeight: 'bold', margin: '0 0 4px', textShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>Run Coaching</h1>
         <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, margin: '0 0 16px', fontFamily: 'sans-serif' }}>Dein persönlicher Trainingsplan</p>
 
-        {/* Step indicator */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'white', color: '#FF8C69', fontSize: 13, fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'sans-serif' }}>1</div>
           <div style={{ width: 40, height: 2, background: step === 2 ? 'white' : 'rgba(255,255,255,0.3)', borderRadius: 1, transition: 'background 0.3s' }} />
@@ -113,7 +110,6 @@ export default function Onboarding({ onPlanGenerated }) {
 
       <div style={{ maxWidth: 460, margin: '0 auto', padding: '24px 20px 40px' }}>
 
-        {/* ── STEP 1 ── */}
         {step === 1 && (
           <div style={{ background: 'white', borderRadius: 24, padding: 24, boxShadow: '0 4px 32px rgba(255,140,105,0.12)', border: '1px solid #FFE8D8' }}>
 
@@ -158,11 +154,9 @@ export default function Onboarding({ onPlanGenerated }) {
           </div>
         )}
 
-        {/* ── STEP 2 ── */}
         {step === 2 && (
           <div style={{ background: 'white', borderRadius: 24, padding: 24, boxShadow: '0 4px 32px rgba(255,140,105,0.12)', border: '1px solid #FFE8D8' }}>
 
-            {/* Zusammenfassung Step 1 */}
             <div style={{ marginBottom: 22, padding: '12px 16px', background: '#FFF5F0', borderRadius: 14, border: '1px solid #FFE0CC', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ fontFamily: 'sans-serif', fontSize: 13, color: '#8B6B5A' }}>
                 <span style={{ fontWeight: 'bold', color: '#FF8C69' }}>{form.name}</span>
@@ -173,7 +167,6 @@ export default function Onboarding({ onPlanGenerated }) {
               <button onClick={() => setStep(1)} style={{ background: 'none', border: 'none', color: '#C4A882', cursor: 'pointer', fontSize: 12, fontFamily: 'sans-serif' }}>✏️</button>
             </div>
 
-            {/* Distanz */}
             {showDistanz && (
               <div style={{ marginBottom: 18 }}>
                 <label style={labelStyle}>Renndistanz</label>
@@ -188,7 +181,6 @@ export default function Onboarding({ onPlanGenerated }) {
               </div>
             )}
 
-            {/* Zeiten */}
             {showZeiten && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 18 }}>
                 <div>
@@ -210,7 +202,6 @@ export default function Onboarding({ onPlanGenerated }) {
               </div>
             )}
 
-            {/* Geschlecht */}
             <div style={{ marginBottom: 18 }}>
               <label style={labelStyle}>Geschlecht <span style={optLabel}>optional</span></label>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -227,7 +218,6 @@ export default function Onboarding({ onPlanGenerated }) {
               </div>
             </div>
 
-            {/* Alter & HF */}
             <div style={{ marginBottom: 18 }}>
               <label style={labelStyle}>Alter <span style={optLabel}>optional</span></label>
               <input style={inputStyle} type="number" placeholder="z.B. 32" value={form.alter}
@@ -244,7 +234,6 @@ export default function Onboarding({ onPlanGenerated }) {
               )}
             </div>
 
-            {/* Max HF nur für Fortgeschritten/Erfahren */}
             {(form.niveau === 'Fortgeschritten' || form.niveau === 'Erfahren') && (
               <div style={{ marginBottom: 18 }}>
                 <label style={labelStyle}>Max. HF (bpm) <span style={optLabel}>optional</span></label>
@@ -256,28 +245,33 @@ export default function Onboarding({ onPlanGenerated }) {
               </div>
             )}
 
-            {/* HF Hinweis */}
+            <div style={{ marginBottom: 18 }}>
+              <label style={labelStyle}>Ruhe-Herzfrequenz (bpm) <span style={optLabel}>optional</span></label>
+              <input style={inputStyle} type="number" placeholder="z.B. 55" value={form.ruheHF}
+                onChange={e => setForm({ ...form, ruheHF: e.target.value })} />
+              <div style={{ fontSize: 11, color: '#D4C4B8', fontFamily: 'sans-serif', marginTop: 6 }}>
+                Direkt nach dem Aufwachen gemessen, oder aus deiner Sportuhr. Macht die HF-Zonen deutlich genauer.
+              </div>
+            </div>
+
             {!form.alter && !form.maxHF && (
               <div style={{ marginBottom: 18, padding: '10px 14px', background: '#FFF5EE', border: '1px solid #FFE0CC', borderRadius: 12, fontSize: 12, color: '#C17A3A', fontFamily: 'sans-serif', lineHeight: 1.6 }}>
                 💡 <strong>Tipp:</strong> Mit Alter oder maximaler Herzfrequenz wird dein Plan noch präziser – die Einheiten werden dann mit individuellen Herzfrequenzzonen (Zone 1–5) ergänzt, statt nur nach Pace. Beides ist optional.
               </div>
             )}
 
-            {/* Wochenkilometer */}
             <div style={{ marginBottom: 18 }}>
               <label style={labelStyle}>Aktuelle Wochenkilometer <span style={optLabel}>optional</span></label>
               <input style={inputStyle} type="number" placeholder="z.B. 20 km pro Woche" value={form.aktuelleWochenKm}
                 onChange={e => setForm({ ...form, aktuelleWochenKm: e.target.value })} />
             </div>
 
-            {/* Verletzungen */}
             <div style={{ marginBottom: 18 }}>
               <label style={labelStyle}>Verletzungsgeschichte <span style={optLabel}>optional</span></label>
               <input style={inputStyle} placeholder="z.B. Knieprobleme, Achillessehne..." value={form.verletzungen}
                 onChange={e => setForm({ ...form, verletzungen: e.target.value })} />
             </div>
 
-            {/* Startdatum */}
             <div style={{ marginBottom: 18 }}>
               <label style={labelStyle}>Startdatum des Plans</label>
               <input type="date" style={{ ...inputStyle, cursor: 'pointer' }}
@@ -285,7 +279,6 @@ export default function Onboarding({ onPlanGenerated }) {
                 onChange={e => setForm({ ...form, startDate: e.target.value })} />
             </div>
 
-            {/* Planlänge */}
             <div style={{ marginBottom: 18 }}>
               <label style={labelStyle}>Wie lange soll dein Plan gehen?</label>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -298,7 +291,6 @@ export default function Onboarding({ onPlanGenerated }) {
               </div>
             </div>
 
-            {/* Läufe pro Woche */}
             <div style={{ marginBottom: 26 }}>
               <label style={labelStyle}>Läufe pro Woche</label>
               <div style={{ display: 'flex', gap: 8 }}>

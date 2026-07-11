@@ -274,6 +274,8 @@ export default function PolarConnect({ user, plan }) {
           note: 'Extra-Lauf, automatisch von Polar importiert (kein Plan-Tag)',
           schuh_id: schuhId,
           actual_date: activity.datum || null,
+          running_index: activity.running_index || null,
+          cadence: activity.cadence || null,
         }, { onConflict: 'user_id,day_key' })
       } else {
         await supabase.from('logs').upsert({
@@ -285,6 +287,8 @@ export default function PolarConnect({ user, plan }) {
           note: 'Automatisch von Polar synchronisiert',
           schuh_id: schuhId,
           actual_date: activity.datum || null,
+          running_index: activity.running_index || null,
+          cadence: activity.cadence || null,
         }, { onConflict: 'user_id,day_key' })
         await supabase.from('training_done').upsert({
           user_id: user.id,
@@ -359,6 +363,8 @@ export default function PolarConnect({ user, plan }) {
           note: 'Extra-Lauf, aus Polar-Verlauf nachgetragen (kein Plan-Tag)',
           schuh_id: schuhId,
           actual_date: activity.datum || null,
+          running_index: activity.running_index || null,
+          cadence: activity.cadence || null,
         }, { onConflict: 'user_id,day_key' })
       } else {
         await supabase.from('logs').upsert({
@@ -370,6 +376,8 @@ export default function PolarConnect({ user, plan }) {
           note: 'Aus Polar-Verlauf nachgetragen',
           schuh_id: schuhId,
           actual_date: activity.datum || null,
+          running_index: activity.running_index || null,
+          cadence: activity.cadence || null,
         }, { onConflict: 'user_id,day_key' })
         await supabase.from('training_done').upsert({
           user_id: user.id,
@@ -473,6 +481,8 @@ export default function PolarConnect({ user, plan }) {
                   {a.pace && <span style={{ fontSize: 11, background: '#E8F0FF', color: '#4060C0', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>⏱ {a.pace}</span>}
                   {a.herzfrequenz && <span style={{ fontSize: 11, background: '#FDECEA', color: '#B85464', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>❤️ {a.herzfrequenz}</span>}
                   {a.kalorien && <span style={{ fontSize: 11, background: '#F0FAF4', color: '#5BA88A', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>🔥 {a.kalorien} kcal</span>}
+                  {a.running_index && <span style={{ fontSize: 11, background: '#F5F0FF', color: '#A78BCA', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>🏃 RI {a.running_index}</span>}
+                  {a.cadence && <span style={{ fontSize: 11, background: '#E8F5EF', color: '#3D8B6E', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>👣 {a.cadence} spm</span>}
                 </div>
 
                 <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>
@@ -570,6 +580,8 @@ export default function PolarConnect({ user, plan }) {
                       {a.distanz && <span style={{ fontSize: 11, background: '#FFF0E6', color: '#C17A3A', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>📍 {a.distanz}</span>}
                       {a.pace && <span style={{ fontSize: 11, background: '#E8F0FF', color: '#4060C0', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>⏱ {a.pace}</span>}
                       {a.herzfrequenz && <span style={{ fontSize: 11, background: '#FDECEA', color: '#B85464', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>❤️ {a.herzfrequenz}</span>}
+                      {a.running_index && <span style={{ fontSize: 11, background: '#F5F0FF', color: '#A78BCA', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>🏃 RI {a.running_index}</span>}
+                      {a.cadence && <span style={{ fontSize: 11, background: '#E8F5EF', color: '#3D8B6E', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>👣 {a.cadence} spm</span>}
                     </div>
 
                     {alreadyAssigned ? (

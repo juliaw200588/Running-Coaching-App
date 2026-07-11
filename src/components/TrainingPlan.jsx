@@ -179,7 +179,9 @@ export default function TrainingPlan({ plan, onReset, user }) {
                 km: l.km || '',
                 bpm: l.bpm || '',
                 note: l.note || '',
-                schuh_id: l.schuh_id || ''
+                schuh_id: l.schuh_id || '',
+                running_index: l.running_index || '',
+                cadence: l.cadence || '',
               }
             })
             setLogs(logMap)
@@ -769,6 +771,8 @@ export default function TrainingPlan({ plan, onReset, user }) {
                                 {logs[key]?.pace && <span style={{ fontSize: 10, background: '#E8F0FF', color: '#4060C0', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>⏱ {logs[key].pace}</span>}
                                 {logs[key]?.km && <span style={{ fontSize: 10, background: '#FFF0E6', color: '#C17A3A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>📍 {logs[key].km}</span>}
                                 {logs[key]?.bpm && <span style={{ fontSize: 10, background: '#FDECEA', color: '#B85464', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>❤️ {logs[key].bpm}</span>}
+                                {logs[key]?.running_index && <span style={{ fontSize: 10, background: '#F5F0FF', color: '#A78BCA', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>🏃 RI {logs[key].running_index}</span>}
+                                {logs[key]?.cadence && <span style={{ fontSize: 10, background: '#E8F5EF', color: '#3D8B6E', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>👣 {logs[key].cadence} spm</span>}
                                 {loggedSchuh && <span style={{ fontSize: 10, background: '#FFF5EE', color: '#C17A3A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>👟 {loggedSchuh.marke} {loggedSchuh.modell}</span>}
                                 {logs[key]?.note && <span style={{ fontSize: 10, background: '#F5EDE8', color: '#8B6B5A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>💬 {logs[key].note.slice(0, 30)}{logs[key].note.length > 30 ? '…' : ''}</span>}
                               </div>

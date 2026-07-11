@@ -120,7 +120,7 @@ function App() {
         const { data: supaLogs } = await supabase.from('logs').select('*').eq('user_id', user.id)
         if (supaLogs && supaLogs.length > 0) {
           supaLogs.forEach(l => {
-            logs[l.day_key] = { pace: l.pace || '', km: l.km || '', bpm: l.bpm || '', note: l.note || '' }
+            logs[l.day_key] = { pace: l.pace || '', km: l.km || '', bpm: l.bpm || '', note: l.note || '', running_index: l.running_index || '', cadence: l.cadence || '' }
           })
         } else {
           logs = JSON.parse(localStorage.getItem('laufplan_logs') || '{}')
@@ -171,6 +171,8 @@ function App() {
         km: logs[d.key]?.km,
         bpm: logs[d.key]?.bpm,
         note: logs[d.key]?.note,
+        running_index: logs[d.key]?.running_index,
+        cadence: logs[d.key]?.cadence,
       }))
 
       // Nur Tage, die WEDER geloggt NOCH bewusst übersprungen wurden, blockieren die Analyse.
@@ -244,6 +246,8 @@ function App() {
           nextWeekDays,
           previousAnalyses: previousAnalyses || [],
           schuhWarnung: schuhWarnung || null,
+          currentHFMax: currentHFMax || null,
+          currentRuheHF: currentProfile?.ruhe_hf || null,
         })
       })
 
