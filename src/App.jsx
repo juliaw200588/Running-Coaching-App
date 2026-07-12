@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase.js'
 import Auth from './components/Auth.jsx'
 import Onboarding from './components/Onboarding.jsx'
@@ -16,6 +16,7 @@ function App() {
   const [showNotifications, setShowNotifications] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [loadingAuth, setLoadingAuth] = useState(true)
+  const weeklyCheckKeyRef = useRef(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -101,6 +102,16 @@ function App() {
     const lastAnalysis = localStorage.getItem(lastAnalysisKey)
 
     if (lastAnalysis === String(currentWeekInPlan)) return
+
+    // Sperre gegen parallele Durchläufe: user/plan können beim Laden mehrfach mit neuen
+    // Objekt-Referenzen gesetzt werden (z.B. durch getSession() UND onAuthStateChange()),
+    // wodurch dieser Effect mehrfach kurz hintereinander feuert, bevor der erste Durchlauf
+    // fertig ist. Ohne synchrone Sperre können dadurch mehrere identische Erinnerungen
+    // gleichzeitig verschickt werden. Der Schlüssel ist pro User+Woche+Tagesart eindeutig,
+    // ein echter Wochenwechsel oder Nutzerwechsel darf also trotzdem neu prüfen.
+    const runKey = `${user.id}_${currentWeekInPlan}_${isLastDay ? 'last' : 'next'}`
+    if (weeklyCheckKeyRef.current === runKey) return
+    weeklyCheckKeyRef.current = runKey
 
     runWeeklyCheck(user, plan, today, currentWeekInPlan, lastAnalysisKey, isLastDay)
   }, [user, plan])
