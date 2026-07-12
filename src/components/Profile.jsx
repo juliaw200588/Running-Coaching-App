@@ -251,15 +251,16 @@ export default function Profile({ user, onClose, plan }) {
           </div>
 
           {/* Tabs */}
-          <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
-            {TABS.map(tab => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                style={{ flex: 1, padding: '10px', borderRadius: 12, border: activeTab === tab.id ? '2px solid #FF8C69' : '1.5px solid #F0E8E0', background: activeTab === tab.id ? '#FFF5F0' : 'white', color: activeTab === tab.id ? '#FF8C69' : '#B8A090', fontSize: 13, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', transition: 'all 0.2s' }}>
-                {tab.icon} {tab.label}
-              </button>
-            ))}
+          <div style={{ overflowX: 'auto', marginBottom: 4, WebkitOverflowScrolling: 'touch' }}>
+            <div style={{ display: 'flex', gap: 6, minWidth: 'max-content' }}>
+              {TABS.map(tab => (
+                <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                  style={{ padding: '10px 14px', borderRadius: 12, border: activeTab === tab.id ? '2px solid #FF8C69' : '1.5px solid #F0E8E0', background: activeTab === tab.id ? '#FFF5F0' : 'white', color: activeTab === tab.id ? '#FF8C69' : '#B8A090', fontSize: 13, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', transition: 'all 0.2s', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                  {tab.icon} {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
 
         {/* Scrollbarer Inhalt */}
         <div style={{ overflowY: 'auto', padding: '16px 24px 40px', flex: 1 }}>
