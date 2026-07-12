@@ -179,15 +179,26 @@ function App() {
       const unloggedCount = weekLogs.filter(l => !l.logged && !l.skipped).length
 
       // Reminder, solange noch Logs fehlen - unabhängig davon, ob heute der letzte Tag der
-      // Woche (So) oder einer der Folgetage (Mo/Di/Mi) ist. Vorher galt das nur für Sonntag,
-      // wodurch die Analyse an Mo/Di/Mi auch mit unvollständigen Daten durchlaufen konnte.
+      // Woche (So) oder einer der Folgetage (Mo/Di/Mi) ist. Höchstens EINE Erinnerung pro Tag,
+      // sonst würde bei jedem erneuten Öffnen der App eine neue Benachrichtigung verschickt.
       if (unloggedCount > 0) {
+        const reminderDedupKey = `last_week_reminder_${user.id}`
+        // Lokales Datum bauen statt toISOString() (das würde in Zeitzonen wie Deutschland
+        // um einen Tag verschieben können - siehe frühere Polar-Datumsbugs).
+        const todayLocalStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+        const lastReminderDate = localStorage.getItem(reminderDedupKey)
+
+        if (lastReminderDate === todayLocalStr) {
+          return // heute schon erinnert, nicht nochmal
+        }
+
         await supabase.from('notifications').insert({
           user_id: user.id,
           type: 'week_reminder',
           message: `⏰ Woche ${currentWeek.n}: Noch ${unloggedCount} Lauf${unloggedCount > 1 ? 'e' : ''} nicht eingetragen – trag sie ein für deine Wochenanalyse!`,
           from_user_id: user.id,
         })
+        localStorage.setItem(reminderDedupKey, todayLocalStr)
         setUnreadCount(prev => prev + 1)
         return
       }
