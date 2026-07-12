@@ -261,6 +261,7 @@ export default function Profile({ user, onClose, plan }) {
               ))}
             </div>
           </div>
+          </div>
 
         {/* Scrollbarer Inhalt */}
         <div style={{ overflowY: 'auto', padding: '16px 24px 40px', flex: 1 }}>
