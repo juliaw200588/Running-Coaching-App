@@ -89,11 +89,45 @@ export default function Laeufe({ user, plan }) {
   const [saving, setSaving] = useState(false)
   const [calMonth, setCalMonth] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState(null)
+  const [detailRun, setDetailRun] = useState(null)
+  const [routeMapUrl, setRouteMapUrl] = useState(null)
+  const [routeMapLoading, setRouteMapLoading] = useState(false)
+  const [routeMapError, setRouteMapError] = useState(null)
 
   const planDays = plan ? getPlanDayDates(plan) : []
   const planDayByKey = (key) => planDays.find(d => d.key === key)
 
   useEffect(() => { loadAll() }, [user, plan])
+
+  useEffect(() => {
+    if (!detailRun) {
+      setRouteMapUrl(null)
+      setRouteMapError(null)
+      return
+    }
+    if (detailRun.routeMapUrl) {
+      setRouteMapUrl(detailRun.routeMapUrl)
+      return
+    }
+    if (!detailRun.polarExerciseId || !detailRun.logId || !user) {
+      setRouteMapUrl(null)
+      return
+    }
+    setRouteMapLoading(true)
+    setRouteMapError(null)
+    fetch('/api/polar/route-map', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: user.id, logId: detailRun.logId }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.url) setRouteMapUrl(data.url)
+        else setRouteMapError(data.error || 'Keine Route verfügbar')
+      })
+      .catch(() => setRouteMapError('Kartenbild konnte nicht geladen werden'))
+      .finally(() => setRouteMapLoading(false))
+  }, [detailRun, user])
 
   const loadAll = async () => {
     setLoading(true)
@@ -312,10 +346,18 @@ export default function Laeufe({ user, plan }) {
             </div>
           </>
         ) : (
-          <button onClick={() => { setReassigning(run.id); setReassignSelections(p => ({ ...p, [run.id]: undefined })) }}
-            style={{ width: '100%', padding: '8px', borderRadius: 10, border: '1.5px solid #F0E0D0', background: 'white', color: '#8B7355', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
-            {run.status === 'pending' ? 'Zuordnen' : 'Neu zuordnen'}
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {run.logId && (
+              <button onClick={() => setDetailRun(run)}
+                style={{ padding: '8px 14px', borderRadius: 10, border: '1.5px solid #F0E0D0', background: 'white', color: '#B8A090', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', whiteSpace: 'nowrap' }}>
+                Details →
+              </button>
+            )}
+            <button onClick={() => { setReassigning(run.id); setReassignSelections(p => ({ ...p, [run.id]: undefined })) }}
+              style={{ flex: 1, padding: '8px', borderRadius: 10, border: '1.5px solid #F0E0D0', background: 'white', color: '#8B7355', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+              {run.status === 'pending' ? 'Zuordnen' : 'Neu zuordnen'}
+            </button>
+          </div>
         )}
       </div>
     )
@@ -405,6 +447,74 @@ export default function Laeufe({ user, plan }) {
           {selectedRuns.map(run => <RunCard key={run.id} run={run} />)}
         </div>
       )}
+
+      {detailRun && (() => {
+        const d = detailRun
+        const rows = [
+          { icon: '🕐', label: 'Uhrzeit', value: d.uhrzeit },
+          { icon: '⏱', label: 'Pace', value: d.pace },
+          { icon: '📍', label: 'Distanz', value: d.km },
+          { icon: '❤️', label: 'Ø Herzfrequenz', value: d.bpm },
+          { icon: '💓', label: 'Max. Herzfrequenz', value: d.hfMax ? `${d.hfMax} bpm` : null },
+          { icon: '⛰️', label: 'Höhenmeter', value: d.hoehenmeter ? `${d.hoehenmeter} m` : null },
+          { icon: '🏃', label: 'Running Index', value: d.runningIndex },
+          { icon: '👣', label: 'Kadenz', value: d.cadence ? `${d.cadence} spm` : null },
+          { icon: '🙂', label: 'Gefühl', value: d.gefuehl },
+          { icon: '📊', label: 'Trainingsbelastung', value: d.trainingLoad },
+          { icon: '💤', label: 'Erholungszeit', value: d.recoveryTime },
+        ].filter(r => r.value)
+
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(60,30,20,0.45)', zIndex: 200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+            <div style={{ background: 'white', borderRadius: '28px 28px 0 0', padding: '24px 24px 44px', width: '100%', maxWidth: 520, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 -8px 40px rgba(255,140,105,0.2)' }}>
+              <div style={{ width: 36, height: 4, background: '#F0E8E0', borderRadius: 99, margin: '0 auto 18px' }} />
+              <div style={{ fontSize: 11, color: '#C4A882', marginBottom: 2, fontFamily: 'sans-serif' }}>
+                {d.date ? new Date(d.date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' }) : ''}
+              </div>
+              <h3 style={{ fontSize: 18, fontWeight: 'bold', color: '#3D2B1F', marginBottom: 18 }}>
+                {d.planInfo ? `Wo.${d.planInfo.weekN} ${d.planInfo.tag} · ${d.planInfo.einheit}` : (d.status === 'extra' ? 'Extra-Lauf' : 'Lauf')}
+              </h3>
+
+              {(routeMapLoading || routeMapUrl || routeMapError) && (
+                <div style={{ marginBottom: 18, borderRadius: 14, overflow: 'hidden', border: '1.5px solid #F0E8E0' }}>
+                  {routeMapLoading && (
+                    <div style={{ padding: '40px 0', textAlign: 'center', color: '#B8A090', fontSize: 12, fontFamily: 'sans-serif', background: '#FFF8F5' }}>⏳ Karte wird geladen…</div>
+                  )}
+                  {!routeMapLoading && routeMapUrl && (
+                    <img src={routeMapUrl} alt="Laufstrecke" style={{ width: '100%', display: 'block' }} />
+                  )}
+                  {!routeMapLoading && !routeMapUrl && routeMapError && (
+                    <div style={{ padding: '20px', textAlign: 'center', color: '#D4C4B8', fontSize: 11, fontFamily: 'sans-serif', background: '#FFF8F5' }}>Keine Route verfügbar</div>
+                  )}
+                </div>
+              )}
+
+              {rows.length === 0 ? (
+                <p style={{ fontSize: 13, color: '#B8A090', fontFamily: 'sans-serif' }}>Keine weiteren Details vorhanden.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {rows.map(r => (
+                    <div key={r.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 4px', borderBottom: '1px solid #F5EDE8' }}>
+                      <span style={{ fontSize: 13, color: '#8B6B5A', fontFamily: 'sans-serif' }}>{r.icon} {r.label}</span>
+                      <span style={{ fontSize: 13, color: '#3D2B1F', fontFamily: 'sans-serif', fontWeight: 'bold' }}>{r.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {d.note && (
+                <div style={{ marginTop: 16, padding: '12px 14px', background: '#F5EDE8', borderRadius: 12, fontSize: 12, color: '#8B6B5A', fontFamily: 'sans-serif', lineHeight: 1.6 }}>
+                  💬 {d.note}
+                </div>
+              )}
+
+              <button onClick={() => setDetailRun(null)} style={{ width: '100%', marginTop: 20, padding: 14, borderRadius: 16, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+                Schließen
+              </button>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
