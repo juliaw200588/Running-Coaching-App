@@ -99,6 +99,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
   const [analyzing, setAnalyzing] = useState(false)
   const [skipped, setSkipped] = useState({})
   const [skipModal, setSkipModal] = useState(null)
+  const [detailModal, setDetailModal] = useState(null)
   const [skipReasonInput, setSkipReasonInput] = useState('')
   const fileRef = useRef()
 
@@ -182,6 +183,12 @@ export default function TrainingPlan({ plan, onReset, user }) {
                 schuh_id: l.schuh_id || '',
                 running_index: l.running_index || '',
                 cadence: l.cadence || '',
+                uhrzeit: l.uhrzeit || '',
+                hf_max: l.hf_max || '',
+                hoehenmeter: l.hoehenmeter || '',
+                gefuehl: l.gefuehl || '',
+                training_load: l.training_load || '',
+                recovery_time: l.recovery_time || '',
               }
             })
             setLogs(logMap)
@@ -650,6 +657,58 @@ export default function TrainingPlan({ plan, onReset, user }) {
         </div>
       )}
 
+      {/* Detail Modal */}
+      {detailModal && (() => {
+        const d = logs[detailModal.key] || {}
+        const rows = [
+          { icon: '🕐', label: 'Uhrzeit', value: d.uhrzeit },
+          { icon: '⏱', label: 'Pace', value: d.pace },
+          { icon: '📍', label: 'Distanz', value: d.km },
+          { icon: '❤️', label: 'Ø Herzfrequenz', value: d.bpm },
+          { icon: '💓', label: 'Max. Herzfrequenz', value: d.hf_max ? `${d.hf_max} bpm` : null },
+          { icon: '⛰️', label: 'Höhenmeter', value: d.hoehenmeter ? `${d.hoehenmeter} m` : null },
+          { icon: '🏃', label: 'Running Index', value: d.running_index },
+          { icon: '👣', label: 'Kadenz', value: d.cadence ? `${d.cadence} spm` : null },
+          { icon: '🙂', label: 'Gefühl', value: d.gefuehl },
+          { icon: '📊', label: 'Trainingsbelastung', value: d.training_load },
+          { icon: '💤', label: 'Erholungszeit', value: d.recovery_time },
+          { icon: '👟', label: 'Schuh', value: d.schuh_id ? (schuhe.find(s => s.id === d.schuh_id) ? `${schuhe.find(s => s.id === d.schuh_id).marke} ${schuhe.find(s => s.id === d.schuh_id).modell}` : null) : null },
+        ].filter(r => r.value)
+
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(60,30,20,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+            <div style={{ background: 'white', borderRadius: '28px 28px 0 0', padding: '24px 24px 44px', width: '100%', maxWidth: 520, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 -8px 40px rgba(255,140,105,0.2)' }}>
+              <div style={{ width: 36, height: 4, background: '#F0E8E0', borderRadius: 99, margin: '0 auto 18px' }} />
+              <div style={{ fontSize: 11, color: '#C4A882', marginBottom: 2, fontFamily: 'sans-serif' }}>{detailModal.tag}</div>
+              <h3 style={{ fontSize: 18, fontWeight: 'bold', color: '#3D2B1F', marginBottom: 18 }}>{detailModal.einheit}</h3>
+
+              {rows.length === 0 ? (
+                <p style={{ fontSize: 13, color: '#B8A090', fontFamily: 'sans-serif' }}>Keine weiteren Details vorhanden.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {rows.map(r => (
+                    <div key={r.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 4px', borderBottom: '1px solid #F5EDE8' }}>
+                      <span style={{ fontSize: 13, color: '#8B6B5A', fontFamily: 'sans-serif' }}>{r.icon} {r.label}</span>
+                      <span style={{ fontSize: 13, color: '#3D2B1F', fontFamily: 'sans-serif', fontWeight: 'bold' }}>{r.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {d.note && (
+                <div style={{ marginTop: 16, padding: '12px 14px', background: '#F5EDE8', borderRadius: 12, fontSize: 12, color: '#8B6B5A', fontFamily: 'sans-serif', lineHeight: 1.6 }}>
+                  💬 {d.note}
+                </div>
+              )}
+
+              <button onClick={() => setDetailModal(null)} style={{ width: '100%', marginTop: 20, padding: 14, borderRadius: 16, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+                Schließen
+              </button>
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Header */}
       <div style={{ background: 'linear-gradient(135deg, #FF8C69 0%, #FFB347 50%, #FF6B9D 100%)', padding: '36px 20px 28px', borderRadius: '0 0 32px 32px', boxShadow: '0 8px 32px rgba(255,140,105,0.3)', position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', top: -20, right: -20, width: 120, height: 120, background: 'rgba(255,255,255,0.1)', borderRadius: '50%' }} />
@@ -788,6 +847,9 @@ export default function TrainingPlan({ plan, onReset, user }) {
                                 {logs[key]?.cadence && <span style={{ fontSize: 10, background: '#E8F5EF', color: '#3D8B6E', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>👣 {logs[key].cadence} spm</span>}
                                 {loggedSchuh && <span style={{ fontSize: 10, background: '#FFF5EE', color: '#C17A3A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>👟 {loggedSchuh.marke} {loggedSchuh.modell}</span>}
                                 {logs[key]?.note && <span style={{ fontSize: 10, background: '#F5EDE8', color: '#8B6B5A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>💬 {logs[key].note.slice(0, 30)}{logs[key].note.length > 30 ? '…' : ''}</span>}
+                                <button onClick={() => setDetailModal({ key, tag: day.tag, einheit: day.einheit })} style={{ fontSize: 10, background: 'none', border: 'none', color: '#B8A090', fontWeight: 'bold', fontFamily: 'sans-serif', cursor: 'pointer', textDecoration: 'underline', padding: '2px 4px' }}>
+                                  Details →
+                                </button>
                               </div>
                             )}
                           </div>

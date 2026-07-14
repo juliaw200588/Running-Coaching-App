@@ -128,6 +128,14 @@ export default function Laeufe({ user, plan }) {
           bpm: l.bpm,
           note: l.note,
           schuhId: l.schuh_id,
+          runningIndex: l.running_index,
+          cadence: l.cadence,
+          uhrzeit: l.uhrzeit,
+          hfMax: l.hf_max,
+          hoehenmeter: l.hoehenmeter,
+          gefuehl: l.gefuehl,
+          trainingLoad: l.training_load,
+          recoveryTime: l.recovery_time,
           status: isExtra ? 'extra' : 'assigned',
           source: isPolar ? 'polar' : 'manual',
           planInfo: planDay ? { weekN: planDay.weekN, tag: planDay.tag, einheit: planDay.einheit } : null,
@@ -206,6 +214,14 @@ export default function Laeufe({ user, plan }) {
           note: run.note || 'Extra-Lauf',
           schuh_id: run.schuhId,
           actual_date: run.date,
+          running_index: run.runningIndex,
+          cadence: run.cadence,
+          uhrzeit: run.uhrzeit,
+          hf_max: run.hfMax,
+          hoehenmeter: run.hoehenmeter,
+          gefuehl: run.gefuehl,
+          training_load: run.trainingLoad,
+          recovery_time: run.recoveryTime,
         }, { onConflict: 'user_id,day_key' })
       } else {
         await supabase.from('logs').upsert({
@@ -217,6 +233,14 @@ export default function Laeufe({ user, plan }) {
           note: run.note || 'Neu zugeordnet',
           schuh_id: run.schuhId,
           actual_date: run.date,
+          running_index: run.runningIndex,
+          cadence: run.cadence,
+          uhrzeit: run.uhrzeit,
+          hf_max: run.hfMax,
+          hoehenmeter: run.hoehenmeter,
+          gefuehl: run.gefuehl,
+          training_load: run.trainingLoad,
+          recovery_time: run.recoveryTime,
         }, { onConflict: 'user_id,day_key' })
         await supabase.from('training_done').upsert({ user_id: user.id, day_key: chosenKey, done: true }, { onConflict: 'user_id,day_key' })
       }

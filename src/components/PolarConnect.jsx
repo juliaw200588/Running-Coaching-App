@@ -276,6 +276,12 @@ export default function PolarConnect({ user, plan }) {
           actual_date: activity.datum || null,
           running_index: activity.running_index || null,
           cadence: activity.cadence || null,
+          uhrzeit: activity.uhrzeit || null,
+          hf_max: activity.hf_max || null,
+          hoehenmeter: activity.hoehenmeter || null,
+          gefuehl: activity.gefuehl || null,
+          training_load: activity.training_load || null,
+          recovery_time: activity.recovery_time || null,
         }, { onConflict: 'user_id,day_key' })
       } else {
         await supabase.from('logs').upsert({
@@ -289,6 +295,12 @@ export default function PolarConnect({ user, plan }) {
           actual_date: activity.datum || null,
           running_index: activity.running_index || null,
           cadence: activity.cadence || null,
+          uhrzeit: activity.uhrzeit || null,
+          hf_max: activity.hf_max || null,
+          hoehenmeter: activity.hoehenmeter || null,
+          gefuehl: activity.gefuehl || null,
+          training_load: activity.training_load || null,
+          recovery_time: activity.recovery_time || null,
         }, { onConflict: 'user_id,day_key' })
         await supabase.from('training_done').upsert({
           user_id: user.id,
@@ -365,6 +377,12 @@ export default function PolarConnect({ user, plan }) {
           actual_date: activity.datum || null,
           running_index: activity.running_index || null,
           cadence: activity.cadence || null,
+          uhrzeit: activity.uhrzeit || null,
+          hf_max: activity.hf_max || null,
+          hoehenmeter: activity.hoehenmeter || null,
+          gefuehl: activity.gefuehl || null,
+          training_load: activity.training_load || null,
+          recovery_time: activity.recovery_time || null,
         }, { onConflict: 'user_id,day_key' })
       } else {
         await supabase.from('logs').upsert({
@@ -378,6 +396,12 @@ export default function PolarConnect({ user, plan }) {
           actual_date: activity.datum || null,
           running_index: activity.running_index || null,
           cadence: activity.cadence || null,
+          uhrzeit: activity.uhrzeit || null,
+          hf_max: activity.hf_max || null,
+          hoehenmeter: activity.hoehenmeter || null,
+          gefuehl: activity.gefuehl || null,
+          training_load: activity.training_load || null,
+          recovery_time: activity.recovery_time || null,
         }, { onConflict: 'user_id,day_key' })
         await supabase.from('training_done').upsert({
           user_id: user.id,

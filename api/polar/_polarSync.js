@@ -53,6 +53,37 @@ function mapExercise(ex, exerciseId) {
     console.log('[Polar mapExercise] Running Index/Cadence nicht gefunden. Rohes Exercise-Objekt:', JSON.stringify(ex).slice(0, 2000))
   }
 
+  // Uhrzeit: steckt bereits im ohnehin abgefragten start-time-Feld, nur bisher weggeworfen.
+  const uhrzeit = ex['start-time']?.split('T')[1]?.slice(0, 5) || null
+
+  // Max-HF: gleiche Objektstruktur wie heart-rate.average (das bereits bestätigt funktioniert),
+  // daher hohe Zuversicht ohne Debug-Logging nötig.
+  const hfMax = ex['heart-rate']?.maximum ?? null
+
+  // Höhenmeter, Gefühl, Trainingsbelastung/Erholung: Feldnamen nicht verifiziert, gleiches
+  // vorsichtiges Vorgehen wie bei Running Index/Cadence - mehrere Varianten versuchen,
+  // bei keinem Treffer die Rohantwort loggen statt zu raten.
+  const hoehenmeter = ex.ascent
+    ?? ex['total-ascent']
+    ?? ex['ascent-descent']?.ascent
+    ?? null
+  const gefuehl = ex.feeling
+    ?? ex['subjective-feeling']
+    ?? ex['perceived-load']?.feeling
+    ?? ex['training-load-pro']?.['perceived-load']?.feeling
+    ?? null
+  const trainingLoad = ex['training-load']
+    ?? ex['training-load-pro']?.['cardio-load']
+    ?? ex['training-load-pro']?.['muscle-load']
+    ?? null
+  const recoveryTime = ex['recovery-time']
+    ?? ex['training-load-pro']?.['recovery-time']
+    ?? null
+
+  if (hoehenmeter == null && gefuehl == null && trainingLoad == null && recoveryTime == null) {
+    console.log('[Polar mapExercise] Höhenmeter/Gefühl/TrainingLoad/RecoveryTime nicht gefunden. Rohes Exercise-Objekt:', JSON.stringify(ex).slice(0, 3000))
+  }
+
   return {
     polar_exercise_id: exerciseId,
     datum: ex['start-time']?.split('T')[0] || null,
@@ -64,6 +95,12 @@ function mapExercise(ex, exerciseId) {
     sport: ex.sport || null,
     running_index: runningIndex != null ? String(runningIndex) : null,
     cadence: cadence != null ? String(cadence) : null,
+    uhrzeit,
+    hf_max: hfMax != null ? String(hfMax) : null,
+    hoehenmeter: hoehenmeter != null ? String(hoehenmeter) : null,
+    gefuehl: gefuehl != null ? String(gefuehl) : null,
+    training_load: trainingLoad != null ? String(trainingLoad) : null,
+    recovery_time: recoveryTime != null ? String(recoveryTime) : null,
   }
 }
 
