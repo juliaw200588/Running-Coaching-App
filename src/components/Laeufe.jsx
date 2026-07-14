@@ -136,6 +136,8 @@ export default function Laeufe({ user, plan }) {
           gefuehl: l.gefuehl,
           trainingLoad: l.training_load,
           recoveryTime: l.recovery_time,
+          polarExerciseId: l.polar_exercise_id,
+          routeMapUrl: l.route_map_url,
           status: isExtra ? 'extra' : 'assigned',
           source: isPolar ? 'polar' : 'manual',
           planInfo: planDay ? { weekN: planDay.weekN, tag: planDay.tag, einheit: planDay.einheit } : null,
@@ -222,6 +224,7 @@ export default function Laeufe({ user, plan }) {
           gefuehl: run.gefuehl,
           training_load: run.trainingLoad,
           recovery_time: run.recoveryTime,
+          polar_exercise_id: run.polarExerciseId,
         }, { onConflict: 'user_id,day_key' })
       } else {
         await supabase.from('logs').upsert({
@@ -241,6 +244,7 @@ export default function Laeufe({ user, plan }) {
           gefuehl: run.gefuehl,
           training_load: run.trainingLoad,
           recovery_time: run.recoveryTime,
+          polar_exercise_id: run.polarExerciseId,
         }, { onConflict: 'user_id,day_key' })
         await supabase.from('training_done').upsert({ user_id: user.id, day_key: chosenKey, done: true }, { onConflict: 'user_id,day_key' })
       }

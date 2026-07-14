@@ -100,6 +100,9 @@ export default function TrainingPlan({ plan, onReset, user }) {
   const [skipped, setSkipped] = useState({})
   const [skipModal, setSkipModal] = useState(null)
   const [detailModal, setDetailModal] = useState(null)
+  const [routeMapUrl, setRouteMapUrl] = useState(null)
+  const [routeMapLoading, setRouteMapLoading] = useState(false)
+  const [routeMapError, setRouteMapError] = useState(null)
   const [skipReasonInput, setSkipReasonInput] = useState('')
   const fileRef = useRef()
 
@@ -176,6 +179,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
             const logMap = {}
             supaLogs.forEach(l => {
               logMap[l.day_key] = {
+                id: l.id,
                 pace: l.pace || '',
                 km: l.km || '',
                 bpm: l.bpm || '',
@@ -189,6 +193,8 @@ export default function TrainingPlan({ plan, onReset, user }) {
                 gefuehl: l.gefuehl || '',
                 training_load: l.training_load || '',
                 recovery_time: l.recovery_time || '',
+                polar_exercise_id: l.polar_exercise_id || '',
+                route_map_url: l.route_map_url || '',
               }
             })
             setLogs(logMap)
@@ -271,6 +277,37 @@ export default function TrainingPlan({ plan, onReset, user }) {
     }
     load()
   }, [user])
+
+  useEffect(() => {
+    if (!detailModal) {
+      setRouteMapUrl(null)
+      setRouteMapError(null)
+      return
+    }
+    const d = logs[detailModal.key] || {}
+    if (d.route_map_url) {
+      setRouteMapUrl(d.route_map_url)
+      return
+    }
+    if (!d.polar_exercise_id || !user) {
+      setRouteMapUrl(null)
+      return
+    }
+    setRouteMapLoading(true)
+    setRouteMapError(null)
+    fetch('/api/polar/route-map', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: user.id, logId: d.id || null }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.url) setRouteMapUrl(data.url)
+        else setRouteMapError(data.error || 'Keine Route verfügbar')
+      })
+      .catch(() => setRouteMapError('Kartenbild konnte nicht geladen werden'))
+      .finally(() => setRouteMapLoading(false))
+  }, [detailModal, user])
 
   const persistDone = async (nd) => {
     setDone(nd)
@@ -681,6 +718,20 @@ export default function TrainingPlan({ plan, onReset, user }) {
               <div style={{ width: 36, height: 4, background: '#F0E8E0', borderRadius: 99, margin: '0 auto 18px' }} />
               <div style={{ fontSize: 11, color: '#C4A882', marginBottom: 2, fontFamily: 'sans-serif' }}>{detailModal.tag}</div>
               <h3 style={{ fontSize: 18, fontWeight: 'bold', color: '#3D2B1F', marginBottom: 18 }}>{detailModal.einheit}</h3>
+
+              {(routeMapLoading || routeMapUrl || routeMapError) && (
+                <div style={{ marginBottom: 18, borderRadius: 14, overflow: 'hidden', border: '1.5px solid #F0E8E0' }}>
+                  {routeMapLoading && (
+                    <div style={{ padding: '40px 0', textAlign: 'center', color: '#B8A090', fontSize: 12, fontFamily: 'sans-serif', background: '#FFF8F5' }}>⏳ Karte wird geladen…</div>
+                  )}
+                  {!routeMapLoading && routeMapUrl && (
+                    <img src={routeMapUrl} alt="Laufstrecke" style={{ width: '100%', display: 'block' }} />
+                  )}
+                  {!routeMapLoading && !routeMapUrl && routeMapError && (
+                    <div style={{ padding: '20px', textAlign: 'center', color: '#D4C4B8', fontSize: 11, fontFamily: 'sans-serif', background: '#FFF8F5' }}>Keine Route verfügbar</div>
+                  )}
+                </div>
+              )}
 
               {rows.length === 0 ? (
                 <p style={{ fontSize: 13, color: '#B8A090', fontFamily: 'sans-serif' }}>Keine weiteren Details vorhanden.</p>

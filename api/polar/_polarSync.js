@@ -210,4 +210,90 @@ export async function fetchPolarHistory(userId) {
     .sort((a, b) => (a.datum < b.datum ? 1 : -1))
 }
 
-export { supabase }
+// Google's Encoded Polyline Algorithm Format (Standardalgorithmus, von Mapbox erwartet).
+function encodeNumber(num) {
+  let sgnNum = num << 1
+  if (num < 0) sgnNum = ~sgnNum
+  let output = ''
+  while (sgnNum >= 0x20) {
+    output += String.fromCharCode((0x20 | (sgnNum & 0x1f)) + 63)
+    sgnNum >>= 5
+  }
+  output += String.fromCharCode(sgnNum + 63)
+  return output
+}
+
+function encodePolyline(points) {
+  let output = ''
+  let prevLat = 0
+  let prevLon = 0
+  for (const [lat, lon] of points) {
+    const lat5 = Math.round(lat * 1e5)
+    const lon5 = Math.round(lon * 1e5)
+    output += encodeNumber(lat5 - prevLat)
+    output += encodeNumber(lon5 - prevLon)
+    prevLat = lat5
+    prevLon = lon5
+  }
+  return output
+}
+
+// Zu viele Punkte sprengen die URL-Länge, die Mapbox akzeptiert - auf max. ~300 reduzieren,
+// Start und Ende bleiben immer erhalten.
+function simplifyPoints(points, maxPoints = 300) {
+  if (points.length <= maxPoints) return points
+  const step = points.length / maxPoints
+  const result = []
+  for (let i = 0; i < maxPoints; i++) {
+    result.push(points[Math.floor(i * step)])
+  }
+  result.push(points[points.length - 1])
+  return result
+}
+
+// Holt die GPX-Route für einen Lauf und parst die GPS-Punkte heraus.
+// WICHTIG: Der genaue Endpunkt-Pfad für den GPX-Export ist bei mir nicht zu 100%
+// verifiziert (im Gegensatz zu pace/duration). Bei einem Fehler wird die rohe
+// Antwort geloggt, damit der Pfad bei Bedarf korrigiert werden kann.
+export async function fetchExerciseRoute(userId, exerciseId) {
+  const { data: integration } = await supabase
+    .from('integrations')
+    .select('*')
+    .eq('user_id', userId)
+    .single()
+
+  if (!integration?.polar_access_token) {
+    throw new Error('Polar nicht verbunden')
+  }
+
+  const token = integration.polar_access_token
+  const polarUserId = integration.polar_user_id
+
+  const gpxRes = await fetch(
+    `https://www.polaraccesslink.com/v3/exercises/${exerciseId}/gpx`,
+    { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/gpx+xml' } }
+  )
+
+  if (!gpxRes.ok) {
+    const errText = await gpxRes.text().catch(() => '')
+    console.log('[Polar Route] GPX-Abruf fehlgeschlagen, Status:', gpxRes.status, 'Antwort:', errText.slice(0, 1000))
+    throw new Error(`GPX nicht verfügbar (${gpxRes.status})`)
+  }
+
+  const gpxText = await gpxRes.text()
+  const points = []
+  const trkptRegex = /<trkpt[^>]*\blat="(-?[\d.]+)"[^>]*\blon="(-?[\d.]+)"/g
+  let m
+  while ((m = trkptRegex.exec(gpxText))) {
+    points.push([parseFloat(m[1]), parseFloat(m[2])])
+  }
+
+  if (points.length === 0) {
+    console.log('[Polar Route] Keine GPS-Punkte im GPX gefunden. Roher Anfang der Antwort:', gpxText.slice(0, 1000))
+    throw new Error('Keine GPS-Punkte gefunden')
+  }
+
+  return simplifyPoints(points)
+}
+
+export { supabase, encodePolyline }

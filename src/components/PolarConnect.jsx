@@ -282,6 +282,7 @@ export default function PolarConnect({ user, plan }) {
           gefuehl: activity.gefuehl || null,
           training_load: activity.training_load || null,
           recovery_time: activity.recovery_time || null,
+          polar_exercise_id: activity.polar_exercise_id || null,
         }, { onConflict: 'user_id,day_key' })
       } else {
         await supabase.from('logs').upsert({
@@ -301,6 +302,7 @@ export default function PolarConnect({ user, plan }) {
           gefuehl: activity.gefuehl || null,
           training_load: activity.training_load || null,
           recovery_time: activity.recovery_time || null,
+          polar_exercise_id: activity.polar_exercise_id || null,
         }, { onConflict: 'user_id,day_key' })
         await supabase.from('training_done').upsert({
           user_id: user.id,
@@ -383,6 +385,7 @@ export default function PolarConnect({ user, plan }) {
           gefuehl: activity.gefuehl || null,
           training_load: activity.training_load || null,
           recovery_time: activity.recovery_time || null,
+          polar_exercise_id: activity.polar_exercise_id || null,
         }, { onConflict: 'user_id,day_key' })
       } else {
         await supabase.from('logs').upsert({
@@ -402,6 +405,7 @@ export default function PolarConnect({ user, plan }) {
           gefuehl: activity.gefuehl || null,
           training_load: activity.training_load || null,
           recovery_time: activity.recovery_time || null,
+          polar_exercise_id: activity.polar_exercise_id || null,
         }, { onConflict: 'user_id,day_key' })
         await supabase.from('training_done').upsert({
           user_id: user.id,
