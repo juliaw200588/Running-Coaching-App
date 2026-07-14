@@ -41,8 +41,8 @@ export default async function handler(req, res) {
     const karvonenZone = (pct) => Math.round((currentHFMax - currentRuheHF) * pct + currentRuheHF)
     const hfContext = currentHFMax
       ? (currentRuheHF
-          ? `\nAktuelle maximale Herzfrequenz: ${currentHFMax} bpm, Ruhe-HF: ${currentRuheHF} bpm (Herzfrequenzreserve-Methode). Zone 2: ${karvonenZone(0.6)}-${karvonenZone(0.7)} bpm, Zone 4: ${karvonenZone(0.8)}-${karvonenZone(0.9)} bpm`
-          : `\nAktuelle maximale Herzfrequenz: ${currentHFMax} bpm. Zone 2: ${Math.round(currentHFMax*0.6)}-${Math.round(currentHFMax*0.7)} bpm, Zone 4: ${Math.round(currentHFMax*0.8)}-${Math.round(currentHFMax*0.9)} bpm`)
+          ? `\nAktuelle maximale Herzfrequenz: ${currentHFMax} bpm, Ruhe-HF: ${currentRuheHF} bpm (Herzfrequenzreserve-Methode). Zone 1: <${karvonenZone(0.6)} bpm, Zone 2: ${karvonenZone(0.6)}-${karvonenZone(0.7)} bpm, Zone 3: ${karvonenZone(0.7)}-${karvonenZone(0.8)} bpm, Zone 4: ${karvonenZone(0.8)}-${karvonenZone(0.9)} bpm, Zone 5: >${karvonenZone(0.9)} bpm. WICHTIG: Ordne die HF-Werte aus den Logs oben explizit einer dieser Zonen zu, bevor du sie bewertest - verlasse dich nicht auf ein reines Zahlengefühl. Ein Wert an oder über der Zone-2-Obergrenze liegt bereits in Zone 3, nicht mehr "niedrig".`
+          : `\nAktuelle maximale Herzfrequenz: ${currentHFMax} bpm. Zone 1: <${Math.round(currentHFMax*0.6)} bpm, Zone 2: ${Math.round(currentHFMax*0.6)}-${Math.round(currentHFMax*0.7)} bpm, Zone 3: ${Math.round(currentHFMax*0.7)}-${Math.round(currentHFMax*0.8)} bpm, Zone 4: ${Math.round(currentHFMax*0.8)}-${Math.round(currentHFMax*0.9)} bpm, Zone 5: >${Math.round(currentHFMax*0.9)} bpm. WICHTIG: Ordne die HF-Werte aus den Logs oben explizit einer dieser Zonen zu, bevor du sie bewertest - verlasse dich nicht auf ein reines Zahlengefühl. Ein Wert an oder über der Zone-2-Obergrenze liegt bereits in Zone 3, nicht mehr "niedrig".`)
       : ''
     const kmContext = aktuelleWochenKm
       ? `\nAktuelle Wochenkilometer laut Profil: ${aktuelleWochenKm} km`
