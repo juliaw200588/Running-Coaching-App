@@ -172,6 +172,7 @@ export default function Laeufe({ user, plan }) {
           recoveryTime: l.recovery_time,
           polarExerciseId: l.polar_exercise_id,
           routeMapUrl: l.route_map_url,
+          kalorien: l.kalorien,
           status: isExtra ? 'extra' : 'assigned',
           source: isPolar ? 'polar' : 'manual',
           planInfo: planDay ? { weekN: planDay.weekN, tag: planDay.tag, einheit: planDay.einheit } : null,
@@ -259,6 +260,7 @@ export default function Laeufe({ user, plan }) {
           training_load: run.trainingLoad,
           recovery_time: run.recoveryTime,
           polar_exercise_id: run.polarExerciseId,
+          kalorien: run.kalorien,
         }, { onConflict: 'user_id,day_key' })
       } else {
         await supabase.from('logs').upsert({
@@ -279,6 +281,7 @@ export default function Laeufe({ user, plan }) {
           training_load: run.trainingLoad,
           recovery_time: run.recoveryTime,
           polar_exercise_id: run.polarExerciseId,
+          kalorien: run.kalorien,
         }, { onConflict: 'user_id,day_key' })
         await supabase.from('training_done').upsert({ user_id: user.id, day_key: chosenKey, done: true }, { onConflict: 'user_id,day_key' })
       }
@@ -455,6 +458,7 @@ export default function Laeufe({ user, plan }) {
           { icon: '⏱', label: 'Pace', value: d.pace },
           { icon: '📍', label: 'Distanz', value: d.km },
           { icon: '❤️', label: 'Ø Herzfrequenz', value: d.bpm },
+          { icon: '🔥', label: 'Kalorien', value: d.kalorien ? `${d.kalorien} kcal` : null },
           { icon: '💓', label: 'Max. Herzfrequenz', value: d.hfMax ? `${d.hfMax} bpm` : null },
           { icon: '⛰️', label: 'Höhenmeter', value: d.hoehenmeter ? `${d.hoehenmeter} m` : null },
           { icon: '🏃', label: 'Running Index', value: d.runningIndex },

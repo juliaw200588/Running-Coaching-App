@@ -195,6 +195,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
                 recovery_time: l.recovery_time || '',
                 polar_exercise_id: l.polar_exercise_id || '',
                 route_map_url: l.route_map_url || '',
+                kalorien: l.kalorien || '',
               }
             })
             setLogs(logMap)
@@ -702,6 +703,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
           { icon: '⏱', label: 'Pace', value: d.pace },
           { icon: '📍', label: 'Distanz', value: d.km },
           { icon: '❤️', label: 'Ø Herzfrequenz', value: d.bpm },
+          { icon: '🔥', label: 'Kalorien', value: d.kalorien ? `${d.kalorien} kcal` : null },
           { icon: '💓', label: 'Max. Herzfrequenz', value: d.hf_max ? `${d.hf_max} bpm` : null },
           { icon: '⛰️', label: 'Höhenmeter', value: d.hoehenmeter ? `${d.hoehenmeter} m` : null },
           { icon: '🏃', label: 'Running Index', value: d.running_index },
