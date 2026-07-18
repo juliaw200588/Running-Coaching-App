@@ -83,11 +83,57 @@ const dataUrlToBlob = (dataUrl) => {
   return new Blob([u8arr], { type: mime })
 }
 
+// Findet die Phase und Woche, in der "heute" kalendarisch liegt - liest wie überall
+// sonst in der App das ECHTE, angezeigte week.dateRange aus, nicht plan.startDate direkt
+// (siehe Polar-Integration: startDate und dateRange können sonst auseinanderdriften).
+// Liegt heute vor Planbeginn -> erste Woche. Liegt heute nach Planende -> letzte Woche.
+function findCurrentPhaseWeek(plan) {
+  if (!plan) return { phaseIdx: 0, weekIdx: 0 }
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const fallbackYear = plan.startDate ? new Date(plan.startDate + 'T00:00:00').getFullYear() : today.getFullYear()
+  const startMonth = plan.startDate ? new Date(plan.startDate + 'T00:00:00').getMonth() : null
+
+  const phases = plan.phases || []
+  let firstMatch = null
+  let firstWeekStart = null
+  let lastMatch = null
+  let lastWeekEnd = null
+
+  for (let pi = 0; pi < phases.length; pi++) {
+    const weeks = phases[pi].weeks || []
+    for (let wi = 0; wi < weeks.length; wi++) {
+      const match = weeks[wi].dateRange?.match(/(\d{1,2})\.(\d{1,2})\./)
+      if (!match) continue
+      const day = parseInt(match[1])
+      const month = parseInt(match[2]) - 1
+      let year = fallbackYear
+      if (startMonth !== null && month < startMonth - 6) year = fallbackYear + 1
+      const weekStart = new Date(year, month, day)
+      const weekEnd = new Date(weekStart)
+      weekEnd.setDate(weekEnd.getDate() + 6)
+      weekEnd.setHours(23, 59, 59, 999)
+
+      if (!firstMatch) { firstMatch = { phaseIdx: pi, weekIdx: wi }; firstWeekStart = weekStart }
+      lastMatch = { phaseIdx: pi, weekIdx: wi }
+      lastWeekEnd = weekEnd
+
+      if (today >= weekStart && today <= weekEnd) {
+        return { phaseIdx: pi, weekIdx: wi }
+      }
+    }
+  }
+
+  if (firstWeekStart && today < firstWeekStart) return firstMatch
+  if (lastMatch) return lastMatch
+  return { phaseIdx: 0, weekIdx: 0 }
+}
+
 export default function TrainingPlan({ plan, onReset, user }) {
-  const [activePhase, setActivePhase] = useState(0)
+  const [activePhase, setActivePhase] = useState(() => findCurrentPhaseWeek(plan).phaseIdx)
   const [showPauseModal, setShowPauseModal] = useState(false)
   const [pauseWeeks, setPauseWeeks] = useState(1)
-  const [openWeeks, setOpenWeeks] = useState({ 0: true })
+  const [openWeeks, setOpenWeeks] = useState(() => ({ [findCurrentPhaseWeek(plan).weekIdx]: true }))
   const [done, setDone] = useState({})
   const [logs, setLogs] = useState({})
   const [screenshots, setScreenshots] = useState({})
