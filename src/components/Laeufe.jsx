@@ -380,10 +380,16 @@ export default function Laeufe({ user, plan }) {
   const monthLabel = calMonth.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' })
   const selectedRuns = selectedDate ? (runsByDate[selectedDate] || []) : []
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 20, color: '#B8A090', fontFamily: 'sans-serif' }}>⏳ Lade…</div>
+  if (loading) return (
+    <div style={{ fontFamily: "'Georgia', 'Times New Roman', serif", background: 'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 50%, #FFF0F5 100%)', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ color: '#B8A090', fontFamily: 'sans-serif' }}>⏳ Lade…</div>
+    </div>
+  )
 
   return (
-    <div>
+    <div style={{ fontFamily: "'Georgia', 'Times New Roman', serif", background: 'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 50%, #FFF0F5 100%)', minHeight: '100vh' }}>
+      <div style={{ padding: '20px 24px 40px', maxWidth: 580, margin: '0 auto' }}>
+      <h2 style={{ fontSize: 22, fontWeight: 'bold', color: '#3D2B1F', margin: '0 0 16px' }}>Aktivitäten</h2>
       {message && <div style={msgStyle(message.type)}>{message.text}</div>}
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
@@ -519,6 +525,7 @@ export default function Laeufe({ user, plan }) {
           </div>
         )
       })()}
+      </div>
     </div>
   )
 }

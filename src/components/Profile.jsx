@@ -1,14 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import Friends from './Friends.jsx'
 import PolarConnect from './PolarConnect.jsx'
-import Laeufe from './Laeufe.jsx'
 import Statistics from './Statistics.jsx'
 import { supabase } from '../lib/supabase.js'
 
 const TABS = [
   { id: 'profil', label: 'Profil', icon: '👤' },
   { id: 'stats', label: 'Statistik', icon: '📊' },
-  { id: 'laeufe', label: 'Läufe', icon: '🏃‍♀️' },
   { id: 'schuhe', label: 'Schuhe', icon: '👟' },
   { id: 'freunde', label: 'Freunde', icon: '👥' },
   { id: 'geraete', label: 'Geräte', icon: '⌚' },
@@ -132,7 +130,7 @@ function SchuhForm({ schuh, onSave, onCancel }) {
   )
 }
 
-export default function Profile({ user, onClose, plan }) {
+export default function Profile({ user, plan }) {
   const [activeTab, setActiveTab] = useState('profil')
   const [profile, setProfile] = useState({ name: '', wohnort: '', geburtsdatum: '', groesse: '', gewicht: '', max_hf: '', ruhe_hf: '', wochen_km: '' })
   const [privacy, setPrivacy] = useState({ plan: 'freunde', fortschritt: 'freunde', logs: 'freunde', schuhe: 'freunde' })
@@ -233,220 +231,197 @@ export default function Profile({ user, onClose, plan }) {
   const optLabel = { fontSize: 10, color: '#D4C4B8', fontWeight: 'normal', letterSpacing: 0, textTransform: 'none', marginLeft: 6 }
 
   if (loading) return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(60,30,20,0.4)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ background: 'white', borderRadius: 24, padding: 32, fontFamily: 'sans-serif', color: '#B8A090' }}>⏳ Lade Profil…</div>
+    <div style={{ fontFamily: "'Georgia', 'Times New Roman', serif", background: 'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 50%, #FFF0F5 100%)', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ color: '#B8A090', fontFamily: 'sans-serif' }}>⏳ Lade Profil…</div>
     </div>
   )
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(60,30,20,0.45)', zIndex: 200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-      <div style={{ background: 'white', borderRadius: '28px 28px 0 0', width: '100%', maxWidth: 520, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 -8px 40px rgba(255,140,105,0.2)' }}>
+    <div style={{ fontFamily: "'Georgia', 'Times New Roman', serif", background: 'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 50%, #FFF0F5 100%)', minHeight: '100vh' }}>
 
-        {/* Handle + Header */}
-        <div style={{ padding: '20px 24px 0', flexShrink: 0 }}>
-          <div style={{ width: 36, height: 4, background: '#F0E8E0', borderRadius: 99, margin: '0 auto 16px' }} />
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <h2 style={{ fontSize: 20, fontWeight: 'bold', color: '#3D2B1F', margin: 0 }}>Mein Profil</h2>
-            <button onClick={onClose} style={{ background: '#F5EDE8', border: 'none', borderRadius: 10, padding: '6px 12px', color: '#8B6B5A', cursor: 'pointer', fontFamily: 'sans-serif', fontSize: 13 }}>✕</button>
+      <div style={{ padding: '20px 24px 0', maxWidth: 580, margin: '0 auto' }}>
+        <h2 style={{ fontSize: 22, fontWeight: 'bold', color: '#3D2B1F', margin: '0 0 16px' }}>Mein Profil</h2>
+
+        <div style={{ overflowX: 'auto', marginBottom: 4, WebkitOverflowScrolling: 'touch' }}>
+          <div style={{ display: 'flex', gap: 6, minWidth: 'max-content' }}>
+            {TABS.map(tab => (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                style={{ padding: '10px 14px', borderRadius: 12, border: activeTab === tab.id ? '2px solid #FF8C69' : '1.5px solid #F0E8E0', background: activeTab === tab.id ? '#FFF5F0' : 'white', color: activeTab === tab.id ? '#FF8C69' : '#B8A090', fontSize: 13, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', transition: 'all 0.2s', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                {tab.icon} {tab.label}
+              </button>
+            ))}
           </div>
+        </div>
+      </div>
 
-          {/* Tabs */}
-          <div style={{ overflowX: 'auto', marginBottom: 4, WebkitOverflowScrolling: 'touch' }}>
-            <div style={{ display: 'flex', gap: 6, minWidth: 'max-content' }}>
-              {TABS.map(tab => (
-                <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                  style={{ padding: '10px 14px', borderRadius: 12, border: activeTab === tab.id ? '2px solid #FF8C69' : '1.5px solid #F0E8E0', background: activeTab === tab.id ? '#FFF5F0' : 'white', color: activeTab === tab.id ? '#FF8C69' : '#B8A090', fontSize: 13, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', transition: 'all 0.2s', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                  {tab.icon} {tab.label}
+      <div style={{ padding: '16px 24px 40px', maxWidth: 580, margin: '0 auto' }}>
+
+        {activeTab === 'profil' && (
+          <>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 20 }}>
+              <div style={{ position: 'relative', marginBottom: 8 }}>
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="Profilbild" style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover', border: '3px solid #FFE0CC' }} />
+                ) : (
+                  <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, border: '3px solid #FFE0CC' }}>
+                    {profile.name ? profile.name[0].toUpperCase() : '👤'}
+                  </div>
+                )}
+                <button onClick={() => fileRef.current.click()} style={{ position: 'absolute', bottom: 0, right: 0, width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)', border: '2px solid white', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {uploadingAvatar ? '⏳' : '📷'}
                 </button>
+              </div>
+              <button onClick={() => fileRef.current.click()} disabled={uploadingAvatar} style={{ fontSize: 12, color: '#FF8C69', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'sans-serif', fontWeight: 'bold' }}>
+                {uploadingAvatar ? 'Wird hochgeladen…' : 'Foto ändern'}
+              </button>
+              <input ref={fileRef} type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: 'none' }} />
+            </div>
+
+            <div style={{ marginBottom: 16, padding: '12px 16px', background: '#FFF5EE', borderRadius: 14, border: '1px solid #FFE0CC' }}>
+              <div style={{ fontSize: 10, color: '#C4A882', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'sans-serif', marginBottom: 4 }}>E-Mail</div>
+              <div style={{ fontSize: 14, color: '#5C3D2E', fontFamily: 'sans-serif' }}>{user.email}</div>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>Name</label>
+              <input style={inputStyle} placeholder="z.B. Julia Müller" value={profile.name} onChange={e => setProfile({ ...profile, name: e.target.value })} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>Wohnort <span style={optLabel}>optional</span></label>
+              <input style={inputStyle} placeholder="z.B. München" value={profile.wohnort} onChange={e => setProfile({ ...profile, wohnort: e.target.value })} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>Geburtsdatum <span style={optLabel}>optional</span></label>
+              <input style={{ ...inputStyle, cursor: 'pointer' }} type="date" value={profile.geburtsdatum} onChange={e => setProfile({ ...profile, geburtsdatum: e.target.value })} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 24 }}>
+              <div>
+                <label style={labelStyle}>Größe (cm) <span style={optLabel}>optional</span></label>
+                <input style={inputStyle} type="number" placeholder="168" value={profile.groesse} onChange={e => setProfile({ ...profile, groesse: e.target.value })} />
+              </div>
+              <div>
+                <label style={labelStyle}>Gewicht (kg) <span style={optLabel}>optional</span></label>
+                <input style={inputStyle} type="number" step="0.1" placeholder="62.5" value={profile.gewicht} onChange={e => setProfile({ ...profile, gewicht: e.target.value })} />
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'sans-serif', marginBottom: 12 }}>
+                🏃‍♀️ Laufwerte
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                <div>
+                  <label style={labelStyle}>Max. Herzfrequenz <span style={optLabel}>optional</span></label>
+                  <input style={inputStyle} type="number" placeholder="z.B. 185 bpm" value={profile.max_hf}
+                    onChange={e => setProfile({ ...profile, max_hf: e.target.value })} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Ruhe-HF <span style={optLabel}>optional</span></label>
+                  <input style={inputStyle} type="number" placeholder="z.B. 52 bpm" value={profile.ruhe_hf}
+                    onChange={e => setProfile({ ...profile, ruhe_hf: e.target.value })} />
+                </div>
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                <label style={labelStyle}>Aktuelle Wochenkilometer <span style={optLabel}>optional</span></label>
+                <input style={inputStyle} type="number" placeholder="z.B. 30 km" value={profile.wochen_km}
+                  onChange={e => setProfile({ ...profile, wochen_km: e.target.value })} />
+              </div>
+              <div style={{ padding: '10px 14px', background: '#F0FAF4', border: '1px solid #B8E4CC', borderRadius: 12, fontSize: 12, color: '#5BA88A', fontFamily: 'sans-serif', lineHeight: 1.6 }}>
+                💡 Aktualisierte Werte fließen automatisch in die nächste Wochenanalyse ein.
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'sans-serif', marginBottom: 12 }}>
+                🔒 Privatsphäre – Was dürfen Freunde sehen?
+              </div>
+              {[
+                { key: 'plan', label: 'Trainingsplan' },
+                { key: 'fortschritt', label: 'Fortschritt & Läufe' },
+                { key: 'logs', label: 'Logs & Zeiten' },
+                { key: 'schuhe', label: 'Laufschuhe' },
+              ].map(item => (
+                <div key={item.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#FFF8F5', borderRadius: 12, marginBottom: 8, border: '1px solid #F0E0D0' }}>
+                  <span style={{ fontSize: 13, color: '#5C3D2E', fontFamily: 'sans-serif', fontWeight: 'bold' }}>{item.label}</span>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {['freunde', 'niemand'].map(opt => (
+                      <button key={opt} onClick={() => setPrivacy(p => ({ ...p, [item.key]: opt }))}
+                        style={{ padding: '5px 12px', borderRadius: 8, border: `1.5px solid ${privacy[item.key] === opt ? '#FF8C69' : '#F0E0D0'}`, background: privacy[item.key] === opt ? '#FFF0EB' : 'white', color: privacy[item.key] === opt ? '#FF8C69' : '#C4A882', fontSize: 11, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', transition: 'all 0.2s' }}>
+                        {opt === 'freunde' ? '👥 Freunde' : '🔒 Niemand'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
-          </div>
-          </div>
 
-        {/* Scrollbarer Inhalt */}
-        <div style={{ overflowY: 'auto', padding: '16px 24px 40px', flex: 1 }}>
+            {success && <div style={{ marginBottom: 14, padding: '12px 16px', background: '#F0FAF4', border: '1px solid #B8E4CC', borderRadius: 12, fontSize: 13, color: '#5BA88A', fontFamily: 'sans-serif' }}>✓ Profil gespeichert!</div>}
 
-          {/* ── PROFIL TAB ── */}
-          {activeTab === 'profil' && (
-            <>
-              {/* Avatar */}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 20 }}>
-                <div style={{ position: 'relative', marginBottom: 8 }}>
-                  {avatarUrl ? (
-                    <img src={avatarUrl} alt="Profilbild" style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover', border: '3px solid #FFE0CC' }} />
-                  ) : (
-                    <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, border: '3px solid #FFE0CC' }}>
-                      {profile.name ? profile.name[0].toUpperCase() : '👤'}
-                    </div>
-                  )}
-                  <button onClick={() => fileRef.current.click()} style={{ position: 'absolute', bottom: 0, right: 0, width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)', border: '2px solid white', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {uploadingAvatar ? '⏳' : '📷'}
-                  </button>
-                </div>
-                <button onClick={() => fileRef.current.click()} disabled={uploadingAvatar} style={{ fontSize: 12, color: '#FF8C69', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'sans-serif', fontWeight: 'bold' }}>
-                  {uploadingAvatar ? 'Wird hochgeladen…' : 'Foto ändern'}
+            <button onClick={handleSaveProfile} disabled={saving}
+              style={{ width: '100%', padding: '16px', borderRadius: 18, border: 'none', background: saving ? '#F0E8E0' : 'linear-gradient(135deg,#7EC8A4,#5BA88A)', color: saving ? '#C4A882' : 'white', fontSize: 15, fontWeight: 'bold', cursor: saving ? 'default' : 'pointer', fontFamily: 'sans-serif', marginBottom: 12 }}>
+              {saving ? '⏳ Speichern…' : '✓ Profil speichern'}
+            </button>
+            <button onClick={() => supabase.auth.signOut()}
+              style={{ width: '100%', padding: '14px', borderRadius: 18, border: '1.5px solid #F0E0D0', background: 'white', color: '#C4A882', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+              Ausloggen
+            </button>
+          </>
+        )}
+
+        {activeTab === 'schuhe' && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ fontSize: 13, color: '#B8A090', fontFamily: 'sans-serif' }}>
+                {schuhe.length === 0 ? 'Noch keine Schuhe eingetragen' : `${schuhe.length} Paar eingetragen`}
+              </div>
+              {!showSchuhForm && (
+                <button onClick={() => { setShowSchuhForm(true); setEditSchuh(null) }}
+                  style={{ padding: '8px 14px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)', color: 'white', fontSize: 13, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+                  + Hinzufügen
                 </button>
-                <input ref={fileRef} type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: 'none' }} />
-              </div>
-
-              <div style={{ marginBottom: 16, padding: '12px 16px', background: '#FFF5EE', borderRadius: 14, border: '1px solid #FFE0CC' }}>
-                <div style={{ fontSize: 10, color: '#C4A882', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'sans-serif', marginBottom: 4 }}>E-Mail</div>
-                <div style={{ fontSize: 14, color: '#5C3D2E', fontFamily: 'sans-serif' }}>{user.email}</div>
-              </div>
-
-              <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>Name</label>
-                <input style={inputStyle} placeholder="z.B. Julia Müller" value={profile.name} onChange={e => setProfile({ ...profile, name: e.target.value })} />
-              </div>
-              <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>Wohnort <span style={optLabel}>optional</span></label>
-                <input style={inputStyle} placeholder="z.B. München" value={profile.wohnort} onChange={e => setProfile({ ...profile, wohnort: e.target.value })} />
-              </div>
-              <div style={{ marginBottom: 16 }}>
-                <label style={labelStyle}>Geburtsdatum <span style={optLabel}>optional</span></label>
-                <input style={{ ...inputStyle, cursor: 'pointer' }} type="date" value={profile.geburtsdatum} onChange={e => setProfile({ ...profile, geburtsdatum: e.target.value })} />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 24 }}>
-                <div>
-                  <label style={labelStyle}>Größe (cm) <span style={optLabel}>optional</span></label>
-                  <input style={inputStyle} type="number" placeholder="168" value={profile.groesse} onChange={e => setProfile({ ...profile, groesse: e.target.value })} />
-                </div>
-                <div>
-                  <label style={labelStyle}>Gewicht (kg) <span style={optLabel}>optional</span></label>
-                  <input style={inputStyle} type="number" step="0.1" placeholder="62.5" value={profile.gewicht} onChange={e => setProfile({ ...profile, gewicht: e.target.value })} />
-                </div>
-              </div>
-
-
-              {/* Laufwerte */}
-              <div style={{ marginBottom: 24 }}>
-                <div style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'sans-serif', marginBottom: 12 }}>
-                  🏃‍♀️ Laufwerte
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-                  <div>
-                    <label style={labelStyle}>Max. Herzfrequenz <span style={optLabel}>optional</span></label>
-                    <input style={inputStyle} type="number" placeholder="z.B. 185 bpm" value={profile.max_hf}
-                      onChange={e => setProfile({ ...profile, max_hf: e.target.value })} />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Ruhe-HF <span style={optLabel}>optional</span></label>
-                    <input style={inputStyle} type="number" placeholder="z.B. 52 bpm" value={profile.ruhe_hf}
-                      onChange={e => setProfile({ ...profile, ruhe_hf: e.target.value })} />
-                  </div>
-                </div>
-                <div style={{ marginBottom: 10 }}>
-                  <label style={labelStyle}>Aktuelle Wochenkilometer <span style={optLabel}>optional</span></label>
-                  <input style={inputStyle} type="number" placeholder="z.B. 30 km" value={profile.wochen_km}
-                    onChange={e => setProfile({ ...profile, wochen_km: e.target.value })} />
-                </div>
-                <div style={{ padding: '10px 14px', background: '#F0FAF4', border: '1px solid #B8E4CC', borderRadius: 12, fontSize: 12, color: '#5BA88A', fontFamily: 'sans-serif', lineHeight: 1.6 }}>
-                  💡 Aktualisierte Werte fließen automatisch in die nächste Wochenanalyse ein.
-                </div>
-              </div>
-
-              {/* Privatsphäre */}
-              <div style={{ marginBottom: 24 }}>
-                <div style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'sans-serif', marginBottom: 12 }}>
-                  🔒 Privatsphäre – Was dürfen Freunde sehen?
-                </div>
-                {[
-                  { key: 'plan', label: 'Trainingsplan' },
-                  { key: 'fortschritt', label: 'Fortschritt & Läufe' },
-                  { key: 'logs', label: 'Logs & Zeiten' },
-                  { key: 'schuhe', label: 'Laufschuhe' },
-                ].map(item => (
-                  <div key={item.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#FFF8F5', borderRadius: 12, marginBottom: 8, border: '1px solid #F0E0D0' }}>
-                    <span style={{ fontSize: 13, color: '#5C3D2E', fontFamily: 'sans-serif', fontWeight: 'bold' }}>{item.label}</span>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      {['freunde', 'niemand'].map(opt => (
-                        <button key={opt} onClick={() => setPrivacy(p => ({ ...p, [item.key]: opt }))}
-                          style={{ padding: '5px 12px', borderRadius: 8, border: `1.5px solid ${privacy[item.key] === opt ? '#FF8C69' : '#F0E0D0'}`, background: privacy[item.key] === opt ? '#FFF0EB' : 'white', color: privacy[item.key] === opt ? '#FF8C69' : '#C4A882', fontSize: 11, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', transition: 'all 0.2s' }}>
-                          {opt === 'freunde' ? '👥 Freunde' : '🔒 Niemand'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {success && <div style={{ marginBottom: 14, padding: '12px 16px', background: '#F0FAF4', border: '1px solid #B8E4CC', borderRadius: 12, fontSize: 13, color: '#5BA88A', fontFamily: 'sans-serif' }}>✓ Profil gespeichert!</div>}
-
-              <button onClick={handleSaveProfile} disabled={saving}
-                style={{ width: '100%', padding: '16px', borderRadius: 18, border: 'none', background: saving ? '#F0E8E0' : 'linear-gradient(135deg,#7EC8A4,#5BA88A)', color: saving ? '#C4A882' : 'white', fontSize: 15, fontWeight: 'bold', cursor: saving ? 'default' : 'pointer', fontFamily: 'sans-serif', marginBottom: 12 }}>
-                {saving ? '⏳ Speichern…' : '✓ Profil speichern'}
-              </button>
-              <button onClick={() => supabase.auth.signOut()}
-                style={{ width: '100%', padding: '14px', borderRadius: 18, border: '1.5px solid #F0E0D0', background: 'white', color: '#C4A882', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
-                Ausloggen
-              </button>
-            </>
-          )}
-
-          {/* ── SCHUHE TAB ── */}
-          {activeTab === 'schuhe' && (
-            <>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <div style={{ fontSize: 13, color: '#B8A090', fontFamily: 'sans-serif' }}>
-                  {schuhe.length === 0 ? 'Noch keine Schuhe eingetragen' : `${schuhe.length} Paar eingetragen`}
-                </div>
-                {!showSchuhForm && (
-                  <button onClick={() => { setShowSchuhForm(true); setEditSchuh(null) }}
-                    style={{ padding: '8px 14px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)', color: 'white', fontSize: 13, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
-                    + Hinzufügen
-                  </button>
-                )}
-              </div>
-
-              {(showSchuhForm || editSchuh) && (
-                <SchuhForm
-                  schuh={editSchuh}
-                  onSave={handleSaveSchuh}
-                  onCancel={() => { setShowSchuhForm(false); setEditSchuh(null) }}
-                />
               )}
+            </div>
 
-              {schuhe.length === 0 && !showSchuhForm && (
-                <div style={{ textAlign: 'center', padding: '40px 20px', color: '#B8A090', fontFamily: 'sans-serif' }}>
-                  <div style={{ fontSize: 48, marginBottom: 12 }}>👟</div>
-                  <div style={{ fontSize: 14, marginBottom: 6 }}>Trag deine Laufschuhe ein</div>
-                  <div style={{ fontSize: 12, color: '#D4C4B8' }}>Verfolge die gelaufenen km pro Schuh</div>
-                </div>
-              )}
+            {(showSchuhForm || editSchuh) && (
+              <SchuhForm
+                schuh={editSchuh}
+                onSave={handleSaveSchuh}
+                onCancel={() => { setShowSchuhForm(false); setEditSchuh(null) }}
+              />
+            )}
 
-              {schuhe.map(schuh => (
-                <SchuhCard key={schuh.id} schuh={schuh}
-                  onEdit={(s) => { setEditSchuh(s); setShowSchuhForm(false) }}
-                  onDelete={handleDeleteSchuh}
-                />
-              ))}
-
-              <div style={{ marginTop: 16, padding: '12px 16px', background: '#F0FAF4', border: '1px solid #B8E4CC', borderRadius: 12, fontSize: 12, color: '#5BA88A', fontFamily: 'sans-serif', lineHeight: 1.6 }}>
-                💡 Laufschuhe halten ca. 600–800 km. Wir empfehlen einen Wechsel spätestens bei 700 km.
+            {schuhe.length === 0 && !showSchuhForm && (
+              <div style={{ textAlign: 'center', padding: '40px 20px', color: '#B8A090', fontFamily: 'sans-serif' }}>
+                <div style={{ fontSize: 48, marginBottom: 12 }}>👟</div>
+                <div style={{ fontSize: 14, marginBottom: 6 }}>Trag deine Laufschuhe ein</div>
+                <div style={{ fontSize: 12, color: '#D4C4B8' }}>Verfolge die gelaufenen km pro Schuh</div>
               </div>
-            </>
-          )}
+            )}
 
-          {/* ── STATISTIK TAB ── */}
-          {activeTab === 'stats' && (
-            <Statistics user={user} plan={plan} />
-          )}
+            {schuhe.map(schuh => (
+              <SchuhCard key={schuh.id} schuh={schuh}
+                onEdit={(s) => { setEditSchuh(s); setShowSchuhForm(false) }}
+                onDelete={handleDeleteSchuh}
+              />
+            ))}
 
-          {/* ── FREUNDE TAB ── */}
-          {activeTab === 'freunde' && (
-            <Friends user={user} />
-          )}
+            <div style={{ marginTop: 16, padding: '12px 16px', background: '#F0FAF4', border: '1px solid #B8E4CC', borderRadius: 12, fontSize: 12, color: '#5BA88A', fontFamily: 'sans-serif', lineHeight: 1.6 }}>
+              💡 Laufschuhe halten ca. 600–800 km. Wir empfehlen einen Wechsel spätestens bei 700 km.
+            </div>
+          </>
+        )}
 
-          {/* ── LÄUFE TAB ── */}
-          {activeTab === 'laeufe' && (
-            <Laeufe user={user} plan={plan} />
-          )}
+        {activeTab === 'stats' && (
+          <Statistics user={user} plan={plan} />
+        )}
 
-          {/* ── GERÄTE TAB ── */}
-          {activeTab === 'geraete' && (
-            <PolarConnect user={user} plan={plan} />
-          )}
-        </div>
+        {activeTab === 'freunde' && (
+          <Friends user={user} />
+        )}
+
+        {activeTab === 'geraete' && (
+          <PolarConnect user={user} plan={plan} />
+        )}
       </div>
     </div>
   )
