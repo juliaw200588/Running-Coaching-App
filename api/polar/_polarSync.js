@@ -49,7 +49,7 @@ function mapExercise(ex, exerciseId) {
     ?? ex['average-running-cadence']
     ?? null
 
-  if (runningIndex == null && cadence == null) {
+  if (runningIndex == null || cadence == null) {
     console.log('[Polar mapExercise] Running Index/Cadence nicht gefunden. Rohes Exercise-Objekt:', JSON.stringify(ex).slice(0, 2000))
   }
 
@@ -80,8 +80,8 @@ function mapExercise(ex, exerciseId) {
     ?? ex['training-load-pro']?.['recovery-time']
     ?? null
 
-  if (hoehenmeter == null && gefuehl == null && trainingLoad == null && recoveryTime == null) {
-    console.log('[Polar mapExercise] Höhenmeter/Gefühl/TrainingLoad/RecoveryTime nicht gefunden. Rohes Exercise-Objekt:', JSON.stringify(ex).slice(0, 3000))
+  if (hoehenmeter == null || cadence == null || gefuehl == null || trainingLoad == null || recoveryTime == null) {
+    console.log('[Polar mapExercise] Mindestens ein Feld nicht gefunden (Höhenmeter/Kadenz/Gefühl/TrainingLoad/RecoveryTime). Rohes Exercise-Objekt:', JSON.stringify(ex).slice(0, 4000))
   }
 
   return {
