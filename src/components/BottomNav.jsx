@@ -22,10 +22,10 @@ export default function BottomNav({ activeTab, onChange }) {
               padding: '4px 0',
             }}>
             <div style={{
-              width: 26, height: 26, borderRadius: 8, display: 'flex', alignItems: 'center',
+              width: active ? 44 : 26, height: 26, borderRadius: active ? 13 : 8, display: 'flex', alignItems: 'center',
               justifyContent: 'center', fontSize: 15,
-              background: active ? '#FFF0E6' : 'transparent',
-              opacity: active ? 1 : 0.55, transition: 'all 0.2s',
+              background: active ? 'linear-gradient(135deg,#FF8C69,#FF6B9D)' : 'transparent',
+              opacity: active ? 1 : 0.45, transition: 'all 0.2s',
             }}>
               {tab.icon}
             </div>
