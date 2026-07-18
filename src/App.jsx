@@ -291,6 +291,13 @@ function App() {
                   adjusted = true
                   return { ...day, details: adjustedDay.details, adjusted: true, adjustmentReason: adjustedDay.adjustmentReason }
                 }
+                // Auch bei unveränderten Einheiten den von der KI zurückgegebenen Text
+                // übernehmen, aber NUR wenn HF-Zonen berechnet wurden - dann könnte die KI
+                // hier lediglich den HF-Bereich ergänzt haben, ohne das Training inhaltlich
+                // zu ändern. Kein "Angepasst"-Badge dafür, am Training selbst ändert sich nichts.
+                if (currentHFMax && adjustedDay?.details) {
+                  return { ...day, details: adjustedDay.details }
+                }
                 return day
               })
             }

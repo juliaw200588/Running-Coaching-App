@@ -106,7 +106,7 @@ PACE-ANPASSUNG basierend auf HF und Notizen:
 - Keine HF-Daten aber Notiz "zu schnell/anstrengend" → Pace reduzieren
 - Keine HF-Daten aber Notiz "sehr leicht" → Pace erhöhen
 - Passe NUR Zone 2 und Langer Lauf Paces an – Intervall/Tempo Paces bleiben stabil
-- Schreibe die neue Pace explizit in die Details (z.B. "Zone 2 (8:10-8:40 min/km)" statt nur "Zone 2")
+- Schreibe die neue Pace explizit in die Details (z.B. "Zone 2 (8:10-8:40 min/km)" statt nur "Zone 2"). Falls oben HF-Zonengrenzen berechnet wurden, IMMER zusätzlich den passenden HF-Bereich mit angeben, Format "Zone X (Pace-Bereich min/km, HF-Bereich bpm)" - auch bei unveränderten Einheiten (adjusted: false), falls die Details bisher nur Pace ohne HF enthielten, dort ebenfalls den HF-Bereich ergänzen
 - Erschöpfung in Notizen → Erholung priorisieren
 - Schuhwarnung vorhanden → explizit in Empfehlung erwähnen
 - Regenerationswoche (isRegenWeek): niedrigerer Umfang ist gewollt, keine Kritik daran

@@ -257,7 +257,8 @@ TAPERING (letzte 2-3 Wochen):
 TRAININGSPHILOSOPHIE – STRIKT EINHALTEN
 ═══════════════════════════════════════
 
-0. PACE-VORGABEN STRIKT EINHALTEN: Nutze die berechneten Trainingspaces exakt – Zone 2 ist IMMER deutlich langsamer als die Wettkampfpace. Nie schneller als angegeben für lockere Läufe! Die Intervall- und Tempopace sind bewusst NICHT von der Zieldistanz-Pace abgeleitet, sondern von der 5-km- bzw. Halbmarathon-äquivalenten Pace – bei HM-/Marathon-Zielen sind Intervalle daher deutlich schneller als die Zieldistanz-Wettkampfpace. Das ist korrekt so, nicht anpassen!
+0. PACE-VORGABEN STRIKT EINHALTEN: Nutze die berechneten Trainingspaces exakt – Zone 2 ist IMMER deutlich langsamer als die Wettkampfpace. Nie schneller als angegeben für lockere Läufe! Die Intervall- und Tempopace sind bewusst NICHT von der Zieldistanz-Pace abgeleitet, sondern von der 5-km- bzw. Halbmarathon-äquivalenten Pace – bei HM-/Marathon-Zielen sind Intervalle daher deutlich schneller als die Zieldistanz-Wettkampfpace. Das ist korrekt so, nicht anpassen!${hfMax ? `
+   HF-ZONEN IN DEN DETAILS: Da HF-Zonen berechnet wurden (siehe unten), schreibe bei JEDER Einheit mit einer Zone-Angabe (Zone 1-5) IMMER Pace UND HF-Bereich zusammen in die Klammer, Format "Zone X (Pace-Bereich min/km, HF-Bereich bpm)". Beispiel: "Zone 2 (7:44-8:14 min/km, 129-143 bpm)" statt nur "Zone 2 (7:44-8:14 min/km)". Nutze exakt die unten berechneten HF-Zonengrenzen, nicht selbst schätzen.` : ''}
 
 1. 80/20 REGEL: 80% Zone 1-2, maximal 20% Zone 4-5. Keine Zone 3 als eigenständige Einheit.
 
