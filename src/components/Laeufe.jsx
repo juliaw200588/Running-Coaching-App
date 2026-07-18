@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase.js'
+import Statistics from './Statistics.jsx'
 
 const TAG_OFFSET = { Mo: 0, Di: 1, Mi: 2, Do: 3, Fr: 4, Sa: 5, So: 6 }
 const WEEKDAY_NAMES = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
@@ -304,12 +305,69 @@ export default function Laeufe({ user, plan }) {
   })
 
   const RunCard = ({ run }) => {
+    const isPending = run.status === 'pending'
     const isReassigning = reassigning === run.id
     const candidates = isReassigning ? getCandidates(run) : []
     const selected = reassignSelections[run.id] ?? (candidates[0]?.key || '')
 
+    // Noch nicht zugeordnete Läufe: Auswahl bleibt direkt auf der Karte, da hier erst
+    // die grundlegende Zuordnung passieren muss, bevor es überhaupt Details gibt.
+    if (isPending) {
+      return (
+        <div style={{ background: 'white', borderRadius: 14, padding: '14px 16px', border: '1.5px solid #F0E8E0', marginBottom: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 'bold', color: '#3D2B1F', fontFamily: 'sans-serif' }}>
+              🏃‍♀️ {run.date ? new Date(run.date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Kein Datum'}
+            </div>
+            <span style={{ fontSize: 10, background: STATUS_COLOR[run.status] + '22', color: STATUS_COLOR[run.status], padding: '3px 10px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>
+              {STATUS_LABEL[run.status]}
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+            {run.km && <span style={{ fontSize: 11, background: '#FFF0E6', color: '#C17A3A', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>📍 {run.km}</span>}
+            {run.pace && <span style={{ fontSize: 11, background: '#E8F0FF', color: '#4060C0', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>⏱ {run.pace}</span>}
+            {run.bpm && <span style={{ fontSize: 11, background: '#FDECEA', color: '#B85464', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>❤️ {run.bpm}</span>}
+          </div>
+
+          {isReassigning ? (
+            <>
+              <select
+                value={selected}
+                onChange={e => setReassignSelections(p => ({ ...p, [run.id]: e.target.value }))}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 13, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', cursor: 'pointer', marginBottom: 10 }}>
+                {candidates.length === 0 && <option value="">Kein passender offener Tag gefunden</option>}
+                {candidates.map(c => (
+                  <option key={c.key} value={c.key}>{candidateLabel(c)}</option>
+                ))}
+                <option value="extra">— Als Extra-Lauf speichern (kein Plan-Tag) —</option>
+              </select>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => setReassigning(null)}
+                  style={{ padding: '10px 14px', borderRadius: 10, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+                  Abbrechen
+                </button>
+                <button onClick={() => reassignRun(run, selected)} disabled={!selected || saving}
+                  style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: 'none', background: !selected || saving ? '#F0E8E0' : 'linear-gradient(135deg,#FF8C69,#FFB347)', color: !selected || saving ? '#C4A882' : 'white', fontSize: 12, fontWeight: 'bold', cursor: !selected || saving ? 'default' : 'pointer', fontFamily: 'sans-serif' }}>
+                  {saving ? '⏳ Speichere…' : '✓ Bestätigen'}
+                </button>
+              </div>
+            </>
+          ) : (
+            <button onClick={() => { setReassigning(run.id); setReassignSelections(p => ({ ...p, [run.id]: undefined })) }}
+              style={{ width: '100%', padding: '8px', borderRadius: 10, border: '1.5px solid #F0E0D0', background: 'white', color: '#8B7355', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+              Zuordnen
+            </button>
+          )}
+        </div>
+      )
+    }
+
+    // Bereits zugeordnete/Extra-Läufe: ganze Karte klickbar, öffnet Details.
+    // Keine Buttons mehr direkt auf der Karte - das ist eine Browse-Liste, kein
+    // Aktions-Panel. "Neu zuordnen" gibt's im Detail-Modal, nicht mehr permanent hier.
     return (
-      <div style={{ background: 'white', borderRadius: 14, padding: '14px 16px', border: '1.5px solid #F0E8E0', marginBottom: 10 }}>
+      <div onClick={() => setDetailRun(run)}
+        style={{ background: 'white', borderRadius: 14, padding: '14px 16px', border: '1.5px solid #F0E8E0', marginBottom: 10, cursor: 'pointer' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <div style={{ fontSize: 13, fontWeight: 'bold', color: '#3D2B1F', fontFamily: 'sans-serif' }}>
             🏃‍♀️ {run.date ? new Date(run.date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Kein Datum'}
@@ -318,50 +376,13 @@ export default function Laeufe({ user, plan }) {
             {STATUS_LABEL[run.status]}{run.planInfo ? `: Wo.${run.planInfo.weekN} ${run.planInfo.tag}` : ''}
           </span>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {run.km && <span style={{ fontSize: 11, background: '#FFF0E6', color: '#C17A3A', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>📍 {run.km}</span>}
           {run.pace && <span style={{ fontSize: 11, background: '#E8F0FF', color: '#4060C0', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>⏱ {run.pace}</span>}
           {run.bpm && <span style={{ fontSize: 11, background: '#FDECEA', color: '#B85464', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>❤️ {run.bpm}</span>}
           <span style={{ fontSize: 11, background: '#F5EDE8', color: '#8B6B5A', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>{run.source === 'polar' ? '⌚ Polar' : '✏️ Manuell'}</span>
         </div>
-
-        {isReassigning ? (
-          <>
-            <select
-              value={selected}
-              onChange={e => setReassignSelections(p => ({ ...p, [run.id]: e.target.value }))}
-              style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 13, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', cursor: 'pointer', marginBottom: 10 }}>
-              {candidates.length === 0 && <option value="">Kein passender offener Tag gefunden</option>}
-              {candidates.map(c => (
-                <option key={c.key} value={c.key}>{candidateLabel(c)}</option>
-              ))}
-              <option value="extra">— Als Extra-Lauf speichern (kein Plan-Tag) —</option>
-            </select>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => setReassigning(null)}
-                style={{ padding: '10px 14px', borderRadius: 10, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
-                Abbrechen
-              </button>
-              <button onClick={() => reassignRun(run, selected)} disabled={!selected || saving}
-                style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: 'none', background: !selected || saving ? '#F0E8E0' : 'linear-gradient(135deg,#FF8C69,#FFB347)', color: !selected || saving ? '#C4A882' : 'white', fontSize: 12, fontWeight: 'bold', cursor: !selected || saving ? 'default' : 'pointer', fontFamily: 'sans-serif' }}>
-                {saving ? '⏳ Speichere…' : '✓ Bestätigen'}
-              </button>
-            </div>
-          </>
-        ) : (
-          <div style={{ display: 'flex', gap: 8 }}>
-            {run.logId && (
-              <button onClick={() => setDetailRun(run)}
-                style={{ padding: '8px 14px', borderRadius: 10, border: '1.5px solid #F0E0D0', background: 'white', color: '#B8A090', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', whiteSpace: 'nowrap' }}>
-                Details →
-              </button>
-            )}
-            <button onClick={() => { setReassigning(run.id); setReassignSelections(p => ({ ...p, [run.id]: undefined })) }}
-              style={{ flex: 1, padding: '8px', borderRadius: 10, border: '1.5px solid #F0E0D0', background: 'white', color: '#8B7355', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
-              {run.status === 'pending' ? 'Zuordnen' : 'Neu zuordnen'}
-            </button>
-          </div>
-        )}
+        <div style={{ textAlign: 'right', fontSize: 10, color: '#D4C4B8', fontFamily: 'sans-serif', marginTop: 6 }}>Details ansehen ›</div>
       </div>
     )
   }
@@ -401,7 +422,13 @@ export default function Laeufe({ user, plan }) {
           style={{ flex: 1, padding: '10px', borderRadius: 12, border: `2px solid ${view === 'cal' ? '#FF8C69' : '#F0E0D0'}`, background: view === 'cal' ? '#FF8C69' : 'white', color: view === 'cal' ? 'white' : '#C4A882', fontSize: 13, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
           Kalender
         </button>
+        <button onClick={() => setView('stats')}
+          style={{ flex: 1, padding: '10px', borderRadius: 12, border: `2px solid ${view === 'stats' ? '#FF8C69' : '#F0E0D0'}`, background: view === 'stats' ? '#FF8C69' : 'white', color: view === 'stats' ? 'white' : '#C4A882', fontSize: 13, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+          Statistik
+        </button>
       </div>
+
+      {view === 'stats' && <Statistics user={user} plan={plan} />}
 
       {view === 'list' && (
         runs.length === 0 ? (
@@ -518,7 +545,46 @@ export default function Laeufe({ user, plan }) {
                 </div>
               )}
 
-              <button onClick={() => setDetailRun(null)} style={{ width: '100%', marginTop: 20, padding: 14, borderRadius: 16, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+              {reassigning === d.id ? (
+                (() => {
+                  const dCandidates = getCandidates(d)
+                  const dSelected = reassignSelections[d.id] ?? (dCandidates[0]?.key || '')
+                  return (
+                    <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid #F0E8E0' }}>
+                      <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 6, fontFamily: 'sans-serif' }}>
+                        Neuem Plan-Tag zuordnen
+                      </label>
+                      <select
+                        value={dSelected}
+                        onChange={e => setReassignSelections(p => ({ ...p, [d.id]: e.target.value }))}
+                        style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 13, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', cursor: 'pointer', marginBottom: 10 }}>
+                        {dCandidates.length === 0 && <option value="">Kein passender offener Tag gefunden</option>}
+                        {dCandidates.map(c => (
+                          <option key={c.key} value={c.key}>{candidateLabel(c)}</option>
+                        ))}
+                        <option value="extra">— Als Extra-Lauf speichern (kein Plan-Tag) —</option>
+                      </select>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button onClick={() => setReassigning(null)}
+                          style={{ padding: '10px 14px', borderRadius: 10, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+                          Abbrechen
+                        </button>
+                        <button onClick={() => reassignRun(d, dSelected)} disabled={!dSelected || saving}
+                          style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: 'none', background: !dSelected || saving ? '#F0E8E0' : 'linear-gradient(135deg,#FF8C69,#FFB347)', color: !dSelected || saving ? '#C4A882' : 'white', fontSize: 12, fontWeight: 'bold', cursor: !dSelected || saving ? 'default' : 'pointer', fontFamily: 'sans-serif' }}>
+                          {saving ? '⏳ Speichere…' : '✓ Bestätigen'}
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })()
+              ) : (
+                <button onClick={() => { setReassigning(d.id); setReassignSelections(p => ({ ...p, [d.id]: undefined })) }}
+                  style={{ width: '100%', marginTop: 18, padding: 12, borderRadius: 14, border: '1.5px solid #F0E0D0', background: 'white', color: '#8B7355', fontSize: 13, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+                  Neu zuordnen
+                </button>
+              )}
+
+              <button onClick={() => { setDetailRun(null); setReassigning(null) }} style={{ width: '100%', marginTop: 10, padding: 14, borderRadius: 16, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
                 Schließen
               </button>
             </div>

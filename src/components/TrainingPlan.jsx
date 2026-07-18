@@ -621,7 +621,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
   const phaseTabColors = ['#7EC8A4', '#F4A96A', '#E07B8A', '#A78BCA']
 
   return (
-    <div style={{ fontFamily: "'Georgia', 'Times New Roman', serif", background: 'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 50%, #FFF0F5 100%)', minHeight: '100vh', paddingBottom: 80 }}>
+    <div style={{ fontFamily: "'Georgia', 'Times New Roman', serif", background: 'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 50%, #FFF0F5 100%)', minHeight: '100vh' }}>
 
       {/* Log Modal */}
       {logModal && (
