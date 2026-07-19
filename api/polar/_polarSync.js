@@ -67,11 +67,17 @@ function mapExercise(ex, exerciseId) {
     ?? ex['total-ascent']
     ?? ex['ascent-descent']?.ascent
     ?? null
-  const gefuehl = ex.feeling
-    ?? ex['subjective-feeling']
-    ?? ex['perceived-load']?.feeling
-    ?? ex['training-load-pro']?.['perceived-load']?.feeling
-    ?? null
+  // "Gefühl" = Polars eigenes RPE-Feld (user-rpe), bestätigt aus echten Rohdaten am 19.07.
+  // "UNKNOWN" bedeutet: Nutzer hat für diesen Lauf kein Gefühl in Polar Flow eingetragen -
+  // zählt für uns wie "kein Wert vorhanden".
+  const rawRpe = ex['training-load-pro']?.['user-rpe']
+  const gefuehl = (rawRpe && rawRpe !== 'UNKNOWN') ? rawRpe : null
+
+  // Höhenmeter, Kadenz, Erholungszeit: anhand echter Rohdaten (19.07.) bestätigt NICHT
+  // Teil dieser Zusammenfassungs-Antwort (kein falscher Feldname - die Werte fehlen
+  // schlicht komplett). Polar Flow zeigt sie zwar an, das muss aber aus dem separaten,
+  // detaillierteren "Samples"-Endpunkt stammen (Zeitreihendaten), nicht aus dieser
+  // einfachen Exercise-Zusammenfassung. Bleibt vorerst null, bis das separat gebaut wird.
   const trainingLoad = ex['training-load']
     ?? ex['training-load-pro']?.['cardio-load']
     ?? ex['training-load-pro']?.['muscle-load']
@@ -80,8 +86,11 @@ function mapExercise(ex, exerciseId) {
     ?? ex['training-load-pro']?.['recovery-time']
     ?? null
 
-  if (hoehenmeter == null || cadence == null || gefuehl == null || trainingLoad == null || recoveryTime == null) {
-    console.log('[Polar mapExercise] Mindestens ein Feld nicht gefunden (Höhenmeter/Kadenz/Gefühl/TrainingLoad/RecoveryTime). Rohes Exercise-Objekt:', JSON.stringify(ex).slice(0, 4000))
+  // Nur noch trainingLoad überwachen - für die anderen vier ist das Verhalten jetzt
+  // geklärt (Höhenmeter/Kadenz/Erholungszeit fehlen strukturell, Gefühl ist oft legitim
+  // "kein Wert"), ständiges Loggen dafür würde nur unnötig Rauschen erzeugen.
+  if (trainingLoad == null) {
+    console.log('[Polar mapExercise] Trainingsbelastung nicht gefunden (unerwartet). Rohes Exercise-Objekt:', JSON.stringify(ex).slice(0, 4000))
   }
 
   return {
@@ -144,10 +153,19 @@ export async function fetchAndPersistPolarActivities(userId) {
   const stored = []
 
   for (const exerciseUrl of exercises) {
-    const exRes = await fetch(exerciseUrl, {
+    // ?samples=true&zones=true laut offizieller Polar-Doku: liefert zusätzliche
+    // Zeitreihen-Daten (vermutlich Kadenz, Distanz-über-Zeit für km-Splits, evtl. sogar
+    // GPS-Punkte). Struktur der Antwort noch nicht verifiziert - wird unten geloggt,
+    // um sie an echten Daten zu sehen statt zu raten.
+    const separator = exerciseUrl.includes('?') ? '&' : '?'
+    const exRes = await fetch(`${exerciseUrl}${separator}samples=true&zones=true`, {
       headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' }
     })
     const ex = await exRes.json()
+
+    console.log('[Polar Samples] Schlüssel der Antwort:', Object.keys(ex).join(', '))
+    if (ex.samples) console.log('[Polar Samples] Rohe samples-Daten:', JSON.stringify(ex.samples).slice(0, 4000))
+    if (ex.route) console.log('[Polar Samples] Rohe route-Daten:', JSON.stringify(ex.route).slice(0, 2000))
 
     if (isRunning(ex)) {
       const exerciseId = exerciseUrl.split('/').filter(Boolean).pop()
