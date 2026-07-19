@@ -101,9 +101,17 @@ function App() {
 
     const lastAnalysisKey = `last_week_analysis_${user.id}`
     const currentWeekInPlan = Math.floor(daysSinceStart / 7)
+    // Die Woche, die TATSÄCHLICH ausgewertet wird, ist nicht immer die aktuelle
+    // Kalenderwoche - im Nachhol-Fenster (Mo/Di/Mi) wird die VORHERIGE Woche geprüft.
+    // Muss hier genauso berechnet werden wie unten in runWeeklyCheck, damit Vergleich
+    // und Speicherung dieselbe Woche meinen (sonst merkt sich die App fälschlich die
+    // falsche Woche als "schon erledigt" - genau das war der Bug).
+    const analyzeWeek = isLastDay ? currentWeekInPlan : currentWeekInPlan - 1
+    if (analyzeWeek < 0) return
+
     const lastAnalysis = localStorage.getItem(lastAnalysisKey)
 
-    if (lastAnalysis === String(currentWeekInPlan)) return
+    if (lastAnalysis === String(analyzeWeek)) return
 
     // Sperre gegen parallele Durchläufe: user/plan können beim Laden mehrfach mit neuen
     // Objekt-Referenzen gesetzt werden (z.B. durch getSession() UND onAuthStateChange()),
@@ -111,7 +119,7 @@ function App() {
     // fertig ist. Ohne synchrone Sperre können dadurch mehrere identische Erinnerungen
     // gleichzeitig verschickt werden. Der Schlüssel ist pro User+Woche+Tagesart eindeutig,
     // ein echter Wochenwechsel oder Nutzerwechsel darf also trotzdem neu prüfen.
-    const runKey = `${user.id}_${currentWeekInPlan}_${isLastDay ? 'last' : 'next'}`
+    const runKey = `${user.id}_${analyzeWeek}_${isLastDay ? 'last' : 'next'}`
     if (weeklyCheckKeyRef.current === runKey) return
     weeklyCheckKeyRef.current = runKey
 
@@ -342,7 +350,7 @@ function App() {
       })
 
       setUnreadCount(prev => prev + 1)
-      localStorage.setItem(lastAnalysisKey, String(currentWeekInPlan))
+      localStorage.setItem(lastAnalysisKey, String(analyzeWeek))
 
     } catch (e) {
       console.error('Wochenanalyse Fehler:', e)
