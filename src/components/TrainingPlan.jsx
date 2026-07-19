@@ -13,6 +13,13 @@ const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 const estimateDayKm = (details) => {
   if (!details) return 0
   const clean = details.replace(/\([^)]*\)/g, '')
+
+  // Erkennt ein führendes "NN km: ..." als GESAMT-Distanz des Tages (z.B.
+  // "16 km: 12 km Zone 2 + 4 km progressiv..."). Die folgenden km-Angaben sind dann nur
+  // eine Aufschlüsselung des Gesamtwerts, keine zusätzliche Distanz - nicht mit aufsummieren.
+  const totalMatch = clean.match(/^\s*(\d+(?:[.,]\d+)?)\s*km\s*:/)
+  if (totalMatch) return parseFloat(totalMatch[1].replace(',', '.'))
+
   let km = 0
 
   const repRegex = /(\d+)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*(km|m)\b/gi
