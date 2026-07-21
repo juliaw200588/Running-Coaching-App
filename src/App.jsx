@@ -179,6 +179,22 @@ function App() {
 
       if (!currentPhase || !currentWeek) return
 
+      // Geräteübergreifende Prüfung: läuft die App auf mehreren Geräten/Browsern (z.B.
+      // Handy + PC), hat jedes sein EIGENES localStorage - eines "weiß" nicht, dass das
+      // andere schon analysiert hat. Die Datenbank ist die einzige gemeinsame, verlässliche
+      // Quelle. Diese Prüfung ist der eigentliche Fix für wiederholte Analysen derselben Woche.
+      const { data: existingAnalysis } = await supabase
+        .from('week_analyses')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('week_number', currentWeek.n)
+        .limit(1)
+
+      if (existingAnalysis && existingAnalysis.length > 0) {
+        localStorage.setItem(lastAnalysisKey, String(analyzeWeek))
+        return
+      }
+
       const plannedDays = currentWeek.days
         .map((d, di) => ({ ...d, key: dayKey(currentPhase.id, currentWeek.n, di) }))
         .filter(d => !d.optional)
