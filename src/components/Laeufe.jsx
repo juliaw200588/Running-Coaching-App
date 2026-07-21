@@ -224,7 +224,7 @@ export default function Laeufe({ user, plan }) {
         const score = Math.abs(dist) * 1.5 + kmDiff
         return { ...d, dist, kmDiff, score }
       })
-      .filter(d => Math.abs(d.dist) <= 3)
+      .filter(d => Math.abs(d.dist) <= 4)
       .sort((a, b) => a.score - b.score)
   }
 
