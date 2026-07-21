@@ -153,19 +153,32 @@ export async function fetchAndPersistPolarActivities(userId) {
   const stored = []
 
   for (const exerciseUrl of exercises) {
-    // ?samples=true&zones=true laut offizieller Polar-Doku: liefert zusätzliche
-    // Zeitreihen-Daten (vermutlich Kadenz, Distanz-über-Zeit für km-Splits, evtl. sogar
-    // GPS-Punkte). Struktur der Antwort noch nicht verifiziert - wird unten geloggt,
-    // um sie an echten Daten zu sehen statt zu raten.
-    const separator = exerciseUrl.includes('?') ? '&' : '?'
-    const exRes = await fetch(`${exerciseUrl}${separator}samples=true&zones=true`, {
+    const exRes = await fetch(exerciseUrl, {
       headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' }
     })
     const ex = await exRes.json()
 
-    console.log('[Polar Samples] Schlüssel der Antwort:', Object.keys(ex).join(', '))
-    if (ex.samples) console.log('[Polar Samples] Rohe samples-Daten:', JSON.stringify(ex.samples).slice(0, 4000))
-    if (ex.route) console.log('[Polar Samples] Rohe route-Daten:', JSON.stringify(ex.route).slice(0, 2000))
+    // Samples sind laut einer aktuellen (Jan. 2026) Community-Bibliothek für diese API ein
+    // EIGENER Endpunkt (/v3/exercises/{id}/samples), kein Query-Parameter an der normalen
+    // Übungs-Abfrage (das hatte keinen Effekt, siehe letzter Test). Wird hier separat und
+    // vorsichtig getestet, inkl. Logging von Erfolg/Fehler, um die echte Antwort zu sehen.
+    const exerciseIdForSamples = exerciseUrl.split('/').filter(Boolean).pop()
+    try {
+      const samplesRes = await fetch(
+        `https://www.polaraccesslink.com/v3/exercises/${exerciseIdForSamples}/samples`,
+        { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } }
+      )
+      if (samplesRes.ok) {
+        const samplesData = await samplesRes.json()
+        console.log('[Polar Samples-Endpoint] Erfolg! Schlüssel:', Object.keys(samplesData).join(', '))
+        console.log('[Polar Samples-Endpoint] Rohe Daten:', JSON.stringify(samplesData).slice(0, 4000))
+      } else {
+        const errText = await samplesRes.text().catch(() => '')
+        console.log('[Polar Samples-Endpoint] Fehlgeschlagen, Status:', samplesRes.status, 'Antwort:', errText.slice(0, 500))
+      }
+    } catch (e) {
+      console.log('[Polar Samples-Endpoint] Ausnahme:', e.message)
+    }
 
     if (isRunning(ex)) {
       const exerciseId = exerciseUrl.split('/').filter(Boolean).pop()
