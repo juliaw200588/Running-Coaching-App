@@ -347,10 +347,51 @@ export default function PolarConnect({ user, plan }) {
     }
   }
 
-  const discardActivity = async (activity) => {
-    await supabase.from('polar_pending_activities').delete().eq('id', activity.id)
+const discardActivity = async (activity) => {
+  try {
+    if (!activity.polar_exercise_id) {
+      throw new Error('Die Polar-ID der Aktivität fehlt.')
+    }
+
+    const { error: ignoreError } = await supabase
+      .from('polar_ignored_activities')
+      .upsert(
+        {
+          user_id: user.id,
+          polar_exercise_id: String(activity.polar_exercise_id),
+        },
+        {
+          onConflict: 'user_id,polar_exercise_id',
+        }
+      )
+
+    if (ignoreError) {
+      throw ignoreError
+    }
+
+    const { error: deleteError } = await supabase
+      .from('polar_pending_activities')
+      .delete()
+      .eq('id', activity.id)
+      .eq('user_id', user.id)
+
+    if (deleteError) {
+      throw deleteError
+    }
+
     setPending(prev => prev.filter(a => a.id !== activity.id))
+    setMessage({
+      type: 'success',
+      text: 'Lauf wurde dauerhaft verworfen.',
+    })
+  } catch (error) {
+    console.error('Polar-Aktivität konnte nicht verworfen werden:', error)
+    setMessage({
+      type: 'error',
+      text: 'Der Lauf konnte nicht dauerhaft verworfen werden.',
+    })
   }
+}
 
   const loadHistory = async () => {
     setShowHistory(true)
