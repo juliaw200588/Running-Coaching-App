@@ -159,14 +159,13 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
     console.log('[Polar V4 Sync] Sportarten-Katalog leer/nicht abrufbar - filtere NICHT nach Sportart, um nicht versehentlich alles zu verwerfen.')
   }
 
-  // 'from' ist Pflicht (bestätigt durch den Fehler "query parameter 'from' is required").
-  // Drittes Format-Versuch: ohne Millisekunden, ohne URL-Encoding der Doppelpunkte -
-  // manche Datums-Parser lehnen Sekundenbruchteile ab, und falsch behandeltes Encoding
-  // könnte ebenfalls zum bisherigen "could not be parsed"-Fehler geführt haben.
-  const from = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-  const fromStr = from.toISOString().split('.')[0] + 'Z'
+  // Vierter Versuch: Unix-Zeitstempel (Millisekunden seit 1970) als reine Zahl, nicht als
+  // ISO-Text - falls der Parser generisch "could not be parsed as datetime" wirft, obwohl
+  // drei unterschiedliche gültige ISO-8601-Varianten fehlschlugen, könnte ein numerischer
+  // Zeitstempel erwartet werden statt eines Textformats.
+  const fromMillis = Date.now() - 30 * 24 * 60 * 60 * 1000
 
-  const url = `https://www.polaraccesslink.com/v4/data/training-sessions/list?from=${fromStr}`
+  const url = `https://www.polaraccesslink.com/v4/data/training-sessions/list?from=${fromMillis}`
   console.log('[Polar V4 Sync] Angefragte URL:', url)
   const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } })
 
