@@ -4,6 +4,9 @@ const POLAR_API_BASE = 'https://www.polaraccesslink.com/v4/data'
 const POLAR_TOKEN_URL = 'https://auth.polar.com/oauth/token'
 const LOOKBACK_DAYS = 30
 
+// Polar V4 Sync v2:
+// Basisdaten, Detaildaten, Route, km-Splits und strukturierte Trainingsziele.
+
 const supabase = createClient(
   'https://jgvsbecvgkcfafjyhxvr.supabase.co',
   process.env.SUPABASE_SERVICE_KEY
@@ -642,12 +645,390 @@ function resolveSportName(sportsMap, session, exercise) {
   )
 }
 
-async function loadDetailedRunningExercises(token, sessions, sportsMap) {
+
+function getTargetId(reference) {
+  const value = reference?.id ?? reference
+  return value === undefined || value === null ? null : String(value)
+}
+
+function normalizeCalendarTargets(payload) {
+  return Array.isArray(payload?.trainingTarget)
+    ? payload.trainingTarget
+    : Array.isArray(payload)
+      ? payload
+      : []
+}
+
+function normalizeFavoriteTargets(payload) {
+  return Array.isArray(payload?.favoriteTarget)
+    ? payload.favoriteTarget
+    : Array.isArray(payload)
+      ? payload
+      : []
+}
+
+async function loadCalendarTargetsForDate(token, dateString) {
+  const nextDate = addUtcDays(dateString, 1)
+
+  try {
+    const payload = await polarFetch(
+      '/training-target/calendar-targets',
+      token,
+      {
+        fromDate: dateString,
+        toDate: nextDate,
+      }
+    )
+
+    return normalizeCalendarTargets(payload)
+  } catch (error) {
+    if (error.status === 403) {
+      console.warn(
+        '[Polar V4] Trainingsziele sind nicht freigegeben. ' +
+        'Der OAuth-Scope "training_targets:read" fehlt.'
+      )
+      return []
+    }
+
+    throw error
+  }
+}
+
+async function loadFavoriteTargets(token) {
+  try {
+    const payload = await polarFetch(
+      '/training-target/favorites',
+      token
+    )
+
+    return normalizeFavoriteTargets(payload)
+  } catch (error) {
+    if (error.status === 403) {
+      console.warn(
+        '[Polar V4] Favoriten-Ziele sind nicht freigegeben. ' +
+        'Der OAuth-Scope "training_targets:read" fehlt.'
+      )
+      return []
+    }
+
+    throw error
+  }
+}
+
+function findTrainingTarget(session, calendarTargets, favoriteTargets) {
+  const trainingTargetId = getTargetId(session?.trainingTarget)
+  const favoriteTargetId = getTargetId(session?.favoriteTarget)
+
+  if (trainingTargetId) {
+    const calendarTarget = calendarTargets.find(
+      target => getTargetId(target?.session?.id) === trainingTargetId
+    )
+
+    if (calendarTarget) return calendarTarget
+  }
+
+  if (favoriteTargetId) {
+    const favoriteTarget = favoriteTargets.find(
+      target => getTargetId(target?.favorite?.id) === favoriteTargetId
+    )
+
+    if (favoriteTarget) return favoriteTarget
+  }
+
+  return null
+}
+
+function flattenPhaseOrRepeat(items, result = []) {
+  for (const item of Array.isArray(items) ? items : []) {
+    const children = Array.isArray(item?.phaseOrRepeat)
+      ? item.phaseOrRepeat
+      : []
+
+    const repeatCount = numberOrNull(item?.repeatCount)
+
+    if (children.length && repeatCount && repeatCount >= 2) {
+      for (let repeatIndex = 0; repeatIndex < repeatCount; repeatIndex += 1) {
+        flattenPhaseOrRepeat(children, result)
+      }
+      continue
+    }
+
+    if (children.length && !item?.goal) {
+      flattenPhaseOrRepeat(children, result)
+      continue
+    }
+
+    result.push({
+      name: item?.name || 'Phase',
+      changeType: item?.changeType || null,
+      goalType: item?.goal?.type || null,
+      plannedDurationSeconds:
+        item?.goal?.duration !== undefined &&
+        item?.goal?.duration !== null
+          ? Math.round(Number(item.goal.duration) / 1000)
+          : null,
+      plannedDistanceMeters: numberOrNull(item?.goal?.distance),
+      intensityType: item?.intensity?.type || null,
+      lowerZone: numberOrNull(item?.intensity?.lowerZone),
+      upperZone: numberOrNull(item?.intensity?.upperZone),
+    })
+  }
+
+  return result
+}
+
+function getSampleByType(exercise, type) {
+  const samples = Array.isArray(exercise?.samples?.samples)
+    ? exercise.samples.samples
+    : []
+
+  return samples.find(sample => sample?.type === type) || null
+}
+
+function numericSampleValues(sample) {
+  return Array.isArray(sample?.values)
+    ? sample.values.map(numberOrNull)
+    : []
+}
+
+function averageRange(values, startIndex, endIndex) {
+  const selected = values
+    .slice(startIndex, endIndex)
+    .filter(value => value !== null)
+
+  if (!selected.length) return null
+
+  return selected.reduce((sum, value) => sum + value, 0) /
+    selected.length
+}
+
+function maxRange(values, startIndex, endIndex) {
+  const selected = values
+    .slice(startIndex, endIndex)
+    .filter(value => value !== null)
+
+  return selected.length ? Math.max(...selected) : null
+}
+
+function findDistanceEndIndex(
+  distanceValues,
+  startIndex,
+  targetDistanceMeters
+) {
+  const startDistance = distanceValues[startIndex] ?? 0
+
+  for (
+    let index = startIndex + 1;
+    index < distanceValues.length;
+    index += 1
+  ) {
+    const value = distanceValues[index]
+
+    if (
+      value !== null &&
+      value - startDistance >= targetDistanceMeters
+    ) {
+      return index
+    }
+  }
+
+  return distanceValues.length - 1
+}
+
+function enrichPlannedPhasesWithSamples(phases, exercise) {
+  if (!Array.isArray(phases) || !phases.length) return null
+
+  const distanceSample = getSampleByType(exercise, 'DISTANCE')
+  const heartRateSample = getSampleByType(exercise, 'HEART_RATE')
+  const cadenceSample = getSampleByType(exercise, 'CADENCE')
+  const speedSample = getSampleByType(exercise, 'SPEED')
+
+  const referenceSample =
+    distanceSample ||
+    heartRateSample ||
+    cadenceSample ||
+    speedSample
+
+  const intervalMillis = numberOrNull(
+    referenceSample?.intervalMillis
+  )
+
+  const totalSampleCount = Math.max(
+    numericSampleValues(distanceSample).length,
+    numericSampleValues(heartRateSample).length,
+    numericSampleValues(cadenceSample).length,
+    numericSampleValues(speedSample).length
+  )
+
+  if (!intervalMillis || !totalSampleCount) {
+    return phases.map((phase, index) => ({
+      type: 'planned_phase',
+      index: index + 1,
+      ...phase,
+    }))
+  }
+
+  const distanceValues = numericSampleValues(distanceSample)
+  const heartRateValues = numericSampleValues(heartRateSample)
+  const cadenceValues = numericSampleValues(cadenceSample)
+  const speedValues = numericSampleValues(speedSample)
+
+  let startIndex = 0
+
+  return phases.map((phase, index) => {
+    let endIndex = startIndex
+
+    if (
+      phase.plannedDurationSeconds !== null &&
+      phase.plannedDurationSeconds > 0
+    ) {
+      endIndex = Math.min(
+        totalSampleCount,
+        startIndex +
+          Math.max(
+            1,
+            Math.round(
+              phase.plannedDurationSeconds * 1000 / intervalMillis
+            )
+          )
+      )
+    } else if (
+      phase.plannedDistanceMeters !== null &&
+      phase.plannedDistanceMeters > 0 &&
+      distanceValues.length
+    ) {
+      endIndex = Math.min(
+        totalSampleCount,
+        findDistanceEndIndex(
+          distanceValues,
+          startIndex,
+          phase.plannedDistanceMeters
+        ) + 1
+      )
+    } else {
+      // Manuell beendete Phasen lassen sich ohne ausgeführte Phasenmarker
+      // nicht zuverlässig zeitlich abgrenzen. Die Planstruktur bleibt
+      // trotzdem erhalten.
+      endIndex = startIndex
+    }
+
+    const actualDurationSeconds =
+      endIndex > startIndex
+        ? Math.round(
+            (endIndex - startIndex) * intervalMillis / 1000
+          )
+        : null
+
+    const startDistance =
+      distanceValues[startIndex] ?? null
+    const endDistance =
+      endIndex > startIndex
+        ? distanceValues[Math.min(
+            endIndex - 1,
+            distanceValues.length - 1
+          )]
+        : null
+
+    const actualDistanceMeters =
+      startDistance !== null && endDistance !== null
+        ? Math.max(0, endDistance - startDistance)
+        : null
+
+    const actualPace =
+      actualDistanceMeters &&
+      actualDurationSeconds
+        ? calculatePace(
+            actualDistanceMeters,
+            actualDurationSeconds * 1000
+          )
+        : null
+
+    const avgHeartRate = averageRange(
+      heartRateValues,
+      startIndex,
+      endIndex
+    )
+    const maxHeartRate = maxRange(
+      heartRateValues,
+      startIndex,
+      endIndex
+    )
+    const avgCadence = averageRange(
+      cadenceValues,
+      startIndex,
+      endIndex
+    )
+    const avgSpeed = averageRange(
+      speedValues,
+      startIndex,
+      endIndex
+    )
+
+    const segment = {
+      type: 'planned_phase',
+      index: index + 1,
+      ...phase,
+      actualDurationSeconds,
+      actualDistanceMeters:
+        actualDistanceMeters !== null
+          ? Math.round(actualDistanceMeters * 10) / 10
+          : null,
+      pace: actualPace,
+      avgHeartRate:
+        avgHeartRate !== null
+          ? Math.round(avgHeartRate)
+          : null,
+      maxHeartRate:
+        maxHeartRate !== null
+          ? Math.round(maxHeartRate)
+          : null,
+      avgCadence:
+        avgCadence !== null
+          ? Math.round(avgCadence)
+          : null,
+      avgSpeed:
+        avgSpeed !== null
+          ? Math.round(avgSpeed * 100) / 100
+          : null,
+    }
+
+    if (endIndex > startIndex) {
+      startIndex = endIndex
+    }
+
+    return segment
+  })
+}
+
+function extractTargetPhases(target, exercise) {
+  const targetExercise = Array.isArray(target?.exercise)
+    ? target.exercise[0]
+    : null
+
+  const flattened = flattenPhaseOrRepeat(
+    targetExercise?.phaseOrRepeat
+  )
+
+  return enrichPlannedPhasesWithSamples(flattened, exercise)
+}
+
+async function loadDetailedRunningExercises(
+  token,
+  sessions,
+  sportsMap
+) {
   const runningDates = new Set()
 
   for (const { session, exercise } of collectExercises(sessions)) {
-    const sportName = resolveSportName(sportsMap, session, exercise)
-    const startTime = firstDefined(exercise?.startTime, session?.startTime)
+    const sportName = resolveSportName(
+      sportsMap,
+      session,
+      exercise
+    )
+    const startTime = firstDefined(
+      exercise?.startTime,
+      session?.startTime
+    )
 
     if (isRunningSport(sportName) && startTime) {
       runningDates.add(String(startTime).slice(0, 10))
@@ -655,6 +1036,7 @@ async function loadDetailedRunningExercises(token, sessions, sportsMap) {
   }
 
   const detailedById = new Map()
+  let favoriteTargets = null
 
   for (const dateString of runningDates) {
     try {
@@ -662,34 +1044,57 @@ async function loadDetailedRunningExercises(token, sessions, sportsMap) {
         token,
         dateString
       )
-   console.log(
-  JSON.stringify(
-    detailedSessions[0].trainingTarget,
-    null,
-    2
-  )
-)
 
-console.log(
-  JSON.stringify(
-    detailedSessions[0].favoriteTarget,
-    null,
-    2
-  )
-)
+      const needsTrainingTargets = detailedSessions.some(
+        session =>
+          getTargetId(session?.trainingTarget) ||
+          getTargetId(session?.favoriteTarget)
+      )
 
-      for (const { session, exercise } of collectExercises(detailedSessions)) {
-        const exerciseId =
-          exercise?.identifier?.id || session?.identifier?.id || null
+      let calendarTargets = []
 
-        if (exerciseId) {
-          detailedById.set(String(exerciseId), { session, exercise })
+      if (needsTrainingTargets) {
+        calendarTargets = await loadCalendarTargetsForDate(
+          token,
+          dateString
+        )
+
+        if (favoriteTargets === null) {
+          favoriteTargets = await loadFavoriteTargets(token)
         }
       }
+
+      for (const { session, exercise } of collectExercises(
+        detailedSessions
+      )) {
+        const exerciseId =
+          exercise?.identifier?.id ||
+          session?.identifier?.id ||
+          null
+
+        if (!exerciseId) continue
+
+        const target = findTrainingTarget(
+          session,
+          calendarTargets,
+          favoriteTargets || []
+        )
+
+        const targetSegments = target
+          ? extractTargetPhases(target, exercise)
+          : null
+
+        detailedById.set(String(exerciseId), {
+          session,
+          exercise,
+          targetSegments,
+        })
+      }
     } catch (error) {
-      // Ein fehlendes Detail-Feature soll den Basis-Sync nicht komplett blockieren.
+      // Fehlende Zusatzdaten blockieren den Basis-Sync nicht.
       console.error(
-        `[Polar V4] Detaildaten für ${dateString} konnten nicht geladen werden:`,
+        `[Polar V4] Detaildaten für ${dateString} ` +
+        'konnten nicht vollständig geladen werden:',
         error
       )
     }
@@ -734,7 +1139,6 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
   )
 
   console.log('[Polar V4] Trainingseinheiten geladen:', sessions.length)
-  console.log('[Polar V4] Sportarten geladen:', Object.keys(sportsMap).length)
   console.log('[Polar V4] Läufe mit Detaildaten:', detailedById.size)
 
   const stored = []
@@ -756,7 +1160,6 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
     (ignoredRows || []).map(row => String(row.polar_exercise_id))
   )
 
-  console.log('[Polar V4] Dauerhaft ignorierte Aktivitäten:', ignoredIds.size)
 
   for (const session of sessions) {
     const exercises =
@@ -765,7 +1168,6 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
         : [session]
 
     for (const exercise of exercises) {
-      const sportId = getSportId(session, exercise)
       const detectedSportName = resolveSportName(
         sportsMap,
         session,
@@ -793,6 +1195,13 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
           mappedExercise,
           detectedSportName
         ),
+      }
+
+      if (
+        detailed?.targetSegments &&
+        detailed.targetSegments.length
+      ) {
+        row.run_segments = detailed.targetSegments
       }
 
 if (

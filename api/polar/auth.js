@@ -15,7 +15,7 @@ export default function handler(req, res) {
 
   // Nur der Scope, den wir aktuell brauchen (Prinzip der minimalen Berechtigung).
   // Kann später erweitert werden (z.B. nightly_recharge:read), falls gewünscht.
-  const scope = 'training_sessions:read sports:read'
+  const scope = 'training_sessions:read sports:read training_targets:read'
 
   const authUrl = `https://auth.polar.com/oauth/authorize?client_id=${process.env.POLAR_CLIENT_ID}&response_type=code&scope=${encodeURIComponent(scope)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`
 
