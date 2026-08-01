@@ -662,6 +662,13 @@ async function loadDetailedRunningExercises(token, sessions, sportsMap) {
         token,
         dateString
       )
+      console.log(
+  JSON.stringify(
+    detailedSessions[0],
+    null,
+    2
+  )
+)
 
       for (const { session, exercise } of collectExercises(detailedSessions)) {
         const exerciseId =
