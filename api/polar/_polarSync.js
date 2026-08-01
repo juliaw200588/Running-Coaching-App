@@ -388,10 +388,7 @@ console.log("TO   =", to)
   // Keine "features" anfordern:
   // Dann erlaubt Polar laut V4-Dokumentation einen Zeitraum von bis zu 90 Tagen.
   // Mit Features wäre jeweils nur ein einzelner Tag zulässig.
-  const data = await polarFetch('/training-sessions/list', token, {
-    from,
-    to,
-  })
+ const data = await polarFetch('/training-sessions/list', token)
 
   return Array.isArray(data?.trainingSessions)
     ? data.trainingSessions
