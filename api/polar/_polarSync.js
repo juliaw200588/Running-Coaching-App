@@ -56,6 +56,8 @@ async function polarFetch(path, token, query = {}) {
   })
 
   const payload = await readJsonOrText(response)
+  
+  console.log(`[Polar V4] Antwort ${response.status}: ${url.pathname}`)
 
   if (!response.ok) {
     const message = polarErrorMessage(payload)
@@ -381,18 +383,80 @@ function mapV4Exercise(session, exercise, sportName) {
 }
 
 async function loadTrainingSessions(token) {
-  const { from, to } = getDateRange()
-  console.log("FROM =", from)
-console.log("TO   =", to)
+  const now = new Date()
+  const past = new Date(now.getTime() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000)
 
-  // Keine "features" anfordern:
-  // Dann erlaubt Polar laut V4-Dokumentation einen Zeitraum von bis zu 90 Tagen.
-  // Mit Features wäre jeweils nur ein einzelner Tag zulässig.
- const data = await polarFetch('/training-sessions/list', token)
+  const formats = [
+    {
+      name: 'ISO mit Z und Millisekunden',
+      from: past.toISOString(),
+      to: now.toISOString(),
+    },
+    {
+      name: 'ISO mit Z ohne Millisekunden',
+      from: past.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      to: now.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    },
+    {
+      name: 'ISO ohne Zeitzone',
+      from: past.toISOString().replace(/Z$/, ''),
+      to: now.toISOString().replace(/Z$/, ''),
+    },
+    {
+      name: 'ISO Offset ohne Doppelpunkt',
+      from: past.toISOString().replace(/\.\d{3}Z$/, '+0000'),
+      to: now.toISOString().replace(/\.\d{3}Z$/, '+0000'),
+    },
+    {
+      name: 'Datum und Uhrzeit mit Leerzeichen',
+      from: past.toISOString().slice(0, 19).replace('T', ' '),
+      to: now.toISOString().slice(0, 19).replace('T', ' '),
+    },
+    {
+      name: 'Unix Sekunden',
+      from: Math.floor(past.getTime() / 1000),
+      to: Math.floor(now.getTime() / 1000),
+    },
+  ]
 
-  return Array.isArray(data?.trainingSessions)
-    ? data.trainingSessions
-    : []
+  let lastError = null
+
+  for (const format of formats) {
+    try {
+      console.log(`[Polar V4] Teste Datumsformat: ${format.name}`)
+      console.log('[Polar V4] FROM =', format.from)
+      console.log('[Polar V4] TO   =', format.to)
+
+      const data = await polarFetch('/training-sessions/list', token, {
+        from: format.from,
+        to: format.to,
+      })
+
+      console.log(`[Polar V4] Datumsformat funktioniert: ${format.name}`)
+
+      return Array.isArray(data?.trainingSessions)
+        ? data.trainingSessions
+        : []
+    } catch (error) {
+      lastError = error
+
+      if (
+        error.status === 400 &&
+        String(error.message).includes("could not be parsed as datetime")
+      ) {
+        console.warn(
+          `[Polar V4] Datumsformat abgelehnt: ${format.name}`
+        )
+        continue
+      }
+
+      throw error
+    }
+  }
+
+  throw lastError || new Error(
+    'Keines der getesteten Polar-Datumsformate wurde akzeptiert.'
+  )
 }
 
 async function savePendingActivity(row) {
