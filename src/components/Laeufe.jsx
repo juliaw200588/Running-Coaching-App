@@ -181,6 +181,8 @@ export default function Laeufe({ user, plan }) {
           polarExerciseId: l.polar_exercise_id,
           routeMapUrl: l.route_map_url,
           kalorien: l.kalorien,
+          routeWaypoints: l.route_waypoints,
+          kmSplits: l.km_splits,
           status: isExtra ? 'extra' : 'assigned',
           source: isPolar ? 'polar' : 'manual',
           planInfo: planDay ? { weekN: planDay.weekN, tag: planDay.tag, einheit: planDay.einheit } : null,
@@ -269,6 +271,8 @@ export default function Laeufe({ user, plan }) {
           recovery_time: run.recoveryTime,
           polar_exercise_id: run.polarExerciseId,
           kalorien: run.kalorien,
+          route_waypoints: run.routeWaypoints,
+          km_splits: run.kmSplits,
         }, { onConflict: 'user_id,day_key' })
       } else {
         await supabase.from('logs').upsert({
@@ -290,6 +294,8 @@ export default function Laeufe({ user, plan }) {
           recovery_time: run.recoveryTime,
           polar_exercise_id: run.polarExerciseId,
           kalorien: run.kalorien,
+          route_waypoints: run.routeWaypoints,
+          km_splits: run.kmSplits,
         }, { onConflict: 'user_id,day_key' })
         await supabase.from('training_done').upsert({ user_id: user.id, day_key: chosenKey, done: true }, { onConflict: 'user_id,day_key' })
       }
@@ -541,6 +547,22 @@ export default function Laeufe({ user, plan }) {
                     <div key={r.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 4px', borderBottom: '1px solid #F5EDE8' }}>
                       <span style={{ fontSize: 13, color: '#8B6B5A', fontFamily: 'sans-serif' }}>{r.icon} {r.label}</span>
                       <span style={{ fontSize: 13, color: '#3D2B1F', fontFamily: 'sans-serif', fontWeight: 'bold' }}>{r.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {d.kmSplits && d.kmSplits.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8, fontFamily: 'sans-serif' }}>
+                    Kilometer-Splits
+                  </div>
+                  {d.kmSplits.map(s => (
+                    <div key={s.km} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 4px', borderBottom: '1px solid #F5EDE8', fontSize: 12, fontFamily: 'sans-serif' }}>
+                      <span style={{ color: '#8B6B5A' }}>km {s.km}</span>
+                      <span style={{ color: '#3D2B1F', fontWeight: 'bold' }}>
+                        {s.dauerSek ? `${Math.floor(s.dauerSek / 60)}:${String(s.dauerSek % 60).padStart(2, '0')} min` : '–'}
+                      </span>
                     </div>
                   ))}
                 </div>

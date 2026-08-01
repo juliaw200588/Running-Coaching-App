@@ -249,6 +249,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
                 polar_exercise_id: l.polar_exercise_id || '',
                 route_map_url: l.route_map_url || '',
                 kalorien: l.kalorien || '',
+                km_splits: l.km_splits || null,
               }
             })
             setLogs(logMap)
@@ -796,6 +797,22 @@ export default function TrainingPlan({ plan, onReset, user }) {
                     <div key={r.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 4px', borderBottom: '1px solid #F5EDE8' }}>
                       <span style={{ fontSize: 13, color: '#8B6B5A', fontFamily: 'sans-serif' }}>{r.icon} {r.label}</span>
                       <span style={{ fontSize: 13, color: '#3D2B1F', fontFamily: 'sans-serif', fontWeight: 'bold' }}>{r.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {d.km_splits && d.km_splits.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8, fontFamily: 'sans-serif' }}>
+                    Kilometer-Splits
+                  </div>
+                  {d.km_splits.map(s => (
+                    <div key={s.km} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 4px', borderBottom: '1px solid #F5EDE8', fontSize: 12, fontFamily: 'sans-serif' }}>
+                      <span style={{ color: '#8B6B5A' }}>km {s.km}</span>
+                      <span style={{ color: '#3D2B1F', fontWeight: 'bold' }}>
+                        {s.dauerSek ? `${Math.floor(s.dauerSek / 60)}:${String(s.dauerSek % 60).padStart(2, '0')} min` : '–'}
+                      </span>
                     </div>
                   ))}
                 </div>

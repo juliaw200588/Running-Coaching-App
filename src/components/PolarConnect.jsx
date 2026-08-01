@@ -291,6 +291,8 @@ export default function PolarConnect({ user, plan }) {
           recovery_time: activity.recovery_time || null,
           polar_exercise_id: activity.polar_exercise_id || null,
           kalorien: activity.kalorien || null,
+          route_waypoints: activity.route_waypoints || null,
+          km_splits: activity.km_splits || null,
         }, { onConflict: 'user_id,day_key' })
       } else {
         await supabase.from('logs').upsert({
@@ -312,6 +314,8 @@ export default function PolarConnect({ user, plan }) {
           recovery_time: activity.recovery_time || null,
           polar_exercise_id: activity.polar_exercise_id || null,
           kalorien: activity.kalorien || null,
+          route_waypoints: activity.route_waypoints || null,
+          km_splits: activity.km_splits || null,
         }, { onConflict: 'user_id,day_key' })
         await supabase.from('training_done').upsert({
           user_id: user.id,
@@ -396,6 +400,8 @@ export default function PolarConnect({ user, plan }) {
           recovery_time: activity.recovery_time || null,
           polar_exercise_id: activity.polar_exercise_id || null,
           kalorien: activity.kalorien || null,
+          route_waypoints: activity.route_waypoints || null,
+          km_splits: activity.km_splits || null,
         }, { onConflict: 'user_id,day_key' })
       } else {
         await supabase.from('logs').upsert({
@@ -417,6 +423,8 @@ export default function PolarConnect({ user, plan }) {
           recovery_time: activity.recovery_time || null,
           polar_exercise_id: activity.polar_exercise_id || null,
           kalorien: activity.kalorien || null,
+          route_waypoints: activity.route_waypoints || null,
+          km_splits: activity.km_splits || null,
         }, { onConflict: 'user_id,day_key' })
         await supabase.from('training_done').upsert({
           user_id: user.id,
@@ -574,6 +582,12 @@ export default function PolarConnect({ user, plan }) {
       )}
 
       {connected && (
+        <div style={{ marginBottom: 16, padding: '10px 14px', background: '#F5EDE8', border: '1px solid #E8DED4', borderRadius: 12, fontSize: 11, color: '#8B7355', fontFamily: 'sans-serif', lineHeight: 1.6 }}>
+          🕘 "Verlauf durchsuchen" ist im Zuge der Umstellung auf Polar AccessLink V4 vorübergehend deaktiviert. Der normale Sync-Button oben funktioniert weiterhin.
+        </div>
+      )}
+
+      {false && connected && (
         <div style={{ marginBottom: 16 }}>
           {!showHistory ? (
             <button onClick={loadHistory}

@@ -1,10 +1,49 @@
 import { createClient } from '@supabase/supabase-js'
-import { fetchExerciseRoute, encodePolyline } from './_polarSync.js'
 
 const supabase = createClient(
   'https://jgvsbecvgkcfafjyhxvr.supabase.co',
   process.env.SUPABASE_SERVICE_KEY
 )
+
+// Google's Encoded Polyline Algorithm Format (Standardalgorithmus, von Mapbox erwartet).
+// Gegen Googles offizielles Testbeispiel geprüft und korrekt.
+function encodeNumber(num) {
+  let sgnNum = num << 1
+  if (num < 0) sgnNum = ~sgnNum
+  let output = ''
+  while (sgnNum >= 0x20) {
+    output += String.fromCharCode((0x20 | (sgnNum & 0x1f)) + 63)
+    sgnNum >>= 5
+  }
+  output += String.fromCharCode(sgnNum + 63)
+  return output
+}
+
+function encodePolyline(points) {
+  let output = ''
+  let prevLat = 0
+  let prevLon = 0
+  for (const [lat, lon] of points) {
+    const lat5 = Math.round(lat * 1e5)
+    const lon5 = Math.round(lon * 1e5)
+    output += encodeNumber(lat5 - prevLat)
+    output += encodeNumber(lon5 - prevLon)
+    prevLat = lat5
+    prevLon = lon5
+  }
+  return output
+}
+
+function simplifyPoints(points, maxPoints = 300) {
+  if (points.length <= maxPoints) return points
+  const step = points.length / maxPoints
+  const result = []
+  for (let i = 0; i < maxPoints; i++) {
+    result.push(points[Math.floor(i * step)])
+  }
+  result.push(points[points.length - 1])
+  return result
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -17,24 +56,32 @@ export default async function handler(req, res) {
   try {
     const { data: log } = await supabase
       .from('logs')
-      .select('id, polar_exercise_id, route_map_url')
+      .select('id, route_waypoints, route_map_url')
       .eq('id', logId)
       .eq('user_id', userId)
       .single()
 
     if (!log) return res.status(404).json({ error: 'Log nicht gefunden' })
 
-    // Bereits gecached - nichts neu generieren
     if (log.route_map_url) {
       return res.status(200).json({ url: log.route_map_url, cached: true })
     }
 
-    if (!log.polar_exercise_id) {
-      return res.status(400).json({ error: 'Kein Polar-Lauf (keine Route verfügbar)' })
+    if (!log.route_waypoints || !Array.isArray(log.route_waypoints) || log.route_waypoints.length === 0) {
+      return res.status(400).json({ error: 'Keine Route für diesen Lauf gespeichert' })
     }
 
-    const points = await fetchExerciseRoute(userId, log.polar_exercise_id)
-    const polyline = encodePolyline(points)
+    // V4 liefert { longitude, latitude, altitude, elapsedMillis } pro Punkt.
+    const points = log.route_waypoints
+      .filter(p => p.latitude != null && p.longitude != null)
+      .map(p => [p.latitude, p.longitude])
+
+    if (points.length === 0) {
+      return res.status(400).json({ error: 'Route enthält keine gültigen Koordinaten' })
+    }
+
+    const simplified = simplifyPoints(points)
+    const polyline = encodePolyline(simplified)
     const encodedPolyline = encodeURIComponent(polyline)
 
     const mapUrl = `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/path-4+ff8c69-1(${encodedPolyline})/auto/640x400@2x?padding=30&access_token=${process.env.MAPBOX_ACCESS_TOKEN}`
@@ -47,7 +94,7 @@ export default async function handler(req, res) {
     }
 
     const imgBuffer = Buffer.from(await imgRes.arrayBuffer())
-    const path = `${userId}/${log.polar_exercise_id}.png`
+    const path = `${userId}/${logId}.png`
 
     await supabase.storage.from('route-maps').upload(path, imgBuffer, {
       upsert: true,
