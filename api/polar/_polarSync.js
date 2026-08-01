@@ -195,29 +195,84 @@ function getDateRange(daysBack = LOOKBACK_DAYS) {
 async function getSportsMap(token) {
   try {
     const data = await polarFetch('/sports/list', token)
-    const sports = Array.isArray(data?.sports) ? data.sports : []
+
+    console.log('[Polar V4] Sports-Antwort Struktur:', {
+      isArray: Array.isArray(data),
+      keys:
+        data && typeof data === 'object'
+          ? Object.keys(data)
+          : [],
+    })
+
+    // Unterschiedliche mögliche Antwortstrukturen abfangen.
+    const sports =
+      Array.isArray(data)
+        ? data
+        : Array.isArray(data?.sports)
+          ? data.sports
+          : Array.isArray(data?.data?.sports)
+            ? data.data.sports
+            : Array.isArray(data?.result?.sports)
+              ? data.result.sports
+              : Array.isArray(data?.items)
+                ? data.items
+                : []
+
+    console.log('[Polar V4] Sports-Einträge gefunden:', sports.length)
+
+    if (sports[0]) {
+      console.log(
+        '[Polar V4] Erster Sporteintrag:',
+        JSON.stringify(sports[0]).slice(0, 1000)
+      )
+    }
+
     const map = {}
 
     for (const sport of sports) {
-      const id = sport?.id?.id ?? sport?.id
+      const id =
+        sport?.id?.id ??
+        sport?.id ??
+        sport?.sportId?.id ??
+        sport?.sportId
+
       if (id === undefined || id === null) continue
 
+      const localizedNames = sport?.localizedNames || {}
+
       const localizedName =
-        sport?.localizedNames?.de?.longName ||
-        sport?.localizedNames?.en?.longName ||
+        localizedNames?.de?.longName ||
+        localizedNames?.de_DE?.longName ||
+        localizedNames?.['de-DE']?.longName ||
+        localizedNames?.en?.longName ||
+        localizedNames?.en_US?.longName ||
+        localizedNames?.['en-US']?.longName ||
         null
 
-      map[String(id)] = localizedName || sport?.name || null
+      const name =
+        localizedName ||
+        sport?.name ||
+        sport?.displayName ||
+        sport?.sportName ||
+        null
+
+      map[String(id)] = name
     }
+
+    console.log(
+      '[Polar V4] Erstellte Sportzuordnungen:',
+      Object.entries(map).slice(0, 20)
+    )
 
     return map
   } catch (error) {
     if (error.status === 403) {
       console.warn(
-        '[Polar V4] Sportarten-Katalog nicht freigegeben. In auth.js muss der Scope "sports:read" enthalten sein; danach Polar neu verbinden.'
+        '[Polar V4] Sportarten-Katalog nicht freigegeben. Der Scope "sports:read" fehlt.'
       )
       return {}
     }
+
     throw error
   }
 }
