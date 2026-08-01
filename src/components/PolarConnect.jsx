@@ -293,6 +293,7 @@ export default function PolarConnect({ user, plan }) {
           kalorien: activity.kalorien || null,
           route_waypoints: activity.route_waypoints || null,
           km_splits: activity.km_splits || null,
+          run_segments: activity.run_segments || null,
         }, { onConflict: 'user_id,day_key' })
       } else {
         await supabase.from('logs').upsert({
@@ -316,6 +317,7 @@ export default function PolarConnect({ user, plan }) {
           kalorien: activity.kalorien || null,
           route_waypoints: activity.route_waypoints || null,
           km_splits: activity.km_splits || null,
+          run_segments: activity.run_segments || null,
         }, { onConflict: 'user_id,day_key' })
         await supabase.from('training_done').upsert({
           user_id: user.id,
@@ -443,6 +445,7 @@ const discardActivity = async (activity) => {
           kalorien: activity.kalorien || null,
           route_waypoints: activity.route_waypoints || null,
           km_splits: activity.km_splits || null,
+          run_segments: activity.run_segments || null,
         }, { onConflict: 'user_id,day_key' })
       } else {
         await supabase.from('logs').upsert({
@@ -466,6 +469,7 @@ const discardActivity = async (activity) => {
           kalorien: activity.kalorien || null,
           route_waypoints: activity.route_waypoints || null,
           km_splits: activity.km_splits || null,
+          run_segments: activity.run_segments || null,
         }, { onConflict: 'user_id,day_key' })
         await supabase.from('training_done').upsert({
           user_id: user.id,
