@@ -662,9 +662,13 @@ async function loadDetailedRunningExercises(token, sessions, sportsMap) {
         token,
         dateString
       )
-      console.log(
+     console.log(
   JSON.stringify(
-    detailedSessions[0],
+    {
+      keys: Object.keys(detail),
+      sampleTypes:
+        detail.exercises?.[0]?.samples?.samples?.map(s => s.type)
+    },
     null,
     2
   )
