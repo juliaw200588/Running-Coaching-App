@@ -437,20 +437,6 @@ function mapV4Exercise(session, exercise, sportName) {
   }
 }
 
-// Der Listen-Endpunkt liefert nur eine Kurzfassung (bestätigt: routes/samples/laps/
-// runningIndex/trainingLoad fehlen dort komplett als Schlüssel). Für die vollständigen
-// Daten braucht's einen Einzelabruf pro Trainingseinheit. URL-Muster nicht 100%
-// verifiziert (naheliegende REST-Konvention: /training-sessions/{id} statt /list) -
-// bei Fehlschlag wird geloggt, damit wir den Pfad ggf. korrigieren können.
-async function loadTrainingSessionDetail(token, sessionId) {
-  try {
-    return await polarFetch(`/training-sessions/${sessionId}`, token)
-  } catch (e) {
-    console.log('[Polar V4] Detail-Abruf fehlgeschlagen für Session', sessionId, ':', e.message)
-    return null
-  }
-}
-
 async function loadTrainingSessions(token) {
   const now = new Date()
   const past = new Date(
@@ -581,32 +567,15 @@ if (!isRunningSport(detectedSportName)) {
   continue
 }
 
-// Nur für erkannte Läufe: Einzelabruf für die vollständigen Daten (Route/Samples/Laps),
-// die im Listen-Aufruf nachweislich fehlen. Andere Sportarten wurden oben schon
-// übersprungen, dafür also kein unnötiger Zusatzaufruf.
-const sessionId = session?.identifier?.id
-let detailedExercise = exercise
-if (sessionId) {
-  const detail = await loadTrainingSessionDetail(token, sessionId)
-  if (detail) {
-    const detailExercises = Array.isArray(detail.exercises) ? detail.exercises : [detail]
-    const matched = detailExercises.find(e => e?.identifier?.id === exercise?.identifier?.id) || detailExercises[0]
-    if (matched) {
-      detailedExercise = { ...exercise, ...matched }
-      if (!global.__polarDetailLogged) {
-        global.__polarDetailLogged = true
-        console.log('[Polar V4] Debug Detail-Abruf erfolgreich, Schlüssel:', Object.keys(matched).join(', '))
-        console.log('[Polar V4] Debug Detail routes:', JSON.stringify(matched.routes)?.slice(0, 1000))
-        console.log('[Polar V4] Debug Detail samples vorhanden:', !!matched.samples)
-        console.log('[Polar V4] Debug Detail laps:', JSON.stringify(matched.laps)?.slice(0, 500))
-      }
-    }
-  }
-}
+// Einzelabruf-Versuch (Route/Samples/Laps) wieder entfernt: /training-sessions/{id}
+// lieferte bei jeder ID konsequent 404 - der Pfad war falsch. Bis der korrekte Weg
+// von Polar bestätigt ist, arbeiten wir nur mit dem, was der Listen-Aufruf liefert
+// (Pace, HF, Kalorien, Running Index, Erholungszeit, Höhenmeter, Uhrzeit - alles
+// bestätigt funktionsfähig).
 
 const row = {
   user_id: userId,
-  ...mapV4Exercise(session, detailedExercise, detectedSportName),
+  ...mapV4Exercise(session, exercise, detectedSportName),
 }
 
       if (!row.polar_exercise_id) {
