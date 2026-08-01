@@ -662,24 +662,17 @@ async function loadDetailedRunningExercises(token, sessions, sportsMap) {
         token,
         dateString
       )
-    console.log(
+   console.log(
   JSON.stringify(
-    {
-      sessionCount: detailedSessions.length,
-      firstSessionKeys:
-        detailedSessions[0] && typeof detailedSessions[0] === 'object'
-          ? Object.keys(detailedSessions[0])
-          : [],
-      sampleTypes:
-        detailedSessions[0]?.exercises?.[0]?.samples?.samples?.map(
-          sample => sample.type
-        ) || [],
-      exerciseKeys:
-        detailedSessions[0]?.exercises?.[0] &&
-        typeof detailedSessions[0].exercises[0] === 'object'
-          ? Object.keys(detailedSessions[0].exercises[0])
-          : [],
-    },
+    detailedSessions[0].trainingTarget,
+    null,
+    2
+  )
+)
+
+console.log(
+  JSON.stringify(
+    detailedSessions[0].favoriteTarget,
     null,
     2
   )
