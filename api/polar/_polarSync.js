@@ -359,7 +359,7 @@ function extractSplits(exercise) {
   }))
 }
 
-function mapV4Exercise(session, exercise, SportName) {
+function mapV4Exercise(session, exercise, sportName) {
   const distanceMeters = firstDefined(
     exercise?.distanceMeters,
     session?.distanceMeters
@@ -495,7 +495,6 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
     loadTrainingSessions(token),
   ])
 
-  const hasSportsMap = Object.keys(sportsMap).length > 0
 
   console.log('[Polar V4] Trainingseinheiten geladen:', sessions.length)
   console.log('[Polar V4] Sportarten geladen:', Object.keys(sportsMap).length)
