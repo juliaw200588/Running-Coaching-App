@@ -388,18 +388,18 @@ async function loadTrainingSessions(token) {
     now.getTime() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000
   )
 
-  function formatCompactIso(date) {
-    return date
-      .toISOString()
-      .replace(/[-:]/g, '')
-      .replace(/\.\d{3}Z$/, 'Z')
+  function formatPolarLocalDateTime(date) {
+    // Polar erwartet:
+    // YYYY-MM-DDTHH:mm:ss
+    // ohne Millisekunden und ohne Z/Zeitzone
+    return date.toISOString().slice(0, 19)
   }
 
-  const from = formatCompactIso(past)
-  const to = formatCompactIso(now)
+  const from = formatPolarLocalDateTime(past)
+  const to = formatPolarLocalDateTime(now)
 
-  console.log('[Polar V4] FROM compact =', from)
-  console.log('[Polar V4] TO compact   =', to)
+  console.log('[Polar V4] FROM =', from)
+  console.log('[Polar V4] TO   =', to)
 
   const data = await polarFetch('/training-sessions/list', token, {
     from,
@@ -409,24 +409,6 @@ async function loadTrainingSessions(token) {
   return Array.isArray(data?.trainingSessions)
     ? data.trainingSessions
     : []
-}
-
-async function savePendingActivity(row) {
-  const { error } = await supabase
-    .from('polar_pending_activities')
-    .upsert(row, {
-      onConflict: 'user_id,polar_exercise_id',
-    })
-
-  if (error) {
-    console.error('[Polar V4] Upsert fehlgeschlagen:', {
-      polarExerciseId: row.polar_exercise_id,
-      error,
-    })
-    throw new Error(
-      `Polar-Aktivität ${row.polar_exercise_id} konnte nicht gespeichert werden`
-    )
-  }
 }
 
 export async function fetchAndPersistPolarActivitiesV4(userId) {
