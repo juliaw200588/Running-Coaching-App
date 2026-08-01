@@ -174,7 +174,7 @@ async function getValidAccessToken(userId) {
 // Für diesen Listen-Endpunkt verwenden wir bewusst YYYY-MM-DD.
 // "from" ist inklusive, "to" exklusiv.
 function formatPolarDateTime(date) {
-return date.toISOString().replace(/Z$/, '')
+  return date.toISOString().replace('Z', '+00:00')
 }
 
 function getDateRange(daysBack = LOOKBACK_DAYS) {
