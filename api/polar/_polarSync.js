@@ -411,6 +411,25 @@ async function loadTrainingSessions(token) {
     : []
 }
 
+async function savePendingActivity(row) {
+  const { error } = await supabase
+    .from('polar_pending_activities')
+    .upsert(row, {
+      onConflict: 'user_id,polar_exercise_id',
+    })
+
+  if (error) {
+    console.error('[Polar V4] Upsert fehlgeschlagen:', {
+      polarExerciseId: row.polar_exercise_id,
+      error,
+    })
+
+    throw new Error(
+      `Polar-Aktivität ${row.polar_exercise_id} konnte nicht gespeichert werden`
+    )
+  }
+}
+
 export async function fetchAndPersistPolarActivitiesV4(userId) {
   if (!userId) throw new Error('userId fehlt')
 
