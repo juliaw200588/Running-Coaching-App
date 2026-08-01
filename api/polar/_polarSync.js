@@ -29,7 +29,12 @@ async function readJsonOrText(response) {
 function polarErrorMessage(payload) {
   if (!payload) return ''
   if (typeof payload === 'string') return payload
-  return payload.errorMessage || payload.error || payload.message || JSON.stringify(payload)
+  return (
+    payload.errorMessage ||
+    payload.error ||
+    payload.message ||
+    JSON.stringify(payload)
+  )
 }
 
 async function polarFetch(path, token, query = {}) {
@@ -172,37 +177,21 @@ async function getValidAccessToken(userId) {
   return refreshAccessToken(userId, integration)
 }
 
-// Die V4-Endpunkte erwarten für "from" und "to" ISO-8601-Datumswerte.
-// Für diesen Listen-Endpunkt verwenden wir bewusst YYYY-MM-DD.
-// "from" ist inklusive, "to" exklusiv.
-function formatPolarDateTime(date) {
-  return date.toISOString().replace('Z', '+00:00')
+// Polar akzeptiert bei Training Sessions lokale ISO-Datumszeiten ohne
+// Millisekunden und ohne Zeitzonen-Suffix, z. B. 2026-08-02T10:30:00.
+function formatPolarLocalDateTime(date) {
+  return date.toISOString().slice(0, 19)
 }
 
-function getDateRange(daysBack = LOOKBACK_DAYS) {
-  const to = new Date()
-
-  const from = new Date(
-    to.getTime() - daysBack * 24 * 60 * 60 * 1000
-  )
-
-  return {
-    from: formatPolarDateTime(from),
-    to: formatPolarDateTime(to),
-  }
+function addUtcDays(dateString, days) {
+  const date = new Date(`${dateString}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
 }
 
 async function getSportsMap(token) {
   try {
     const data = await polarFetch('/sports/list', token)
-
-    console.log('[Polar V4] Sports-Antwort Struktur:', {
-      isArray: Array.isArray(data),
-      keys:
-        data && typeof data === 'object'
-          ? Object.keys(data)
-          : [],
-    })
 
     // Unterschiedliche mögliche Antwortstrukturen abfangen.
     const sports =
@@ -217,15 +206,6 @@ async function getSportsMap(token) {
               : Array.isArray(data?.items)
                 ? data.items
                 : []
-
-    console.log('[Polar V4] Sports-Einträge gefunden:', sports.length)
-
-    if (sports[0]) {
-      console.log(
-        '[Polar V4] Erster Sporteintrag:',
-        JSON.stringify(sports[0]).slice(0, 1000)
-      )
-    }
 
     const map = {}
 
@@ -259,10 +239,6 @@ async function getSportsMap(token) {
       map[String(id)] = name
     }
 
-    console.log(
-      '[Polar V4] Erstellte Sportzuordnungen:',
-      Object.entries(map).slice(0, 20)
-    )
 
     return map
   } catch (error) {
@@ -315,31 +291,120 @@ function calculatePace(distanceMeters, durationMillis) {
   return `${minutes}:${String(seconds).padStart(2, '0')} min/km`
 }
 
+function getStatisticsList(container) {
+  return Array.isArray(container?.statistics?.statistics)
+    ? container.statistics.statistics
+    : Array.isArray(container?.statistics)
+      ? container.statistics
+      : []
+}
+
+function getStatistic(container, type) {
+  return getStatisticsList(container).find(stat => stat?.type === type) || null
+}
+
+function averageNumericValues(values) {
+  const numbers = (values || [])
+    .map(numberOrNull)
+    .filter(value => value !== null)
+
+  if (!numbers.length) return null
+  return numbers.reduce((sum, value) => sum + value, 0) / numbers.length
+}
+
 function extractCadence(exercise) {
+  const cadenceStatistic = getStatistic(
+    exercise,
+    'STATISTICS_TYPE_CADENCE'
+  )
+
+  const cadenceFromStatistics = numberOrNull(cadenceStatistic?.avg)
+  if (cadenceFromStatistics !== null) {
+    return Math.round(cadenceFromStatistics)
+  }
+
   const samples = Array.isArray(exercise?.samples?.samples)
     ? exercise.samples.samples
     : []
 
-  const cadenceSample = samples.find(sample =>
-    String(sample?.type || '').toUpperCase().includes('CADENCE')
+  const cadenceSample = samples.find(
+    sample => String(sample?.type || '').toUpperCase() === 'CADENCE'
   )
 
-  const values = Array.isArray(cadenceSample?.values)
-    ? cadenceSample.values.map(numberOrNull).filter(value => value !== null)
-    : []
-
-  if (!values.length) return null
-
-  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
+  const cadenceFromSamples = averageNumericValues(cadenceSample?.values)
+  return cadenceFromSamples !== null
+    ? Math.round(cadenceFromSamples)
+    : null
 }
 
 function extractWayPoints(exercise) {
-  const route = exercise?.routes?.route
+  const possibleRoutes = [
+    exercise?.routes?.route,
+    exercise?.route,
+    exercise?.routes,
+  ]
 
-  if (Array.isArray(route?.wayPoints)) return route.wayPoints
-  if (Array.isArray(route?.waypoints)) return route.waypoints
+  for (const route of possibleRoutes) {
+    if (Array.isArray(route?.wayPoints)) return route.wayPoints
+    if (Array.isArray(route?.waypoints)) return route.waypoints
+  }
 
   return null
+}
+
+function formatPaceFromSeconds(totalSeconds) {
+  const seconds = numberOrNull(totalSeconds)
+  if (seconds === null || seconds <= 0) return null
+
+  const rounded = Math.round(seconds)
+  const minutesPart = Math.floor(rounded / 60)
+  const secondsPart = rounded % 60
+
+  return `${minutesPart}:${String(secondsPart).padStart(2, '0')} min/km`
+}
+
+function lapToSegment(lap, index, type) {
+  const distanceMeters = numberOrNull(lap?.distanceMeters)
+  const durationMillis = numberOrNull(lap?.durationMillis)
+
+  const pace =
+    distanceMeters && durationMillis
+      ? calculatePace(distanceMeters, durationMillis)
+      : null
+
+  const heartRate = getStatistic(
+    lap,
+    'STATISTICS_TYPE_HEART_RATE'
+  )
+  const cadence = getStatistic(
+    lap,
+    'STATISTICS_TYPE_CADENCE'
+  )
+  const speed = getStatistic(
+    lap,
+    'STATISTICS_TYPE_SPEED'
+  )
+
+  return {
+    type,
+    index: index + 1,
+    distanceMeters,
+    durationSeconds:
+      durationMillis !== null ? Math.round(durationMillis / 1000) : null,
+    pace,
+    avgHeartRate: numberOrNull(heartRate?.avg),
+    maxHeartRate: numberOrNull(heartRate?.max),
+    avgCadence: numberOrNull(cadence?.avg),
+    maxCadence: numberOrNull(cadence?.max),
+    avgSpeed: numberOrNull(speed?.avg),
+    maxSpeed: numberOrNull(speed?.max),
+    ascentMeters: numberOrNull(lap?.ascentMeters),
+    descentMeters: numberOrNull(lap?.descentMeters),
+    splitTimeSeconds:
+      lap?.splitTimeMillis !== undefined && lap?.splitTimeMillis !== null
+        ? Math.round(Number(lap.splitTimeMillis) / 1000)
+        : null,
+  }
 }
 
 function extractSplits(exercise) {
@@ -349,14 +414,69 @@ function extractSplits(exercise) {
 
   if (!autoLaps.length) return null
 
-  return autoLaps.map((lap, index) => ({
-    km: index + 1,
-    distanzM: numberOrNull(lap?.distanceMeters),
-    dauerSek:
-      lap?.durationMillis === undefined || lap?.durationMillis === null
-        ? null
-        : Math.round(Number(lap.durationMillis) / 1000),
-  }))
+  return autoLaps.map((lap, index) => {
+    const segment = lapToSegment(lap, index, 'auto')
+
+    return {
+      km: index + 1,
+      distanzM: segment.distanceMeters,
+      dauerSek: segment.durationSeconds,
+      pace: segment.pace,
+      hfAvg: segment.avgHeartRate,
+      hfMax: segment.maxHeartRate,
+      cadenceAvg: segment.avgCadence,
+      hoehenmeter: segment.ascentMeters,
+      abstiegMeter: segment.descentMeters,
+    }
+  })
+}
+
+function extractRunSegments(exercise) {
+  const manualLaps = Array.isArray(exercise?.laps?.laps)
+    ? exercise.laps.laps
+    : []
+
+  if (!manualLaps.length) return null
+
+  return manualLaps.map((lap, index) =>
+    lapToSegment(lap, index, 'manual')
+  )
+}
+
+function extractAscentMeters(exercise, session) {
+  const directAscent = firstDefined(
+    exercise?.ascentMeters,
+    session?.ascentMeters
+  )
+
+  const directNumber = numberOrNull(directAscent)
+  if (directNumber !== null) return directNumber
+
+  const route = extractWayPoints(exercise)
+  if (!Array.isArray(route) || route.length < 2) return null
+
+  let ascent = 0
+  let previousAltitude = numberOrNull(
+    route[0]?.altitude ?? route[0]?.altitudeMeters
+  )
+
+  for (let index = 1; index < route.length; index += 1) {
+    const altitude = numberOrNull(
+      route[index]?.altitude ?? route[index]?.altitudeMeters
+    )
+
+    if (
+      altitude !== null &&
+      previousAltitude !== null &&
+      altitude > previousAltitude
+    ) {
+      ascent += altitude - previousAltitude
+    }
+
+    if (altitude !== null) previousAltitude = altitude
+  }
+
+  return ascent > 0 ? Math.round(ascent) : null
 }
 
 function mapV4Exercise(session, exercise, sportName) {
@@ -381,6 +501,8 @@ function mapV4Exercise(session, exercise, sportName) {
     exercise?.trainingLoad,
     session?.trainingLoad
   )
+  const cadence = extractCadence(exercise)
+  const ascentMeters = extractAscentMeters(exercise, session)
 
   return {
     polar_exercise_id:
@@ -411,15 +533,9 @@ function mapV4Exercise(session, exercise, sportName) {
       exercise?.runningIndex !== null
         ? String(exercise.runningIndex)
         : null,
-    cadence: (() => {
-      const cadence = extractCadence(exercise)
-      return cadence !== null ? String(cadence) : null
-    })(),
+    cadence: cadence !== null ? String(cadence) : null,
     hoehenmeter:
-      exercise?.ascentMeters !== undefined &&
-      exercise?.ascentMeters !== null
-        ? String(exercise.ascentMeters)
-        : null,
+      ascentMeters !== null ? String(Math.round(ascentMeters)) : null,
     gefuehl:
       session?.feeling !== undefined && session?.feeling !== null
         ? String(session.feeling)
@@ -434,6 +550,7 @@ function mapV4Exercise(session, exercise, sportName) {
         : null,
     route_waypoints: extractWayPoints(exercise),
     km_splits: extractSplits(exercise),
+    run_segments: extractRunSegments(exercise),
   }
 }
 
@@ -443,18 +560,8 @@ async function loadTrainingSessions(token) {
     now.getTime() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000
   )
 
-  function formatPolarLocalDateTime(date) {
-    // Polar erwartet:
-    // YYYY-MM-DDTHH:mm:ss
-    // ohne Millisekunden und ohne Z/Zeitzone
-    return date.toISOString().slice(0, 19)
-  }
-
   const from = formatPolarLocalDateTime(past)
   const to = formatPolarLocalDateTime(now)
-
-  console.log('[Polar V4] FROM =', from)
-  console.log('[Polar V4] TO   =', to)
 
   const data = await polarFetch('/training-sessions/list', token, {
     from,
@@ -464,6 +571,116 @@ async function loadTrainingSessions(token) {
   return Array.isArray(data?.trainingSessions)
     ? data.trainingSessions
     : []
+}
+
+async function loadDetailedTrainingDay(token, dateString) {
+  const nextDate = addUtcDays(dateString, 1)
+
+  const data = await polarFetch('/training-sessions/list', token, {
+    from: `${dateString}T00:00:00`,
+    to: `${nextDate}T00:00:00`,
+    features: [
+      'samples',
+      'laps',
+      'routes',
+      'statistics',
+    ],
+  })
+
+  return Array.isArray(data?.trainingSessions)
+    ? data.trainingSessions
+    : []
+}
+
+function collectExercises(sessions) {
+  const result = []
+
+  for (const session of sessions || []) {
+    const exercises =
+      Array.isArray(session?.exercises) && session.exercises.length
+        ? session.exercises
+        : [session]
+
+    for (const exercise of exercises) {
+      result.push({ session, exercise })
+    }
+  }
+
+  return result
+}
+
+function getSportId(session, exercise) {
+  return firstDefined(
+    exercise?.sport?.id?.id,
+    exercise?.sport?.id,
+    session?.sport?.id?.id,
+    session?.sport?.id
+  )
+}
+
+function resolveSportName(sportsMap, session, exercise) {
+  const sportId = getSportId(session, exercise)
+
+  const catalogueName =
+    sportId !== undefined && sportId !== null
+      ? sportsMap[String(sportId)] || null
+      : null
+
+  const directSportName = firstDefined(
+    exercise?.sport?.name,
+    exercise?.sport?.localizedName,
+    exercise?.sportName,
+    session?.sport?.name,
+    session?.sport?.localizedName,
+    session?.sportName,
+    typeof session?.sport === 'string' ? session.sport : null
+  )
+
+  return firstDefined(
+    catalogueName,
+    typeof directSportName === 'string' ? directSportName : null
+  )
+}
+
+async function loadDetailedRunningExercises(token, sessions, sportsMap) {
+  const runningDates = new Set()
+
+  for (const { session, exercise } of collectExercises(sessions)) {
+    const sportName = resolveSportName(sportsMap, session, exercise)
+    const startTime = firstDefined(exercise?.startTime, session?.startTime)
+
+    if (isRunningSport(sportName) && startTime) {
+      runningDates.add(String(startTime).slice(0, 10))
+    }
+  }
+
+  const detailedById = new Map()
+
+  for (const dateString of runningDates) {
+    try {
+      const detailedSessions = await loadDetailedTrainingDay(
+        token,
+        dateString
+      )
+
+      for (const { session, exercise } of collectExercises(detailedSessions)) {
+        const exerciseId =
+          exercise?.identifier?.id || session?.identifier?.id || null
+
+        if (exerciseId) {
+          detailedById.set(String(exerciseId), { session, exercise })
+        }
+      }
+    } catch (error) {
+      // Ein fehlendes Detail-Feature soll den Basis-Sync nicht komplett blockieren.
+      console.error(
+        `[Polar V4] Detaildaten für ${dateString} konnten nicht geladen werden:`,
+        error
+      )
+    }
+  }
+
+  return detailedById
 }
 
 async function savePendingActivity(row) {
@@ -495,9 +712,15 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
     loadTrainingSessions(token),
   ])
 
+  const detailedById = await loadDetailedRunningExercises(
+    token,
+    sessions,
+    sportsMap
+  )
 
   console.log('[Polar V4] Trainingseinheiten geladen:', sessions.length)
   console.log('[Polar V4] Sportarten geladen:', Object.keys(sportsMap).length)
+  console.log('[Polar V4] Läufe mit Detaildaten:', detailedById.size)
 
   const stored = []
 
@@ -527,54 +750,35 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
         : [session]
 
     for (const exercise of exercises) {
-      const sportId = firstDefined(
-        exercise?.sport?.id?.id,
-        exercise?.sport?.id,
-        session?.sport?.id?.id,
-        session?.sport?.id
+      const sportId = getSportId(session, exercise)
+      const detectedSportName = resolveSportName(
+        sportsMap,
+        session,
+        exercise
       )
 
-const sportName =
-  sportId !== undefined && sportId !== null
-    ? sportsMap[String(sportId)] || null
-    : null
+      if (!isRunningSport(detectedSportName)) {
+        continue
+      }
 
-const directSportName = firstDefined(
-  exercise?.sport?.name,
-  exercise?.sport?.localizedName,
-  exercise?.sportName,
-  session?.sport?.name,
-  session?.sport?.localizedName,
-  session?.sportName,
-  typeof session?.sport === 'string' ? session.sport : null
-)
+      const baseExerciseId =
+        exercise?.identifier?.id || session?.identifier?.id || null
 
-const detectedSportName = firstDefined(
-  sportName,
-  typeof directSportName === 'string' ? directSportName : null
-)
+      const detailed = baseExerciseId
+        ? detailedById.get(String(baseExerciseId))
+        : null
 
-console.log('[Polar V4] Sportprüfung:', {
-  sportId,
-  sportName,
-  directSportName,
-  detectedSportName,
-})
+      const mappedSession = detailed?.session || session
+      const mappedExercise = detailed?.exercise || exercise
 
-// Nur eindeutig erkannte Läufe speichern.
-// Radfahren und unbekannte Sportarten werden übersprungen.
-if (!isRunningSport(detectedSportName)) {
-  console.log('[Polar V4] Kein Lauf – übersprungen:', {
-    sportId,
-    detectedSportName,
-  })
-  continue
-}
-
-const row = {
-  user_id: userId,
-  ...mapV4Exercise(session, exercise, detectedSportName),
-}
+      const row = {
+        user_id: userId,
+        ...mapV4Exercise(
+          mappedSession,
+          mappedExercise,
+          detectedSportName
+        ),
+      }
 
 if (
   row.polar_exercise_id &&
