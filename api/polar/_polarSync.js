@@ -359,7 +359,7 @@ function extractSplits(exercise) {
   }))
 }
 
-function mapV4Exercise(session, exercise, detectedSportName) {
+function mapV4Exercise(session, exercise, SportName) {
   const distanceMeters = firstDefined(
     exercise?.distanceMeters,
     session?.distanceMeters
