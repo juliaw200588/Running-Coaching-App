@@ -497,24 +497,28 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
 
 
   console.log('[Polar V4] Trainingseinheiten geladen:', sessions.length)
-
-  // Gezieltes Debug-Logging: prüft bei der ersten Session mit Übungen, was in
-  // routes/samples/laps tatsächlich steckt - fehlt der Schlüssel komplett (nicht in der
-  // Antwort), oder ist er da, aber leer/null? Das unterscheidet "Listen-Endpunkt liefert
-  // das grundsätzlich nicht mit" von "bei dieser Übung gibt's schlicht keine Daten dafür".
-  const firstWithExercises = sessions.find(s => Array.isArray(s.exercises) && s.exercises.length > 0)
-  if (firstWithExercises) {
-    const ex = firstWithExercises.exercises[0]
-    console.log('[Polar V4] Debug erste Übung - Schlüssel vorhanden:', Object.keys(ex).join(', '))
-    console.log('[Polar V4] Debug routes:', JSON.stringify(ex.routes))
-    console.log('[Polar V4] Debug samples:', JSON.stringify(ex.samples)?.slice(0, 1000))
-    console.log('[Polar V4] Debug laps:', JSON.stringify(ex.laps)?.slice(0, 1000))
-  } else {
-    console.log('[Polar V4] Debug: keine Session mit exercises[] gefunden - Felder liegen dann evtl. direkt auf der Session-Ebene.')
-  }
   console.log('[Polar V4] Sportarten geladen:', Object.keys(sportsMap).length)
 
   const stored = []
+
+  const { data: ignoredRows, error: ignoredError } = await supabase
+    .from('polar_ignored_activities')
+    .select('polar_exercise_id')
+    .eq('user_id', userId)
+
+  if (ignoredError) {
+    console.error(
+      '[Polar V4] Ignorierte Aktivitäten konnten nicht geladen werden:',
+      ignoredError
+    )
+    throw new Error('Ignorierte Polar-Aktivitäten konnten nicht geladen werden')
+  }
+
+  const ignoredIds = new Set(
+    (ignoredRows || []).map(row => String(row.polar_exercise_id))
+  )
+
+  console.log('[Polar V4] Dauerhaft ignorierte Aktivitäten:', ignoredIds.size)
 
   for (const session of sessions) {
     const exercises =
@@ -567,15 +571,20 @@ if (!isRunningSport(detectedSportName)) {
   continue
 }
 
-// Einzelabruf-Versuch (Route/Samples/Laps) wieder entfernt: /training-sessions/{id}
-// lieferte bei jeder ID konsequent 404 - der Pfad war falsch. Bis der korrekte Weg
-// von Polar bestätigt ist, arbeiten wir nur mit dem, was der Listen-Aufruf liefert
-// (Pace, HF, Kalorien, Running Index, Erholungszeit, Höhenmeter, Uhrzeit - alles
-// bestätigt funktionsfähig).
-
 const row = {
   user_id: userId,
   ...mapV4Exercise(session, exercise, detectedSportName),
+}
+
+if (
+  row.polar_exercise_id &&
+  ignoredIds.has(String(row.polar_exercise_id))
+) {
+  console.log(
+    '[Polar V4] Bereits verworfene Aktivität übersprungen:',
+    row.polar_exercise_id
+  )
+  continue
 }
 
       if (!row.polar_exercise_id) {
