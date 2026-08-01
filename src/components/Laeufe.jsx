@@ -193,6 +193,7 @@ export default function Laeufe({ user, plan }) {
         normalized.push({
           id: 'pending_' + p.id,
           pendingId: p.id,
+          polarExerciseId: p.polar_exercise_id,
           dayKey: null,
           date: p.datum,
           km: p.distanz,
@@ -241,14 +242,54 @@ export default function Laeufe({ user, plan }) {
     setSaving(true)
     setMessage(null)
     try {
-      if (run.status === 'pending') {
-        await supabase.from('polar_pending_activities').delete().eq('id', run.pendingId)
-      } else {
-        await supabase.from('logs').delete().eq('id', run.logId)
-        if (run.status === 'assigned' && run.dayKey) {
-          await supabase.from('training_done').upsert({ user_id: user.id, day_key: run.dayKey, done: false }, { onConflict: 'user_id,day_key' })
-        }
+if (run.status === 'pending') {
+  const { error: ignoreError } = await supabase
+    .from('polar_ignored_activities')
+    .upsert(
+      {
+        user_id: user.id,
+        polar_exercise_id: run.polarExerciseId,
+      },
+      {
+        onConflict: 'user_id,polar_exercise_id',
       }
+    )
+
+  if (ignoreError) {
+    console.error('Polar-Lauf konnte nicht dauerhaft verworfen werden:', ignoreError)
+    throw ignoreError
+  }
+
+  const { error: deleteError } = await supabase
+    .from('polar_pending_activities')
+    .delete()
+    .eq('id', run.pendingId)
+
+  if (deleteError) {
+    console.error('Pending-Lauf konnte nicht gelöscht werden:', deleteError)
+    throw deleteError
+  }
+} else {
+  await supabase
+    .from('logs')
+    .delete()
+    .eq('id', run.logId)
+
+  if (run.status === 'assigned' && run.dayKey) {
+    await supabase
+      .from('training_done')
+      .upsert(
+        {
+          user_id: user.id,
+          day_key: run.dayKey,
+          done: false,
+        },
+        {
+          onConflict: 'user_id,day_key',
+        }
+      )
+  }
+}
 
       if (chosenKey === 'extra') {
         const extraKey = `extra_polar_${run.date}_${crypto.randomUUID().slice(0, 8)}`
