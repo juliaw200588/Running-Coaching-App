@@ -173,21 +173,20 @@ async function getValidAccessToken(userId) {
 // Die V4-Endpunkte erwarten für "from" und "to" ISO-8601-Datumswerte.
 // Für diesen Listen-Endpunkt verwenden wir bewusst YYYY-MM-DD.
 // "from" ist inklusive, "to" exklusiv.
-function formatDateOnly(date) {
-  return date.toISOString().slice(0, 10)
+function formatPolarDateTime(date) {
+  return date.toISOString().replace(/\.\d{3}Z$/, 'Z')
 }
 
 function getDateRange(daysBack = LOOKBACK_DAYS) {
   const to = new Date()
-  to.setUTCDate(to.getUTCDate() + 1)
-  to.setUTCHours(0, 0, 0, 0)
 
-  const from = new Date(to)
-  from.setUTCDate(from.getUTCDate() - daysBack)
+  const from = new Date(
+    to.getTime() - daysBack * 24 * 60 * 60 * 1000
+  )
 
   return {
-    from: formatDateOnly(from),
-    to: formatDateOnly(to),
+    from: formatPolarDateTime(from),
+    to: formatPolarDateTime(to),
   }
 }
 
