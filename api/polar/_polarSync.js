@@ -304,7 +304,7 @@ function extractSplits(exercise) {
   }))
 }
 
-function mapV4Exercise(session, exercise, sportName) {
+function mapV4Exercise(session, exercise, detectedSportName) {
   const distanceMeters = firstDefined(
     exercise?.distanceMeters,
     session?.distanceMeters
@@ -461,20 +461,47 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
         session?.sport?.id
       )
 
-      const sportName =
-        sportId !== undefined && sportId !== null
-          ? sportsMap[String(sportId)] || null
-          : null
+const sportName =
+  sportId !== undefined && sportId !== null
+    ? sportsMap[String(sportId)] || null
+    : null
 
-      // Sicheres Verhalten:
-      // Nur filtern, wenn der Sportarten-Katalog tatsächlich geladen wurde.
-      // Bei fehlendem sports:read werden Einheiten nicht versehentlich verworfen.
-      if (hasSportsMap && !isRunningSport(sportName)) continue
+const directSportName = firstDefined(
+  exercise?.sport?.name,
+  exercise?.sport?.localizedName,
+  exercise?.sportName,
+  session?.sport?.name,
+  session?.sport?.localizedName,
+  session?.sportName,
+  typeof session?.sport === 'string' ? session.sport : null
+)
 
-      const row = {
-        user_id: userId,
-        ...mapV4Exercise(session, exercise, sportName),
-      }
+const detectedSportName = firstDefined(
+  sportName,
+  typeof directSportName === 'string' ? directSportName : null
+)
+
+console.log('[Polar V4] Sportprüfung:', {
+  sportId,
+  sportName,
+  directSportName,
+  detectedSportName,
+})
+
+// Nur eindeutig erkannte Läufe speichern.
+// Radfahren und unbekannte Sportarten werden übersprungen.
+if (!isRunningSport(detectedSportName)) {
+  console.log('[Polar V4] Kein Lauf – übersprungen:', {
+    sportId,
+    detectedSportName,
+  })
+  continue
+}
+
+const row = {
+  user_id: userId,
+  ...mapV4Exercise(session, exercise, detectedSportName),
+}
 
       if (!row.polar_exercise_id) {
         console.warn(
