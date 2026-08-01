@@ -161,10 +161,12 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
 
   const to = new Date()
   const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000)
-  const fromStr = from.toISOString().split('T')[0]
-  const toStr = to.toISOString().split('T')[0]
+  // Voller ISO-8601-Zeitstempel nötig, nicht nur das Datum - ein reines "2026-07-02"
+  // wurde von Polar mit 400 "could not be parsed as datetime" abgelehnt.
+  const fromStr = from.toISOString()
+  const toStr = to.toISOString()
 
-  const url = `https://www.polaraccesslink.com/v4/data/training-sessions/list?from=${fromStr}&to=${toStr}`
+  const url = `https://www.polaraccesslink.com/v4/data/training-sessions/list?from=${encodeURIComponent(fromStr)}&to=${encodeURIComponent(toStr)}`
   const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } })
 
   if (!res.ok) {
