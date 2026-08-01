@@ -382,6 +382,8 @@ function mapV4Exercise(session, exercise, sportName) {
 
 async function loadTrainingSessions(token) {
   const { from, to } = getDateRange()
+  console.log("FROM =", from)
+console.log("TO   =", to)
 
   // Keine "features" anfordern:
   // Dann erlaubt Polar laut V4-Dokumentation einen Zeitraum von bis zu 90 Tagen.
