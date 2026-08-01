@@ -671,14 +671,14 @@ async function loadCalendarTargetsForDate(token, dateString) {
   const nextDate = addUtcDays(dateString, 1)
 
   try {
-    const payload = await polarFetch(
-      '/training-target/calendar-targets',
-      token,
-      {
-        fromDate: dateString,
-        toDate: nextDate,
-      }
-    )
+   const payload = await polarFetch(
+  '/training-target/calendar-targets',
+  token,
+  {
+    from: dateString,
+    to: nextDate,
+  }
+)
 
     return normalizeCalendarTargets(payload)
   } catch (error) {
