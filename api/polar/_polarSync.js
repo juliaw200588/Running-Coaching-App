@@ -4,8 +4,8 @@ const POLAR_API_BASE = 'https://www.polaraccesslink.com/v4/data'
 const POLAR_TOKEN_URL = 'https://auth.polar.com/oauth/token'
 const LOOKBACK_DAYS = 30
 
-// Polar V4 Sync v2:
-// Basisdaten, Detaildaten, Route, km-Splits und strukturierte Trainingsziele.
+// Polar V4 Sync v2.1:
+// Detaildaten bleiben erhalten, auch wenn Training Targets nicht verfügbar sind.
 
 const supabase = createClient(
   'https://jgvsbecvgkcfafjyhxvr.supabase.co',
@@ -1037,23 +1037,39 @@ async function loadDetailedRunningExercises(
 
   const detailedById = new Map()
   let favoriteTargets = null
+  let targetAccessUnavailable = false
 
   for (const dateString of runningDates) {
+    let detailedSessions
+
+    // Die eigentlichen Trainingsdetails sind Pflicht für Route, Splits,
+    // Kadenz und Höhenmeter.
     try {
-      const detailedSessions = await loadDetailedTrainingDay(
+      detailedSessions = await loadDetailedTrainingDay(
         token,
         dateString
       )
-
-      const needsTrainingTargets = detailedSessions.some(
-        session =>
-          getTargetId(session?.trainingTarget) ||
-          getTargetId(session?.favoriteTarget)
+    } catch (error) {
+      console.error(
+        `[Polar V4] Detaildaten für ${dateString} ` +
+        'konnten nicht geladen werden:',
+        error
       )
+      continue
+    }
 
-      let calendarTargets = []
+    // Trainingsziele sind nur eine optionale Ergänzung. Ein Fehler hier
+    // darf niemals Route, km-Splits oder andere Detaildaten verwerfen.
+    let calendarTargets = []
 
-      if (needsTrainingTargets) {
+    const needsTrainingTargets = detailedSessions.some(
+      session =>
+        getTargetId(session?.trainingTarget) ||
+        getTargetId(session?.favoriteTarget)
+    )
+
+    if (needsTrainingTargets && !targetAccessUnavailable) {
+      try {
         calendarTargets = await loadCalendarTargetsForDate(
           token,
           dateString
@@ -1062,41 +1078,64 @@ async function loadDetailedRunningExercises(
         if (favoriteTargets === null) {
           favoriteTargets = await loadFavoriteTargets(token)
         }
-      }
-
-      for (const { session, exercise } of collectExercises(
-        detailedSessions
-      )) {
-        const exerciseId =
-          exercise?.identifier?.id ||
-          session?.identifier?.id ||
-          null
-
-        if (!exerciseId) continue
-
-        const target = findTrainingTarget(
-          session,
-          calendarTargets,
-          favoriteTargets || []
+      } catch (error) {
+        console.warn(
+          `[Polar V4] Trainingsziele für ${dateString} ` +
+          'konnten nicht ergänzt werden. ' +
+          'Route und Splits werden trotzdem übernommen:',
+          error
         )
 
-        const targetSegments = target
-          ? extractTargetPhases(target, exercise)
-          : null
-
-        detailedById.set(String(exerciseId), {
-          session,
-          exercise,
-          targetSegments,
-        })
+        // Verhindert, dass derselbe nicht verfügbare Target-Endpunkt
+        // für jeden Lauftag erneut aufgerufen wird.
+        if (
+          error?.status === 400 ||
+          error?.status === 401 ||
+          error?.status === 403 ||
+          error?.status === 404
+        ) {
+          targetAccessUnavailable = true
+        }
       }
-    } catch (error) {
-      // Fehlende Zusatzdaten blockieren den Basis-Sync nicht.
-      console.error(
-        `[Polar V4] Detaildaten für ${dateString} ` +
-        'konnten nicht vollständig geladen werden:',
-        error
-      )
+    }
+
+    for (const { session, exercise } of collectExercises(
+      detailedSessions
+    )) {
+      const exerciseId =
+        exercise?.identifier?.id ||
+        session?.identifier?.id ||
+        null
+
+      if (!exerciseId) continue
+
+      let targetSegments = null
+
+      if (!targetAccessUnavailable) {
+        try {
+          const target = findTrainingTarget(
+            session,
+            calendarTargets,
+            favoriteTargets || []
+          )
+
+          targetSegments = target
+            ? extractTargetPhases(target, exercise)
+            : null
+        } catch (error) {
+          console.warn(
+            '[Polar V4] Trainingsphasen konnten nicht ausgewertet werden:',
+            error
+          )
+        }
+      }
+
+      // Immer speichern – auch wenn das optionale Training Target fehlt.
+      detailedById.set(String(exerciseId), {
+        session,
+        exercise,
+        targetSegments,
+      })
     }
   }
 
