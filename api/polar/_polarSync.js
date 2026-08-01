@@ -1,213 +1,479 @@
 import { createClient } from '@supabase/supabase-js'
 
+const POLAR_API_BASE = 'https://www.polaraccesslink.com/v4/data'
+const POLAR_TOKEN_URL = 'https://auth.polar.com/oauth/token'
+const LOOKBACK_DAYS = 30
+
 const supabase = createClient(
   'https://jgvsbecvgkcfafjyhxvr.supabase.co',
   process.env.SUPABASE_SERVICE_KEY
 )
 
-// V4-Access-Token gilt nur 12 Std. (anders als V3) - vor jedem Sync prüfen und bei
-// Bedarf per Refresh-Token erneuern.
-async function getValidAccessToken(userId) {
-  const { data: integration } = await supabase
+function requireEnv(name) {
+  const value = process.env[name]
+  if (!value) throw new Error(`Fehlende Umgebungsvariable: ${name}`)
+  return value
+}
+
+async function readJsonOrText(response) {
+  const text = await response.text()
+  if (!text) return null
+
+  try {
+    return JSON.parse(text)
+  } catch {
+    return text
+  }
+}
+
+function polarErrorMessage(payload) {
+  if (!payload) return ''
+  if (typeof payload === 'string') return payload
+  return payload.errorMessage || payload.error || payload.message || JSON.stringify(payload)
+}
+
+async function polarFetch(path, token, query = {}) {
+  const url = new URL(`${POLAR_API_BASE}${path}`)
+
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === null || value === '') continue
+
+    if (Array.isArray(value)) {
+      for (const entry of value) url.searchParams.append(key, String(entry))
+    } else {
+      url.searchParams.set(key, String(value))
+    }
+  }
+
+  console.log('[Polar V4] GET', url.toString())
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+    },
+  })
+
+  const payload = await readJsonOrText(response)
+
+  if (!response.ok) {
+    const message = polarErrorMessage(payload)
+    console.error('[Polar V4] Request fehlgeschlagen:', {
+      status: response.status,
+      url: url.toString(),
+      response: message,
+    })
+
+    const error = new Error(
+      `Polar V4 API Fehler (${response.status})${message ? `: ${message}` : ''}`
+    )
+    error.status = response.status
+    error.payload = payload
+    throw error
+  }
+
+  return payload || {}
+}
+
+async function getIntegration(userId) {
+  const { data, error } = await supabase
     .from('integrations')
-    .select('*')
+    .select(
+      'polar_access_token, polar_refresh_token, polar_token_expires_at'
+    )
     .eq('user_id', userId)
     .single()
 
-  if (!integration?.polar_access_token) {
-    throw new Error('Polar nicht verbunden')
+  if (error) {
+    console.error('[Polar V4] Integration konnte nicht geladen werden:', error)
+    throw new Error('Polar-Verbindung konnte nicht geladen werden')
   }
 
-  const expiresAt = integration.polar_token_expires_at ? new Date(integration.polar_token_expires_at) : null
-  const needsRefresh = !expiresAt || expiresAt.getTime() - Date.now() < 5 * 60 * 1000
-
-  if (!needsRefresh) return integration.polar_access_token
-
-  if (!integration.polar_refresh_token) {
-    throw new Error('Zugriff abgelaufen und kein Refresh-Token vorhanden - bitte Polar neu verbinden')
+  if (!data?.polar_access_token) {
+    throw new Error('Polar ist nicht verbunden')
   }
 
-  const auth = Buffer.from(`${process.env.POLAR_CLIENT_ID}:${process.env.POLAR_CLIENT_SECRET}`).toString('base64')
-  const tokenRes = await fetch('https://auth.polar.com/oauth/token', {
-    method: 'POST',
-    headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: integration.polar_refresh_token }),
-  })
-
-  if (!tokenRes.ok) {
-    const errText = await tokenRes.text().catch(() => '')
-    console.error('[Polar V4] Token-Refresh fehlgeschlagen:', tokenRes.status, errText.slice(0, 500))
-    throw new Error('Token-Refresh fehlgeschlagen - bitte Polar neu verbinden')
-  }
-
-  const tokenData = await tokenRes.json()
-  const newExpiresAt = new Date(Date.now() + (tokenData.expires_in || 43199) * 1000).toISOString()
-
-  await supabase.from('integrations').update({
-    polar_access_token: tokenData.access_token,
-    polar_refresh_token: tokenData.refresh_token || integration.polar_refresh_token,
-    polar_token_expires_at: newExpiresAt,
-  }).eq('user_id', userId)
-
-  return tokenData.access_token
+  return data
 }
 
-// V4 identifiziert Sportarten nur noch über eine Zahlen-ID, nicht mehr als Klartext wie
-// V3 ("RUNNING"). Katalog einmal abrufen, um ID -> Name aufzulösen.
+async function refreshAccessToken(userId, integration) {
+  if (!integration.polar_refresh_token) {
+    throw new Error(
+      'Polar-Zugriff ist abgelaufen und es ist kein Refresh-Token vorhanden. Bitte Polar neu verbinden.'
+    )
+  }
+
+  const clientId = requireEnv('POLAR_CLIENT_ID')
+  const clientSecret = requireEnv('POLAR_CLIENT_SECRET')
+  const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
+
+  const response = await fetch(POLAR_TOKEN_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${basicAuth}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Accept: 'application/json',
+    },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: integration.polar_refresh_token,
+    }),
+  })
+
+  const payload = await readJsonOrText(response)
+
+  if (!response.ok || !payload?.access_token) {
+    const message = polarErrorMessage(payload)
+    console.error('[Polar V4] Token-Refresh fehlgeschlagen:', {
+      status: response.status,
+      response: message,
+    })
+    throw new Error(
+      'Polar-Token konnte nicht erneuert werden. Bitte Polar trennen und neu verbinden.'
+    )
+  }
+
+  const expiresIn = Number(payload.expires_in || 43199)
+  const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString()
+
+  const { error } = await supabase
+    .from('integrations')
+    .update({
+      polar_access_token: payload.access_token,
+      polar_refresh_token:
+        payload.refresh_token || integration.polar_refresh_token,
+      polar_token_expires_at: expiresAt,
+    })
+    .eq('user_id', userId)
+
+  if (error) {
+    console.error('[Polar V4] Neue Tokens konnten nicht gespeichert werden:', error)
+    throw new Error('Erneuerter Polar-Token konnte nicht gespeichert werden')
+  }
+
+  return payload.access_token
+}
+
+async function getValidAccessToken(userId) {
+  const integration = await getIntegration(userId)
+
+  const expiresAt = integration.polar_token_expires_at
+    ? new Date(integration.polar_token_expires_at).getTime()
+    : 0
+
+  const expiresSoon =
+    !Number.isFinite(expiresAt) || expiresAt - Date.now() < 5 * 60 * 1000
+
+  if (!expiresSoon) return integration.polar_access_token
+
+  return refreshAccessToken(userId, integration)
+}
+
+// Die V4-Endpunkte erwarten für "from" und "to" ISO-8601-Datumswerte.
+// Für diesen Listen-Endpunkt verwenden wir bewusst YYYY-MM-DD.
+// "from" ist inklusive, "to" exklusiv.
+function formatDateOnly(date) {
+  return date.toISOString().slice(0, 10)
+}
+
+function getDateRange(daysBack = LOOKBACK_DAYS) {
+  const to = new Date()
+  to.setUTCDate(to.getUTCDate() + 1)
+  to.setUTCHours(0, 0, 0, 0)
+
+  const from = new Date(to)
+  from.setUTCDate(from.getUTCDate() - daysBack)
+
+  return {
+    from: formatDateOnly(from),
+    to: formatDateOnly(to),
+  }
+}
+
 async function getSportsMap(token) {
   try {
-    const res = await fetch('https://www.polaraccesslink.com/v4/data/sports/list', {
-      headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' }
-    })
-    if (!res.ok) {
-      console.log('[Polar V4] Sportarten-Katalog nicht abrufbar, Status:', res.status)
+    const data = await polarFetch('/sports/list', token)
+    const sports = Array.isArray(data?.sports) ? data.sports : []
+    const map = {}
+
+    for (const sport of sports) {
+      const id = sport?.id?.id ?? sport?.id
+      if (id === undefined || id === null) continue
+
+      const localizedName =
+        sport?.localizedNames?.de?.longName ||
+        sport?.localizedNames?.en?.longName ||
+        null
+
+      map[String(id)] = localizedName || sport?.name || null
+    }
+
+    return map
+  } catch (error) {
+    if (error.status === 403) {
+      console.warn(
+        '[Polar V4] Sportarten-Katalog nicht freigegeben. In auth.js muss der Scope "sports:read" enthalten sein; danach Polar neu verbinden.'
+      )
       return {}
     }
-    const data = await res.json()
-    const map = {}
-    ;(data.sports || []).forEach(s => {
-      const id = s.id?.id ?? s.id
-      if (id != null) map[id] = s.name
-    })
-    return map
-  } catch (e) {
-    console.log('[Polar V4] Sportarten-Katalog Fehler:', e.message)
-    return {}
+    throw error
   }
 }
 
 function isRunningSport(sportName) {
   if (!sportName) return false
-  const n = sportName.toLowerCase()
-  return n.includes('running') || n.includes('run') || n.includes('lauf')
+
+  const normalized = String(sportName).trim().toLowerCase()
+
+  return (
+    normalized.includes('running') ||
+    normalized.includes('run') ||
+    normalized.includes('laufen') ||
+    normalized.includes('lauf') ||
+    normalized.includes('jogging') ||
+    normalized.includes('trail')
+  )
 }
 
-// Wandelt eine V4-Exercise (+ übergeordnete Session, für Felder die nur dort stehen wie
-// hrAvg/hrMax/feeling) in unser einheitliches Format um. Nutzt durchgängig Fallback-Ketten
-// (exercise.X ?? session.X), da noch nicht 100% verifiziert ist, auf welcher Ebene ein
-// Feld bei einem echten (nicht dem Doku-Beispiel-)Datensatz tatsächlich liegt.
+function firstDefined(...values) {
+  return values.find(value => value !== undefined && value !== null)
+}
+
+function numberOrNull(value) {
+  if (value === undefined || value === null || value === '') return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+function calculatePace(distanceMeters, durationMillis) {
+  const distance = numberOrNull(distanceMeters)
+  const duration = numberOrNull(durationMillis)
+
+  if (!distance || distance <= 0 || !duration || duration <= 0) return null
+
+  const totalSecondsPerKm = Math.round((duration / 1000) / (distance / 1000))
+  const minutes = Math.floor(totalSecondsPerKm / 60)
+  const seconds = totalSecondsPerKm % 60
+
+  return `${minutes}:${String(seconds).padStart(2, '0')} min/km`
+}
+
+function extractCadence(exercise) {
+  const samples = Array.isArray(exercise?.samples?.samples)
+    ? exercise.samples.samples
+    : []
+
+  const cadenceSample = samples.find(sample =>
+    String(sample?.type || '').toUpperCase().includes('CADENCE')
+  )
+
+  const values = Array.isArray(cadenceSample?.values)
+    ? cadenceSample.values.map(numberOrNull).filter(value => value !== null)
+    : []
+
+  if (!values.length) return null
+
+  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
+}
+
+function extractWayPoints(exercise) {
+  const route = exercise?.routes?.route
+
+  if (Array.isArray(route?.wayPoints)) return route.wayPoints
+  if (Array.isArray(route?.waypoints)) return route.waypoints
+
+  return null
+}
+
+function extractSplits(exercise) {
+  const autoLaps = Array.isArray(exercise?.laps?.autoLaps)
+    ? exercise.laps.autoLaps
+    : []
+
+  if (!autoLaps.length) return null
+
+  return autoLaps.map((lap, index) => ({
+    km: index + 1,
+    distanzM: numberOrNull(lap?.distanceMeters),
+    dauerSek:
+      lap?.durationMillis === undefined || lap?.durationMillis === null
+        ? null
+        : Math.round(Number(lap.durationMillis) / 1000),
+  }))
+}
+
 function mapV4Exercise(session, exercise, sportName) {
-  const distanceMeters = exercise.distanceMeters ?? session.distanceMeters
-  const durationMillis = exercise.durationMillis ?? session.durationMillis
-  const distanceKm = distanceMeters ? (distanceMeters / 1000).toFixed(2) : null
-  const durationSeconds = durationMillis ? durationMillis / 1000 : null
+  const distanceMeters = firstDefined(
+    exercise?.distanceMeters,
+    session?.distanceMeters
+  )
+  const durationMillis = firstDefined(
+    exercise?.durationMillis,
+    session?.durationMillis
+  )
+  const startTime = firstDefined(exercise?.startTime, session?.startTime)
+  const recoveryTimeMillis = firstDefined(
+    exercise?.recoveryTimeMillis,
+    session?.recoveryTimeMillis
+  )
 
-  const pace = distanceKm && durationSeconds
-    ? (() => {
-        const paceMin = (durationSeconds / 60) / parseFloat(distanceKm)
-        const paceM = Math.floor(paceMin)
-        const paceS = Math.round((paceMin - paceM) * 60).toString().padStart(2, '0')
-        return `${paceM}:${paceS} min/km`
-      })()
-    : null
-
-  // Route: direkt eingebettet, kein separater GPX-Abruf mehr nötig.
-  const wayPoints = exercise.routes?.route?.wayPoints || null
-
-  // Kadenz: aus den Samples nach type "CADENCE" suchen (Feldname nicht zu 100% verifiziert,
-  // da im Doku-Beispiel nur HEART_RATE als type gezeigt wurde).
-  const samplesList = exercise.samples?.samples || []
-  const cadenceSample = samplesList.find(s => s.type && String(s.type).toUpperCase().includes('CADENCE'))
-  const avgCadence = cadenceSample?.values?.length
-    ? Math.round(cadenceSample.values.reduce((a, b) => a + b, 0) / cadenceSample.values.length)
-    : null
-
-  // km-Splits aus den Auto-Runden der Uhr (meist automatisch bei jedem km).
-  const autoLaps = exercise.laps?.autoLaps || []
-  const splits = autoLaps.length
-    ? autoLaps.map((lap, i) => ({
-        km: i + 1,
-        distanzM: lap.distanceMeters ?? null,
-        dauerSek: lap.durationMillis != null ? Math.round(lap.durationMillis / 1000) : null,
-      }))
-    : null
-
-  const startTime = exercise.startTime ?? session.startTime
-  const recoveryTimeMillis = exercise.recoveryTimeMillis ?? session.recoveryTimeMillis
+  const distance = numberOrNull(distanceMeters)
+  const duration = numberOrNull(durationMillis)
+  const calories = firstDefined(exercise?.calories, session?.calories)
+  const trainingLoad = firstDefined(
+    exercise?.trainingLoad,
+    session?.trainingLoad
+  )
 
   return {
-    polar_exercise_id: exercise.identifier?.id || session.identifier?.id || null,
-    datum: startTime?.split('T')[0] || null,
-    uhrzeit: startTime?.split('T')[1]?.slice(0, 5) || null,
-    distanz: distanceKm ? `${distanceKm} km` : null,
-    pace,
-    herzfrequenz: session.hrAvg != null ? `${session.hrAvg} bpm` : null,
-    hf_max: session.hrMax != null ? String(session.hrMax) : null,
-    kalorien: (exercise.calories ?? session.calories) != null ? String(exercise.calories ?? session.calories) : null,
-    dauer: durationSeconds != null ? `${Math.round(durationSeconds / 60)} min` : null,
+    polar_exercise_id:
+      exercise?.identifier?.id || session?.identifier?.id || null,
+    datum: startTime ? String(startTime).slice(0, 10) : null,
+    uhrzeit:
+      startTime && String(startTime).includes('T')
+        ? String(startTime).split('T')[1].slice(0, 5)
+        : null,
+    distanz:
+      distance !== null ? `${(distance / 1000).toFixed(2)} km` : null,
+    pace: calculatePace(distance, duration),
+    herzfrequenz:
+      session?.hrAvg !== undefined && session?.hrAvg !== null
+        ? `${session.hrAvg} bpm`
+        : null,
+    hf_max:
+      session?.hrMax !== undefined && session?.hrMax !== null
+        ? String(session.hrMax)
+        : null,
+    kalorien:
+      calories !== undefined && calories !== null ? String(calories) : null,
+    dauer:
+      duration !== null ? `${Math.round(duration / 60000)} min` : null,
     sport: sportName || null,
-    running_index: exercise.runningIndex != null ? String(exercise.runningIndex) : null,
-    cadence: avgCadence != null ? String(avgCadence) : null,
-    hoehenmeter: exercise.ascentMeters != null ? String(exercise.ascentMeters) : null,
-    gefuehl: session.feeling != null ? String(session.feeling) : null,
-    training_load: (exercise.trainingLoad ?? session.trainingLoad) != null ? String(exercise.trainingLoad ?? session.trainingLoad) : null,
-    recovery_time: recoveryTimeMillis != null ? String(Math.round(recoveryTimeMillis / 60000)) : null,
-    route_waypoints: wayPoints,
-    km_splits: splits,
+    running_index:
+      exercise?.runningIndex !== undefined &&
+      exercise?.runningIndex !== null
+        ? String(exercise.runningIndex)
+        : null,
+    cadence: (() => {
+      const cadence = extractCadence(exercise)
+      return cadence !== null ? String(cadence) : null
+    })(),
+    hoehenmeter:
+      exercise?.ascentMeters !== undefined &&
+      exercise?.ascentMeters !== null
+        ? String(exercise.ascentMeters)
+        : null,
+    gefuehl:
+      session?.feeling !== undefined && session?.feeling !== null
+        ? String(session.feeling)
+        : null,
+    training_load:
+      trainingLoad !== undefined && trainingLoad !== null
+        ? String(trainingLoad)
+        : null,
+    recovery_time:
+      recoveryTimeMillis !== undefined && recoveryTimeMillis !== null
+        ? String(Math.round(Number(recoveryTimeMillis) / 60000))
+        : null,
+    route_waypoints: extractWayPoints(exercise),
+    km_splits: extractSplits(exercise),
   }
 }
 
-// Holt Trainingseinheiten der letzten 30 Tage und speichert Laufeinheiten in
-// polar_pending_activities. V4 arbeitet mit Datumsbereich statt Transaktionen - Duplikate
-// werden über den onConflict-Upsert vermieden, kein "einmal abgeholt, nie wieder"-Problem
-// wie bei V3s transaktionalem Modell.
+async function loadTrainingSessions(token) {
+  const { from, to } = getDateRange()
+
+  // Keine "features" anfordern:
+  // Dann erlaubt Polar laut V4-Dokumentation einen Zeitraum von bis zu 90 Tagen.
+  // Mit Features wäre jeweils nur ein einzelner Tag zulässig.
+  const data = await polarFetch('/training-sessions/list', token, {
+    from,
+    to,
+  })
+
+  return Array.isArray(data?.trainingSessions)
+    ? data.trainingSessions
+    : []
+}
+
+async function savePendingActivity(row) {
+  const { error } = await supabase
+    .from('polar_pending_activities')
+    .upsert(row, {
+      onConflict: 'user_id,polar_exercise_id',
+    })
+
+  if (error) {
+    console.error('[Polar V4] Upsert fehlgeschlagen:', {
+      polarExerciseId: row.polar_exercise_id,
+      error,
+    })
+    throw new Error(
+      `Polar-Aktivität ${row.polar_exercise_id} konnte nicht gespeichert werden`
+    )
+  }
+}
+
 export async function fetchAndPersistPolarActivitiesV4(userId) {
+  if (!userId) throw new Error('userId fehlt')
+
   const token = await getValidAccessToken(userId)
-  const sportsMap = await getSportsMap(token)
-  const sportsMapEmpty = Object.keys(sportsMap).length === 0
-  if (sportsMapEmpty) {
-    console.log('[Polar V4 Sync] Sportarten-Katalog leer/nicht abrufbar - filtere NICHT nach Sportart, um nicht versehentlich alles zu verwerfen.')
-  }
 
-  // Vierter Versuch: Unix-Zeitstempel (Millisekunden seit 1970) als reine Zahl, nicht als
-  // ISO-Text - falls der Parser generisch "could not be parsed as datetime" wirft, obwohl
-  // drei unterschiedliche gültige ISO-8601-Varianten fehlschlugen, könnte ein numerischer
-  // Zeitstempel erwartet werden statt eines Textformats.
-  const fromMillis = Date.now() - 30 * 24 * 60 * 60 * 1000
+  const [sportsMap, sessions] = await Promise.all([
+    getSportsMap(token),
+    loadTrainingSessions(token),
+  ])
 
-  const url = `https://www.polaraccesslink.com/v4/data/training-sessions/list?from=${fromMillis}`
-  console.log('[Polar V4 Sync] Angefragte URL:', url)
-  const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' } })
+  const hasSportsMap = Object.keys(sportsMap).length > 0
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '')
-    console.log('[Polar V4 Sync] Trainingseinheiten-Abruf fehlgeschlagen, Status:', res.status, 'Antwort:', errText.slice(0, 1000))
-    throw new Error(`Polar V4 API Fehler (${res.status})`)
-  }
-
-  const data = await res.json()
-  console.log('[Polar V4 Sync] Schlüssel der Antwort:', Object.keys(data).join(', '))
-  const sessions = data.trainingSessions || []
-  console.log('[Polar V4 Sync] Anzahl Trainingseinheiten:', sessions.length)
-  if (sessions[0]) console.log('[Polar V4 Sync] Erste Session (roh, gekürzt):', JSON.stringify(sessions[0]).slice(0, 4000))
+  console.log('[Polar V4] Trainingseinheiten geladen:', sessions.length)
+  console.log('[Polar V4] Sportarten geladen:', Object.keys(sportsMap).length)
 
   const stored = []
 
   for (const session of sessions) {
-    const exercisesToProcess = (session.exercises && session.exercises.length > 0) ? session.exercises : [session]
+    const exercises =
+      Array.isArray(session?.exercises) && session.exercises.length
+        ? session.exercises
+        : [session]
 
-    for (const exercise of exercisesToProcess) {
-      const sportId = exercise.sport?.id ?? session.sport?.id
-      const sportName = sportsMap[sportId] || null
+    for (const exercise of exercises) {
+      const sportId = firstDefined(
+        exercise?.sport?.id?.id,
+        exercise?.sport?.id,
+        session?.sport?.id?.id,
+        session?.sport?.id
+      )
 
-      if (!sportsMapEmpty && !isRunningSport(sportName)) continue
+      const sportName =
+        sportId !== undefined && sportId !== null
+          ? sportsMap[String(sportId)] || null
+          : null
 
-      const row = { user_id: userId, ...mapV4Exercise(session, exercise, sportName) }
+      // Sicheres Verhalten:
+      // Nur filtern, wenn der Sportarten-Katalog tatsächlich geladen wurde.
+      // Bei fehlendem sports:read werden Einheiten nicht versehentlich verworfen.
+      if (hasSportsMap && !isRunningSport(sportName)) continue
+
+      const row = {
+        user_id: userId,
+        ...mapV4Exercise(session, exercise, sportName),
+      }
 
       if (!row.polar_exercise_id) {
-        console.log('[Polar V4 Sync] Übung ohne ID übersprungen (kann nicht eindeutig gespeichert werden).')
+        console.warn(
+          '[Polar V4] Trainingseinheit ohne eindeutige ID wurde übersprungen.'
+        )
         continue
       }
 
-      const { error } = await supabase
-        .from('polar_pending_activities')
-        .upsert(row, { onConflict: 'user_id,polar_exercise_id' })
-
-      if (!error) stored.push(row)
-      else console.error('[Polar V4 Sync] Upsert-Fehler:', error)
+      await savePendingActivity(row)
+      stored.push(row)
     }
   }
 
+  console.log('[Polar V4] Gespeicherte Aktivitäten:', stored.length)
   return stored
 }
 
