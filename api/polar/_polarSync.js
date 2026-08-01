@@ -497,6 +497,21 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
 
 
   console.log('[Polar V4] Trainingseinheiten geladen:', sessions.length)
+
+  // Gezieltes Debug-Logging: prüft bei der ersten Session mit Übungen, was in
+  // routes/samples/laps tatsächlich steckt - fehlt der Schlüssel komplett (nicht in der
+  // Antwort), oder ist er da, aber leer/null? Das unterscheidet "Listen-Endpunkt liefert
+  // das grundsätzlich nicht mit" von "bei dieser Übung gibt's schlicht keine Daten dafür".
+  const firstWithExercises = sessions.find(s => Array.isArray(s.exercises) && s.exercises.length > 0)
+  if (firstWithExercises) {
+    const ex = firstWithExercises.exercises[0]
+    console.log('[Polar V4] Debug erste Übung - Schlüssel vorhanden:', Object.keys(ex).join(', '))
+    console.log('[Polar V4] Debug routes:', JSON.stringify(ex.routes))
+    console.log('[Polar V4] Debug samples:', JSON.stringify(ex.samples)?.slice(0, 1000))
+    console.log('[Polar V4] Debug laps:', JSON.stringify(ex.laps)?.slice(0, 1000))
+  } else {
+    console.log('[Polar V4] Debug: keine Session mit exercises[] gefunden - Felder liegen dann evtl. direkt auf der Session-Ebene.')
+  }
   console.log('[Polar V4] Sportarten geladen:', Object.keys(sportsMap).length)
 
   const stored = []
