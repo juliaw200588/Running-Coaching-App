@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase.js'
+import MetricDashboard from './MetricDashboard.jsx'
+import PhaseTimeline from './PhaseTimeline.jsx'
+import PhaseCards from './PhaseCards.jsx'
+import SplitAccordion from './SplitAccordion.jsx'
 
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
@@ -770,21 +774,13 @@ export default function TrainingPlan({ plan, onReset, user }) {
       {/* Detail Modal */}
       {detailModal && (() => {
         const d = logs[detailModal.key] || {}
-        const rows = [
-          { icon: '🕐', label: 'Uhrzeit', value: d.uhrzeit },
-          { icon: '⏱', label: 'Pace', value: d.pace },
-          { icon: '📍', label: 'Distanz', value: d.km },
-          { icon: '❤️', label: 'Ø Herzfrequenz', value: d.bpm },
-          { icon: '🔥', label: 'Kalorien', value: d.kalorien ? `${d.kalorien} kcal` : null },
-          { icon: '💓', label: 'Max. Herzfrequenz', value: d.hf_max ? `${d.hf_max} bpm` : null },
-          { icon: '⛰️', label: 'Höhenmeter', value: d.hoehenmeter ? `${d.hoehenmeter} m` : null },
-          { icon: '🏃', label: 'Running Index', value: d.running_index },
-          { icon: '👣', label: 'Kadenz', value: d.cadence ? `${d.cadence} spm` : null },
-          { icon: '🙂', label: 'Gefühl', value: d.gefuehl },
-          { icon: '📊', label: 'Trainingsbelastung', value: d.training_load },
-          { icon: '💤', label: 'Erholungszeit', value: d.recovery_time },
-          { icon: '👟', label: 'Schuh', value: d.schuh_id ? (schuhe.find(s => s.id === d.schuh_id) ? `${schuhe.find(s => s.id === d.schuh_id).marke} ${schuhe.find(s => s.id === d.schuh_id).modell}` : null) : null },
-        ].filter(r => r.value)
+        const loggedShoe = d.schuh_id
+          ? schuhe.find(shoe => shoe.id === d.schuh_id)
+          : null
+
+        const shoeName = loggedShoe
+          ? `${loggedShoe.marke} ${loggedShoe.modell}`
+          : null
 
         return (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(60,30,20,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
@@ -807,208 +803,27 @@ export default function TrainingPlan({ plan, onReset, user }) {
                 </div>
               )}
 
-              {rows.length === 0 ? (
-                <p style={{ fontSize: 13, color: '#B8A090', fontFamily: 'sans-serif' }}>Keine weiteren Details vorhanden.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {rows.map(r => (
-                    <div key={r.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 4px', borderBottom: '1px solid #F5EDE8' }}>
-                      <span style={{ fontSize: 13, color: '#8B6B5A', fontFamily: 'sans-serif' }}>{r.icon} {r.label}</span>
-                      <span style={{ fontSize: 13, color: '#3D2B1F', fontFamily: 'sans-serif', fontWeight: 'bold' }}>{r.value}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <MetricDashboard
+                time={d.uhrzeit}
+                distance={d.km}
+                pace={d.pace}
+                averageHeartRate={d.bpm}
+                calories={d.kalorien ? `${d.kalorien} kcal` : null}
+                maxHeartRate={d.hf_max ? `${d.hf_max} bpm` : null}
+                elevation={d.hoehenmeter ? `${d.hoehenmeter} m` : null}
+                cadence={d.cadence ? `${d.cadence} spm` : null}
+                runningIndex={d.running_index}
+                shoe={shoeName}
+              />
 
-              {Array.isArray(d.run_segments) && d.run_segments.length > 0 && (
-                <div style={{ marginTop: 18 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                    <div style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, fontFamily: 'sans-serif' }}>
-                      Trainingsphasen
-                    </div>
-                    <div style={{ fontSize: 10, color: '#C4A882', fontFamily: 'sans-serif' }}>
-                      {d.run_segments.length} Phasen
-                    </div>
-                  </div>
+              <PhaseTimeline phases={d.run_segments} />
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {d.run_segments.map((segment, index) => {
-                      const name = String(segment.name || 'Phase')
-                      const normalizedName = name.toLowerCase()
+              <PhaseCards phases={d.run_segments} />
 
-                      const isInterval =
-                        normalizedName.includes('intervall') ||
-                        normalizedName.includes('tempo') ||
-                        normalizedName.includes('schnell')
-
-                      const isRecovery =
-                        normalizedName.includes('locker') ||
-                        normalizedName.includes('pause') ||
-                        normalizedName.includes('erholung')
-
-                      const isWarmup =
-                        normalizedName.includes('einlaufen') ||
-                        normalizedName.includes('warm')
-
-                      const isCooldown =
-                        normalizedName.includes('auslaufen') ||
-                        normalizedName.includes('cool')
-
-                      const accent = isInterval
-                        ? '#E56B6F'
-                        : isRecovery
-                          ? '#E3B341'
-                          : isWarmup || isCooldown
-                            ? '#5BA88A'
-                            : '#A78BCA'
-
-                      const softBackground = isInterval
-                        ? '#FFF3F2'
-                        : isRecovery
-                          ? '#FFF9E8'
-                          : isWarmup || isCooldown
-                            ? '#F2FBF6'
-                            : '#F7F2FF'
-
-                      const phaseIcon = isInterval
-                        ? '🔥'
-                        : isRecovery
-                          ? '🌿'
-                          : isWarmup
-                            ? '🟢'
-                            : isCooldown
-                              ? '🏁'
-                              : '🏃'
-
-                      const duration =
-                        segment.actualDurationSeconds != null
-                          ? `${Math.floor(segment.actualDurationSeconds / 60)}:${String(
-                              segment.actualDurationSeconds % 60
-                            ).padStart(2, '0')} min`
-                          : null
-
-                      const distance =
-                        segment.actualDistanceMeters != null
-                          ? segment.actualDistanceMeters >= 1000
-                            ? `${(segment.actualDistanceMeters / 1000).toFixed(2)} km`
-                            : `${Math.round(segment.actualDistanceMeters)} m`
-                          : null
-
-                      return (
-                        <div
-                          key={`${segment.index || index}-${segment.name || 'phase'}`}
-                          style={{
-                            background: softBackground,
-                            border: '1px solid #F0E8E0',
-                            borderLeft: `5px solid ${accent}`,
-                            borderRadius: 14,
-                            padding: '12px 13px',
-                            fontFamily: 'sans-serif',
-                            boxShadow: '0 3px 10px rgba(92,61,46,0.04)',
-                          }}
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', marginBottom: 10 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <span style={{ fontSize: 16 }}>{phaseIcon}</span>
-                              <div>
-                                <div style={{ fontSize: 13, color: '#3D2B1F', fontWeight: 'bold' }}>
-                                  {segment.index || index + 1}. {name}
-                                </div>
-                                {(segment.plannedDistanceMeters != null || segment.plannedDurationSeconds != null) && (
-                                  <div style={{ fontSize: 10, color: '#A58B7A', marginTop: 2 }}>
-                                    Geplant:{' '}
-                                    {segment.plannedDistanceMeters != null
-                                      ? `${Math.round(segment.plannedDistanceMeters)} m`
-                                      : `${Math.round(segment.plannedDurationSeconds / 60)} min`}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-
-                            <div style={{ textAlign: 'right' }}>
-                              <div style={{ fontSize: 12, color: '#3D2B1F', fontWeight: 'bold' }}>
-                                {[distance, duration].filter(Boolean).join(' · ') || '–'}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
-                            {segment.pace && (
-                              <div style={{ background: 'rgba(255,255,255,0.72)', borderRadius: 10, padding: '8px 9px' }}>
-                                <div style={{ fontSize: 9, color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.6 }}>Pace</div>
-                                <div style={{ fontSize: 12, color: '#3D2B1F', fontWeight: 'bold', marginTop: 2 }}>⏱ {segment.pace}</div>
-                              </div>
-                            )}
-
-                            {segment.avgHeartRate != null && (
-                              <div style={{ background: 'rgba(255,255,255,0.72)', borderRadius: 10, padding: '8px 9px' }}>
-                                <div style={{ fontSize: 9, color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.6 }}>Ø Herzfrequenz</div>
-                                <div style={{ fontSize: 12, color: '#3D2B1F', fontWeight: 'bold', marginTop: 2 }}>❤️ {segment.avgHeartRate} bpm</div>
-                              </div>
-                            )}
-
-                            {segment.maxHeartRate != null && (
-                              <div style={{ background: 'rgba(255,255,255,0.72)', borderRadius: 10, padding: '8px 9px' }}>
-                                <div style={{ fontSize: 9, color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.6 }}>Max. Herzfrequenz</div>
-                                <div style={{ fontSize: 12, color: '#3D2B1F', fontWeight: 'bold', marginTop: 2 }}>💓 {segment.maxHeartRate} bpm</div>
-                              </div>
-                            )}
-
-                            {segment.avgCadence != null && (
-                              <div style={{ background: 'rgba(255,255,255,0.72)', borderRadius: 10, padding: '8px 9px' }}>
-                                <div style={{ fontSize: 9, color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.6 }}>Kadenz</div>
-                                <div style={{ fontSize: 12, color: '#3D2B1F', fontWeight: 'bold', marginTop: 2 }}>👣 {segment.avgCadence} spm</div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {Array.isArray(d.km_splits) && d.km_splits.length > 0 && (
-                <div style={{ marginTop: 20 }}>
-                  <div style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8, fontFamily: 'sans-serif' }}>
-                    Kilometer-Splits
-                  </div>
-
-                  <div style={{ background: '#FFF8F5', border: '1px solid #F0E8E0', borderRadius: 14, overflow: 'hidden' }}>
-                    {d.km_splits.map(split => (
-                      <div
-                        key={split.km}
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: '58px 1fr 1fr',
-                          alignItems: 'center',
-                          gap: 10,
-                          padding: '9px 12px',
-                          borderBottom: split.km === d.km_splits[d.km_splits.length - 1]?.km ? 'none' : '1px solid #F0E8E0',
-                          fontSize: 12,
-                          fontFamily: 'sans-serif',
-                        }}
-                      >
-                        <span style={{ color: '#8B6B5A', fontWeight: 'bold' }}>km {split.km}</span>
-
-                        <span style={{ color: '#3D2B1F', fontWeight: 'bold' }}>
-                          {split.pace || (
-                            split.dauerSek
-                              ? `${Math.floor(split.dauerSek / 60)}:${String(
-                                  split.dauerSek % 60
-                                ).padStart(2, '0')} min`
-                              : '–'
-                          )}
-                        </span>
-
-                        <span style={{ color: '#B85464', textAlign: 'right' }}>
-                          {split.hfAvg != null ? `❤️ ${split.hfAvg}` : ''}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <SplitAccordion
+                splits={d.km_splits}
+                defaultOpen={!Array.isArray(d.run_segments) || d.run_segments.length === 0}
+              />
 
               {d.note && (
                 <div style={{ marginTop: 16, padding: '12px 14px', background: '#F5EDE8', borderRadius: 12, fontSize: 12, color: '#8B6B5A', fontFamily: 'sans-serif', lineHeight: 1.6 }}>
