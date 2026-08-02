@@ -1078,14 +1078,7 @@ async function loadDetailedRunningExercises(
         if (favoriteTargets === null) {
           favoriteTargets = await loadFavoriteTargets(token)
         }
-      } catch (error) {
-        console.warn(
-          `[Polar V4] Trainingsziele für ${dateString} ` +
-          'konnten nicht ergänzt werden. ' +
-          'Route und Splits werden trotzdem übernommen:',
-          error
-        )
-        console.log('[Polar V4] TARGET-PRÜFUNG:', {
+          console.log('[Polar V4] TARGET-PRÜFUNG:', {
   dateString,
 
   sessionTargets: detailedSessions.map(session => ({
@@ -1123,6 +1116,14 @@ async function loadDetailedRunningExercises(
       : []
   ),
 })
+      } catch (error) {
+        console.warn(
+          `[Polar V4] Trainingsziele für ${dateString} ` +
+          'konnten nicht ergänzt werden. ' +
+          'Route und Splits werden trotzdem übernommen:',
+          error
+        )
+      
 
         // Verhindert, dass derselbe nicht verfügbare Target-Endpunkt
         // für jeden Lauftag erneut aufgerufen wird.
