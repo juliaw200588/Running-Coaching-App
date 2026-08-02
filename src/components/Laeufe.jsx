@@ -381,45 +381,10 @@ export default function Laeufe({ user, plan }) {
         })
       })
 
-      ;(pendingData || []).forEach(p => {
-        normalized.push({
-          id: 'pending_' + p.id,
-          pendingId: p.id,
-          polarExerciseId: p.polar_exercise_id,
-          dayKey: null,
-          date: p.datum,
-          km: p.distanz,
-          pace: p.pace,
-          bpm: p.herzfrequenz,
-          note: null,
-          schuhId: null,
-          runningIndex: p.running_index,
-          cadence: p.cadence,
-          uhrzeit: p.uhrzeit,
-          hfMax: p.hf_max,
-          hoehenmeter: p.hoehenmeter,
-          gefuehl: p.gefuehl,
-          trainingLoad: p.training_load,
-          recoveryTime: p.recovery_time,
-          kalorien: p.kalorien,
-          routeWaypoints: parseJsonArray(p.route_waypoints),
-          kmSplits: parseJsonArray(p.km_splits),
-          runSegments: parseJsonArray(p.run_segments),
-          sportType: p.sport_type || 'running',
-          activityName: p.activity_name || null,
-          durationSeconds: p.duration_seconds,
-          movingTimeSeconds: p.moving_time_seconds,
-          distanceMeters: p.distance_meters,
-          averageSpeedKmh: p.average_speed_kmh,
-          maxSpeedKmh: p.max_speed_kmh,
-          elevationGain: p.elevation_gain,
-          elevationLoss: p.elevation_loss,
-          duration: p.dauer || (p.duration_seconds ? formatDuration(p.duration_seconds) : null),
-          status: 'pending',
-          source: p.source || 'polar',
-          planInfo: null,
-        })
-      })
+      // Offene Polar-Aktivitäten werden hier bewusst nicht ergänzt.
+      // Sie bleiben im Profil unter „Geräte“ sichtbar, bis der Nutzer sie
+      // dort ausdrücklich übernimmt. Erst danach stehen sie in `logs`
+      // und erscheinen in der Aktivitätenübersicht.
 
       normalized.sort((a, b) => (b.date || '').localeCompare(a.date || ''))
       setRuns(normalized)
