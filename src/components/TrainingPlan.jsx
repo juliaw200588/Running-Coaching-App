@@ -856,6 +856,9 @@ export default function TrainingPlan({ plan, onReset, user }) {
         pace={detailModal ? logs[detailModal.key]?.pace : null}
         heartRate={detailModal ? logs[detailModal.key]?.bpm : null}
         phases={detailModal ? logs[detailModal.key]?.run_segments || [] : []}
+        runningIndex={detailModal ? logs[detailModal.key]?.running_index : null}
+        elevation={detailModal && logs[detailModal.key]?.hoehenmeter ? `${logs[detailModal.key].hoehenmeter} m` : null}
+        logoSrc="/route-icon.png"
       />
 
       {/* Header */}

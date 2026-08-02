@@ -694,6 +694,9 @@ if (run.status === 'pending') {
         pace={detailRun?.pace}
         heartRate={detailRun?.bpm}
         phases={detailRun?.runSegments || []}
+        runningIndex={detailRun?.runningIndex}
+        elevation={detailRun?.hoehenmeter ? `${detailRun.hoehenmeter} m` : null}
+        logoSrc="/route-icon.png"
       />
       </div>
     </div>

@@ -10,9 +10,7 @@ const parsePaceToSeconds = (pace) => {
 const formatAveragePace = (seconds) => {
   if (!Number.isFinite(seconds) || seconds <= 0) return null
   const rounded = Math.round(seconds)
-  const minutes = Math.floor(rounded / 60)
-  const secs = rounded % 60
-  return `${minutes}:${String(secs).padStart(2, '0')}/km`
+  return `${Math.floor(rounded / 60)}:${String(rounded % 60).padStart(2, '0')}/km`
 }
 
 const classifyPhase = (name = '') => {
@@ -43,6 +41,16 @@ const classifyPhase = (name = '') => {
   }
 
   return { key: 'other', icon: '🏃', color: '#A78BCA', background: '#F7F2FF' }
+}
+
+const getWeight = (phase) => {
+  const duration = Number(phase?.actualDurationSeconds)
+  if (Number.isFinite(duration) && duration > 0) return duration
+
+  const distance = Number(phase?.actualDistanceMeters)
+  if (Number.isFinite(distance) && distance > 0) return distance
+
+  return 1
 }
 
 const getPrimaryLabel = (phase) => {
@@ -109,22 +117,25 @@ export default function PhaseTimeline({ phases = [] }) {
 
       <div
         style={{
-          display: 'grid',
-          gridTemplateColumns: `repeat(${phases.length}, minmax(0, 1fr))`,
+          display: 'flex',
           gap: compact ? 3 : 5,
           width: '100%',
+          minWidth: 0,
           marginBottom: 10,
         }}
       >
         {phases.map((phase, index) => {
           const meta = classifyPhase(phase?.name)
           const pace = phase?.pace ? phase.pace.replace(' min/km', '') : '–'
+          const weight = getWeight(phase)
 
           return (
             <div
               key={`${phase?.index || index}-${phase?.name || 'phase'}`}
               title={`${phase?.name || 'Phase'} · ${getPrimaryLabel(phase)} · ${pace}/km`}
               style={{
+                flexGrow: weight,
+                flexBasis: 0,
                 minWidth: 0,
                 overflow: 'hidden',
                 background: meta.background,
@@ -139,23 +150,24 @@ export default function PhaseTimeline({ phases = [] }) {
               <div style={{ fontSize: veryCompact ? 10 : compact ? 12 : 14, lineHeight: 1.1 }}>
                 {meta.icon}
               </div>
+
               <div
                 style={{
-                  fontSize: veryCompact ? 6.5 : compact ? 7.5 : 9,
+                  fontSize: veryCompact ? 6.3 : compact ? 7.4 : 9,
                   color: '#3D2B1F',
                   fontWeight: 'bold',
                   lineHeight: 1.15,
                   marginTop: 3,
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
-                  textOverflow: 'clip',
                 }}
               >
                 {getPrimaryLabel(phase)}
               </div>
+
               <div
                 style={{
-                  fontSize: veryCompact ? 6.5 : compact ? 7.5 : 9,
+                  fontSize: veryCompact ? 6.3 : compact ? 7.4 : 9,
                   color: '#8B6B5A',
                   marginTop: 2,
                   whiteSpace: 'nowrap',
