@@ -23,13 +23,7 @@ const classifyPhase = (name = '') => {
     normalized.includes('tempo') ||
     normalized.includes('schnell')
   ) {
-    return {
-      key: 'interval',
-      icon: '🔥',
-      color: '#E56B6F',
-      background: '#FFF3F2',
-      label: 'Intervall',
-    }
+    return { key: 'interval', icon: '🔥', color: '#E56B6F', background: '#FFF3F2' }
   }
 
   if (
@@ -37,81 +31,33 @@ const classifyPhase = (name = '') => {
     normalized.includes('pause') ||
     normalized.includes('erholung')
   ) {
-    return {
-      key: 'recovery',
-      icon: '🌿',
-      color: '#E3B341',
-      background: '#FFF9E8',
-      label: 'Erholung',
-    }
+    return { key: 'recovery', icon: '🌿', color: '#E3B341', background: '#FFF9E8' }
   }
 
-  if (
-    normalized.includes('einlaufen') ||
-    normalized.includes('warm')
-  ) {
-    return {
-      key: 'warmup',
-      icon: '🟢',
-      color: '#5BA88A',
-      background: '#F2FBF6',
-      label: 'Einlaufen',
-    }
+  if (normalized.includes('einlaufen') || normalized.includes('warm')) {
+    return { key: 'warmup', icon: '🟢', color: '#5BA88A', background: '#F2FBF6' }
   }
 
-  if (
-    normalized.includes('auslaufen') ||
-    normalized.includes('cool')
-  ) {
-    return {
-      key: 'cooldown',
-      icon: '🏁',
-      color: '#5BA88A',
-      background: '#F2FBF6',
-      label: 'Auslaufen',
-    }
+  if (normalized.includes('auslaufen') || normalized.includes('cool')) {
+    return { key: 'cooldown', icon: '🏁', color: '#5BA88A', background: '#F2FBF6' }
   }
 
-  return {
-    key: 'other',
-    icon: '🏃',
-    color: '#A78BCA',
-    background: '#F7F2FF',
-    label: name || 'Phase',
-  }
-}
-
-const getPhaseWeight = (phase) => {
-  const duration = Number(phase?.actualDurationSeconds)
-  if (Number.isFinite(duration) && duration > 0) return duration
-
-  const distance = Number(phase?.actualDistanceMeters)
-  if (Number.isFinite(distance) && distance > 0) return distance
-
-  return 1
+  return { key: 'other', icon: '🏃', color: '#A78BCA', background: '#F7F2FF' }
 }
 
 const getPrimaryLabel = (phase) => {
   if (phase?.plannedDistanceMeters != null) {
-    const planned = Number(phase.plannedDistanceMeters)
-    if (planned >= 1000) return `${(planned / 1000).toFixed(1)} km`
-    return `${Math.round(planned)} m`
+    const value = Number(phase.plannedDistanceMeters)
+    return value >= 1000 ? `${(value / 1000).toFixed(1)} km` : `${Math.round(value)} m`
   }
 
   if (phase?.plannedDurationSeconds != null) {
-    const seconds = Number(phase.plannedDurationSeconds)
-    return `${Math.round(seconds / 60)} min`
+    return `${Math.round(Number(phase.plannedDurationSeconds) / 60)} min`
   }
 
   if (phase?.actualDistanceMeters != null) {
-    const actual = Number(phase.actualDistanceMeters)
-    if (actual >= 1000) return `${(actual / 1000).toFixed(2)} km`
-    return `${Math.round(actual)} m`
-  }
-
-  if (phase?.actualDurationSeconds != null) {
-    const seconds = Number(phase.actualDurationSeconds)
-    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} min`
+    const value = Number(phase.actualDistanceMeters)
+    return value >= 1000 ? `${(value / 1000).toFixed(2)} km` : `${Math.round(value)} m`
   }
 
   return '–'
@@ -120,10 +66,8 @@ const getPrimaryLabel = (phase) => {
 export default function PhaseTimeline({ phases = [] }) {
   if (!Array.isArray(phases) || phases.length === 0) return null
 
-  const totalWeight = phases.reduce(
-    (sum, phase) => sum + getPhaseWeight(phase),
-    0
-  )
+  const compact = phases.length >= 8
+  const veryCompact = phases.length >= 12
 
   const intervalPaces = phases
     .filter(phase => classifyPhase(phase?.name).key === 'interval')
@@ -136,17 +80,11 @@ export default function PhaseTimeline({ phases = [] }) {
     .filter(value => value != null)
 
   const avgIntervalPace = intervalPaces.length
-    ? formatAveragePace(
-        intervalPaces.reduce((sum, value) => sum + value, 0) /
-          intervalPaces.length
-      )
+    ? formatAveragePace(intervalPaces.reduce((sum, value) => sum + value, 0) / intervalPaces.length)
     : null
 
   const avgRecoveryPace = recoveryPaces.length
-    ? formatAveragePace(
-        recoveryPaces.reduce((sum, value) => sum + value, 0) /
-          recoveryPaces.length
-      )
+    ? formatAveragePace(recoveryPaces.reduce((sum, value) => sum + value, 0) / recoveryPaces.length)
     : null
 
   return (
@@ -156,95 +94,75 @@ export default function PhaseTimeline({ phases = [] }) {
         background: 'white',
         border: '1px solid #F0E8E0',
         borderRadius: 16,
-        padding: '14px 14px 13px',
+        padding: compact ? '13px 10px 12px' : '14px',
         boxShadow: '0 4px 16px rgba(92,61,46,0.05)',
       }}
     >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 10,
-        }}
-      >
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 'bold',
-            color: '#B8A090',
-            textTransform: 'uppercase',
-            letterSpacing: 0.8,
-            fontFamily: 'sans-serif',
-          }}
-        >
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, fontFamily: 'sans-serif' }}>
           Phasenübersicht
         </div>
-
-        <div
-          style={{
-            fontSize: 10,
-            color: '#C4A882',
-            fontFamily: 'sans-serif',
-          }}
-        >
+        <div style={{ fontSize: 10, color: '#C4A882', fontFamily: 'sans-serif' }}>
           {phases.length} Phasen
         </div>
       </div>
 
       <div
         style={{
-          display: 'flex',
-          gap: 4,
-          alignItems: 'stretch',
+          display: 'grid',
+          gridTemplateColumns: `repeat(${phases.length}, minmax(0, 1fr))`,
+          gap: compact ? 3 : 5,
+          width: '100%',
           marginBottom: 10,
-          overflow: 'hidden',
         }}
       >
         {phases.map((phase, index) => {
           const meta = classifyPhase(phase?.name)
-          const weight = getPhaseWeight(phase)
-          const widthPercent =
-            totalWeight > 0 ? Math.max(7, (weight / totalWeight) * 100) : 10
+          const pace = phase?.pace ? phase.pace.replace(' min/km', '') : '–'
 
           return (
             <div
               key={`${phase?.index || index}-${phase?.name || 'phase'}`}
-              title={`${phase?.name || 'Phase'} · ${getPrimaryLabel(phase)} · ${phase?.pace || 'keine Pace'}`}
+              title={`${phase?.name || 'Phase'} · ${getPrimaryLabel(phase)} · ${pace}/km`}
               style={{
-                flexBasis: `${widthPercent}%`,
-                flexGrow: weight,
-                minWidth: 28,
+                minWidth: 0,
+                overflow: 'hidden',
                 background: meta.background,
                 border: `1px solid ${meta.color}55`,
-                borderTop: `5px solid ${meta.color}`,
-                borderRadius: 10,
-                padding: '7px 5px 6px',
+                borderTop: `${compact ? 4 : 5}px solid ${meta.color}`,
+                borderRadius: compact ? 8 : 10,
+                padding: compact ? '6px 1px 5px' : '7px 4px 6px',
                 textAlign: 'center',
                 fontFamily: 'sans-serif',
               }}
             >
-              <div style={{ fontSize: 14, marginBottom: 3 }}>{meta.icon}</div>
+              <div style={{ fontSize: veryCompact ? 10 : compact ? 12 : 14, lineHeight: 1.1 }}>
+                {meta.icon}
+              </div>
               <div
                 style={{
-                  fontSize: 9,
+                  fontSize: veryCompact ? 6.5 : compact ? 7.5 : 9,
                   color: '#3D2B1F',
                   fontWeight: 'bold',
-                  lineHeight: 1.2,
+                  lineHeight: 1.15,
+                  marginTop: 3,
                   whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'clip',
                 }}
               >
                 {getPrimaryLabel(phase)}
               </div>
               <div
                 style={{
-                  fontSize: 9,
+                  fontSize: veryCompact ? 6.5 : compact ? 7.5 : 9,
                   color: '#8B6B5A',
                   marginTop: 2,
                   whiteSpace: 'nowrap',
+                  overflow: 'hidden',
                 }}
               >
-                {phase?.pace ? phase.pace.replace(' min/km', '/km') : '–'}
+                {pace}
               </div>
             </div>
           )
@@ -252,42 +170,14 @@ export default function PhaseTimeline({ phases = [] }) {
       </div>
 
       {(avgIntervalPace || avgRecoveryPace) && (
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 8,
-            fontFamily: 'sans-serif',
-          }}
-        >
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, fontFamily: 'sans-serif' }}>
           {avgIntervalPace && (
-            <div
-              style={{
-                background: '#FFF3F2',
-                border: '1px solid #F5C4CC',
-                color: '#B85464',
-                padding: '6px 9px',
-                borderRadius: 99,
-                fontSize: 10,
-                fontWeight: 'bold',
-              }}
-            >
+            <div style={{ background: '#FFF3F2', border: '1px solid #F5C4CC', color: '#B85464', padding: '6px 9px', borderRadius: 99, fontSize: 10, fontWeight: 'bold' }}>
               🔥 Intervalle Ø {avgIntervalPace}
             </div>
           )}
-
           {avgRecoveryPace && (
-            <div
-              style={{
-                background: '#FFF9E8',
-                border: '1px solid #FFE8A0',
-                color: '#A07830',
-                padding: '6px 9px',
-                borderRadius: 99,
-                fontSize: 10,
-                fontWeight: 'bold',
-              }}
-            >
+            <div style={{ background: '#FFF9E8', border: '1px solid #FFE8A0', color: '#A07830', padding: '6px 9px', borderRadius: 99, fontSize: 10, fontWeight: 'bold' }}>
               🌿 Erholung Ø {avgRecoveryPace}
             </div>
           )}

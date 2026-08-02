@@ -5,6 +5,7 @@ import MetricDashboard from './MetricDashboard.jsx'
 import PhaseTimeline from './PhaseTimeline.jsx'
 import PhaseCards from './PhaseCards.jsx'
 import SplitAccordion from './SplitAccordion.jsx'
+import StoryShareModal from './StoryShareModal.jsx'
 
 const TAG_OFFSET = { Mo: 0, Di: 1, Mi: 2, Do: 3, Fr: 4, Sa: 5, So: 6 }
 const WEEKDAY_NAMES = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
@@ -122,6 +123,7 @@ export default function Laeufe({ user, plan }) {
   const [routeMapUrl, setRouteMapUrl] = useState(null)
   const [routeMapLoading, setRouteMapLoading] = useState(false)
   const [routeMapError, setRouteMapError] = useState(null)
+  const [storyOpen, setStoryOpen] = useState(false)
 
   const planDays = plan ? getPlanDayDates(plan) : []
   const planDayByKey = (key) => planDays.find(d => d.key === key)
@@ -677,6 +679,22 @@ if (run.status === 'pending') {
           </div>
         )
       })()}
+
+      <StoryShareModal
+        open={storyOpen}
+        onClose={() => setStoryOpen(false)}
+        title={
+          detailRun?.planInfo
+            ? `Wo.${detailRun.planInfo.weekN} ${detailRun.planInfo.tag} · ${detailRun.planInfo.einheit}`
+            : 'Laufeinheit'
+        }
+        date={detailRun?.date ? formatDate(detailRun.date) : null}
+        routeMapUrl={routeMapUrl}
+        distance={detailRun?.km}
+        pace={detailRun?.pace}
+        heartRate={detailRun?.bpm}
+        phases={detailRun?.runSegments || []}
+      />
       </div>
     </div>
   )

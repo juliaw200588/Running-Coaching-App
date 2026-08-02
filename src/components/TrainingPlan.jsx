@@ -4,6 +4,7 @@ import MetricDashboard from './MetricDashboard.jsx'
 import PhaseTimeline from './PhaseTimeline.jsx'
 import PhaseCards from './PhaseCards.jsx'
 import SplitAccordion from './SplitAccordion.jsx'
+import StoryShareModal from './StoryShareModal.jsx'
 
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
@@ -177,6 +178,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
   const [routeMapUrl, setRouteMapUrl] = useState(null)
   const [routeMapLoading, setRouteMapLoading] = useState(false)
   const [routeMapError, setRouteMapError] = useState(null)
+  const [storyOpen, setStoryOpen] = useState(false)
   const [skipReasonInput, setSkipReasonInput] = useState('')
   const fileRef = useRef()
 
@@ -831,13 +833,30 @@ export default function TrainingPlan({ plan, onReset, user }) {
                 </div>
               )}
 
-              <button onClick={() => setDetailModal(null)} style={{ width: '100%', marginTop: 20, padding: 14, borderRadius: 16, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
-                Schließen
-              </button>
+              <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
+                <button onClick={() => setDetailModal(null)} style={{ flex: 1, padding: 14, borderRadius: 16, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+                  Schließen
+                </button>
+                <button onClick={() => setStoryOpen(true)} style={{ flex: 1.4, padding: 14, borderRadius: 16, border: 'none', background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)', color: 'white', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+                  📸 Story-Bild
+                </button>
+              </div>
             </div>
           </div>
         )
       })()}
+
+      <StoryShareModal
+        open={storyOpen}
+        onClose={() => setStoryOpen(false)}
+        title={detailModal ? `${detailModal.tag} · ${detailModal.einheit}` : 'Laufeinheit'}
+        date={null}
+        routeMapUrl={routeMapUrl}
+        distance={detailModal ? logs[detailModal.key]?.km : null}
+        pace={detailModal ? logs[detailModal.key]?.pace : null}
+        heartRate={detailModal ? logs[detailModal.key]?.bpm : null}
+        phases={detailModal ? logs[detailModal.key]?.run_segments || [] : []}
+      />
 
       {/* Header */}
       <div style={{ background: 'linear-gradient(135deg, #FF8C69 0%, #FFB347 50%, #FF6B9D 100%)', padding: '36px 20px 28px', borderRadius: '0 0 32px 32px', boxShadow: '0 8px 32px rgba(255,140,105,0.3)', position: 'relative', overflow: 'hidden' }}>
