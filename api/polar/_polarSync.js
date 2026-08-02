@@ -256,18 +256,83 @@ async function getSportsMap(token) {
   }
 }
 
-function isRunningSport(sportName) {
-  if (!sportName) return false
+function detectSportType(sportName) {
+  if (!sportName) return null
 
   const normalized = String(sportName).trim().toLowerCase()
 
-  return (
+  // Reihenfolge ist wichtig: Mountainbike muss vor dem allgemeinen
+  // Fahrrad-Mapping geprüft werden.
+  if (
+    normalized.includes('mountain bike') ||
+    normalized.includes('mountainbike') ||
+    normalized.includes('mountain biking') ||
+    normalized.includes('mtb')
+  ) {
+    return 'mountain_biking'
+  }
+
+  if (
     normalized.includes('running') ||
     normalized.includes('run') ||
     normalized.includes('laufen') ||
     normalized.includes('lauf') ||
     normalized.includes('jogging') ||
-    normalized.includes('trail')
+    normalized.includes('trail running')
+  ) {
+    return 'running'
+  }
+
+  if (
+    normalized.includes('hiking') ||
+    normalized.includes('wandern') ||
+    normalized.includes('wanderung') ||
+    normalized.includes('trekking') ||
+    normalized.includes('trek')
+  ) {
+    return 'hiking'
+  }
+
+  if (
+    normalized.includes('nordic walking') ||
+    normalized.includes('walking') ||
+    normalized.includes('gehen')
+  ) {
+    return 'walking'
+  }
+
+  if (
+    normalized.includes('cycling') ||
+    normalized.includes('biking') ||
+    normalized.includes('bike') ||
+    normalized.includes('bicycle') ||
+    normalized.includes('radfahren') ||
+    normalized.includes('rennrad') ||
+    normalized.includes('gravel')
+  ) {
+    return 'cycling'
+  }
+
+  if (
+    normalized.includes('swimming') ||
+    normalized.includes('swim') ||
+    normalized.includes('schwimmen')
+  ) {
+    return 'swimming'
+  }
+
+  return null
+}
+
+function isRunningSportType(sportType) {
+  return sportType === 'running'
+}
+
+function isFootSportType(sportType) {
+  return (
+    sportType === 'running' ||
+    sportType === 'walking' ||
+    sportType === 'hiking'
   )
 }
 
@@ -482,7 +547,114 @@ function extractAscentMeters(exercise, session) {
   return ascent > 0 ? Math.round(ascent) : null
 }
 
-function mapV4Exercise(session, exercise, sportName) {
+function extractDescentMeters(exercise, session) {
+  const directDescent = firstDefined(
+    exercise?.descentMeters,
+    session?.descentMeters
+  )
+
+  const directNumber = numberOrNull(directDescent)
+  if (directNumber !== null) return directNumber
+
+  const route = extractWayPoints(exercise)
+  if (!Array.isArray(route) || route.length < 2) return null
+
+  let descent = 0
+  let previousAltitude = numberOrNull(
+    route[0]?.altitude ?? route[0]?.altitudeMeters
+  )
+
+  for (let index = 1; index < route.length; index += 1) {
+    const altitude = numberOrNull(
+      route[index]?.altitude ?? route[index]?.altitudeMeters
+    )
+
+    if (
+      altitude !== null &&
+      previousAltitude !== null &&
+      altitude < previousAltitude
+    ) {
+      descent += previousAltitude - altitude
+    }
+
+    if (altitude !== null) previousAltitude = altitude
+  }
+
+  return descent > 0 ? Math.round(descent) : null
+}
+
+function normalizeSpeedToKmh(value) {
+  const speed = numberOrNull(value)
+  if (speed === null || speed < 0) return null
+
+  // Polar-Statistiken liefern Geschwindigkeit üblicherweise in m/s.
+  return Math.round(speed * 3.6 * 100) / 100
+}
+
+function extractSpeedStats(exercise, session, distanceMeters, durationMillis) {
+  const speedStatistic =
+    getStatistic(exercise, 'STATISTICS_TYPE_SPEED') ||
+    getStatistic(session, 'STATISTICS_TYPE_SPEED')
+
+  const directAverage = firstDefined(
+    speedStatistic?.avg,
+    exercise?.averageSpeed,
+    exercise?.avgSpeed,
+    session?.averageSpeed,
+    session?.avgSpeed
+  )
+
+  const directMaximum = firstDefined(
+    speedStatistic?.max,
+    exercise?.maximumSpeed,
+    exercise?.maxSpeed,
+    session?.maximumSpeed,
+    session?.maxSpeed
+  )
+
+  let averageSpeedKmh = normalizeSpeedToKmh(directAverage)
+  const maxSpeedKmh = normalizeSpeedToKmh(directMaximum)
+
+  if (
+    averageSpeedKmh === null &&
+    distanceMeters !== null &&
+    durationMillis !== null &&
+    distanceMeters > 0 &&
+    durationMillis > 0
+  ) {
+    averageSpeedKmh =
+      Math.round(
+        (distanceMeters / 1000) /
+          (durationMillis / 3600000) *
+          100
+      ) / 100
+  }
+
+  return {
+    averageSpeedKmh,
+    maxSpeedKmh,
+  }
+}
+
+function buildActivityName(sportType, sportName) {
+  const defaults = {
+    running: 'Lauf',
+    walking: 'Walking',
+    hiking: 'Wanderung',
+    cycling: 'Radtour',
+    mountain_biking: 'Mountainbike-Tour',
+    swimming: 'Schwimmen',
+  }
+
+  return defaults[sportType] || sportName || 'Sportaktivität'
+}
+
+function mapV4Exercise(
+  session,
+  exercise,
+  sportName,
+  sportType
+) {
   const distanceMeters = firstDefined(
     exercise?.distanceMeters,
     session?.distanceMeters
@@ -490,6 +662,11 @@ function mapV4Exercise(session, exercise, sportName) {
   const durationMillis = firstDefined(
     exercise?.durationMillis,
     session?.durationMillis
+  )
+  const movingTimeMillis = firstDefined(
+    exercise?.movingTimeMillis,
+    session?.movingTimeMillis,
+    durationMillis
   )
   const startTime = firstDefined(exercise?.startTime, session?.startTime)
   const recoveryTimeMillis = firstDefined(
@@ -499,6 +676,7 @@ function mapV4Exercise(session, exercise, sportName) {
 
   const distance = numberOrNull(distanceMeters)
   const duration = numberOrNull(durationMillis)
+  const movingTime = numberOrNull(movingTimeMillis)
   const calories = firstDefined(exercise?.calories, session?.calories)
   const trainingLoad = firstDefined(
     exercise?.trainingLoad,
@@ -506,6 +684,24 @@ function mapV4Exercise(session, exercise, sportName) {
   )
   const cadence = extractCadence(exercise)
   const ascentMeters = extractAscentMeters(exercise, session)
+  const descentMeters = extractDescentMeters(exercise, session)
+  const { averageSpeedKmh, maxSpeedKmh } = extractSpeedStats(
+    exercise,
+    session,
+    distance,
+    movingTime || duration
+  )
+
+  const title = firstDefined(
+    exercise?.title,
+    exercise?.name,
+    session?.title,
+    session?.name
+  )
+
+  const pace = isFootSportType(sportType)
+    ? calculatePace(distance, movingTime || duration)
+    : null
 
   return {
     polar_exercise_id:
@@ -517,7 +713,7 @@ function mapV4Exercise(session, exercise, sportName) {
         : null,
     distanz:
       distance !== null ? `${(distance / 1000).toFixed(2)} km` : null,
-    pace: calculatePace(distance, duration),
+    pace,
     herzfrequenz:
       session?.hrAvg !== undefined && session?.hrAvg !== null
         ? `${session.hrAvg} bpm`
@@ -532,6 +728,7 @@ function mapV4Exercise(session, exercise, sportName) {
       duration !== null ? `${Math.round(duration / 60000)} min` : null,
     sport: sportName || null,
     running_index:
+      sportType === 'running' &&
       exercise?.runningIndex !== undefined &&
       exercise?.runningIndex !== null
         ? String(exercise.runningIndex)
@@ -553,7 +750,28 @@ function mapV4Exercise(session, exercise, sportName) {
         : null,
     route_waypoints: extractWayPoints(exercise),
     km_splits: extractSplits(exercise),
-    run_segments: extractRunSegments(exercise),
+    run_segments:
+      sportType === 'running' ? extractRunSegments(exercise) : null,
+
+    // Neue allgemeine Aktivitätsfelder.
+    sport_type: sportType,
+    source: 'polar',
+    activity_name:
+      typeof title === 'string' && title.trim()
+        ? title.trim()
+        : buildActivityName(sportType, sportName),
+    duration_seconds:
+      duration !== null ? Math.round(duration / 1000) : null,
+    moving_time_seconds:
+      movingTime !== null ? Math.round(movingTime / 1000) : null,
+    distance_meters:
+      distance !== null ? Math.round(distance * 10) / 10 : null,
+    average_speed_kmh: averageSpeedKmh,
+    max_speed_kmh: maxSpeedKmh,
+    elevation_gain:
+      ascentMeters !== null ? Math.round(ascentMeters) : null,
+    elevation_loss:
+      descentMeters !== null ? Math.round(descentMeters) : null,
   }
 }
 
@@ -1012,12 +1230,12 @@ function extractTargetPhases(target, exercise) {
   return enrichPlannedPhasesWithSamples(flattened, exercise)
 }
 
-async function loadDetailedRunningExercises(
+async function loadDetailedSupportedExercises(
   token,
   sessions,
   sportsMap
 ) {
-  const runningDates = new Set()
+  const supportedDates = new Set()
 
   for (const { session, exercise } of collectExercises(sessions)) {
     const sportName = resolveSportName(
@@ -1030,8 +1248,10 @@ async function loadDetailedRunningExercises(
       session?.startTime
     )
 
-    if (isRunningSport(sportName) && startTime) {
-      runningDates.add(String(startTime).slice(0, 10))
+    const sportType = detectSportType(sportName)
+
+    if (sportType && startTime) {
+      supportedDates.add(String(startTime).slice(0, 10))
     }
   }
 
@@ -1039,7 +1259,7 @@ async function loadDetailedRunningExercises(
   let favoriteTargets = null
   let targetAccessUnavailable = false
 
-  for (const dateString of runningDates) {
+  for (const dateString of supportedDates) {
     let detailedSessions
 
     // Die eigentlichen Trainingsdetails sind Pflicht für Route, Splits,
@@ -1150,7 +1370,17 @@ async function loadDetailedRunningExercises(
 
       let targetSegments = null
 
-      if (!targetAccessUnavailable) {
+      const detailedSportName = resolveSportName(
+        sportsMap,
+        session,
+        exercise
+      )
+      const detailedSportType = detectSportType(detailedSportName)
+
+      if (
+        isRunningSportType(detailedSportType) &&
+        !targetAccessUnavailable
+      ) {
         try {
           const target = findTrainingTarget(
             session,
@@ -1233,14 +1463,14 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
     loadTrainingSessions(token),
   ])
 
-  const detailedById = await loadDetailedRunningExercises(
+  const detailedById = await loadDetailedSupportedExercises(
     token,
     sessions,
     sportsMap
   )
 
   console.log('[Polar V4] Trainingseinheiten geladen:', sessions.length)
-  console.log('[Polar V4] Läufe mit Detaildaten:', detailedById.size)
+  console.log('[Polar V4] Unterstützte Aktivitäten mit Detaildaten:', detailedById.size)
 
   const stored = []
 
@@ -1275,7 +1505,13 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
         exercise
       )
 
-      if (!isRunningSport(detectedSportName)) {
+      const sportType = detectSportType(detectedSportName)
+
+      if (!sportType) {
+        console.log(
+          '[Polar V4] Nicht unterstützte Sportart übersprungen:',
+          detectedSportName || 'unbekannt'
+        )
         continue
       }
 
@@ -1294,11 +1530,13 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
         ...mapV4Exercise(
           mappedSession,
           mappedExercise,
-          detectedSportName
+          detectedSportName,
+          sportType
         ),
       }
 
       if (
+        sportType === 'running' &&
         detailed?.targetSegments &&
         detailed.targetSegments.length
       ) {
