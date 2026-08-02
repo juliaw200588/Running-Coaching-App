@@ -785,8 +785,40 @@ export default function TrainingPlan({ plan, onReset, user }) {
           : null
 
         return (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(60,30,20,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-            <div style={{ background: 'white', borderRadius: '28px 28px 0 0', padding: '24px 24px 44px', width: '100%', maxWidth: 520, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 -8px 40px rgba(255,140,105,0.2)' }}>
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(60,30,20,0.45)',
+              zIndex: 300,
+              display: 'flex',
+              alignItems: 'flex-end',
+              justifyContent: 'center',
+            }}
+          >
+            <div
+              style={{
+                background: 'white',
+                borderRadius: '28px 28px 0 0',
+                width: '100%',
+                maxWidth: 520,
+                height: 'min(88dvh, 880px)',
+                maxHeight: 'calc(100dvh - 72px)',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+                boxShadow: '0 -8px 40px rgba(255,140,105,0.2)',
+              }}
+            >
+              <div
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  overflowY: 'auto',
+                  WebkitOverflowScrolling: 'touch',
+                  padding: '24px 24px 28px',
+                }}
+              >
               <div style={{ width: 36, height: 4, background: '#F0E8E0', borderRadius: 99, margin: '0 auto 18px' }} />
               <div style={{ fontSize: 11, color: '#C4A882', marginBottom: 2, fontFamily: 'sans-serif' }}>{detailModal.tag}</div>
               <h3 style={{ fontSize: 18, fontWeight: 'bold', color: '#3D2B1F', marginBottom: 18 }}>{detailModal.einheit}</h3>
@@ -833,12 +865,27 @@ export default function TrainingPlan({ plan, onReset, user }) {
                 </div>
               )}
 
-              <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-                <button onClick={() => setDetailModal(null)} style={{ flex: 1, padding: 14, borderRadius: 16, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+
+              </div>
+
+              <div
+                style={{
+                  flexShrink: 0,
+                  display: 'flex',
+                  gap: 10,
+                  padding: '12px 24px max(16px, calc(env(safe-area-inset-bottom) + 8px))',
+                  background: 'rgba(255,255,255,0.98)',
+                  borderTop: '1px solid #F0E8E0',
+                  boxShadow: '0 -8px 24px rgba(61,43,31,0.08)',
+                  backdropFilter: 'blur(14px)',
+                  WebkitBackdropFilter: 'blur(14px)',
+                }}
+              >
+                <button onClick={() => { setDetailModal(null); setStoryOpen(false) }} style={{ flex: 1, padding: 14, borderRadius: 16, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
                   Schließen
                 </button>
                 <button onClick={() => setStoryOpen(true)} style={{ flex: 1.4, padding: 14, borderRadius: 16, border: 'none', background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)', color: 'white', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
-                  📤 Aktivität teilen
+                  ↗️ Aktivität teilen
                 </button>
               </div>
             </div>
