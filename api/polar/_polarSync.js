@@ -1085,6 +1085,44 @@ async function loadDetailedRunningExercises(
           'Route und Splits werden trotzdem übernommen:',
           error
         )
+        console.log('[Polar V4] TARGET-PRÜFUNG:', {
+  dateString,
+
+  sessionTargets: detailedSessions.map(session => ({
+    trainingTargetId: getTargetId(session?.trainingTarget),
+    favoriteTargetId: getTargetId(session?.favoriteTarget),
+  })),
+
+  calendarTargetCount: calendarTargets.length,
+  calendarTargetIds: calendarTargets.map(target =>
+    getTargetId(target?.session?.id)
+  ),
+
+  calendarPhaseCounts: calendarTargets.map(target =>
+    Array.isArray(target?.exercise)
+      ? target.exercise.map(exercise =>
+          Array.isArray(exercise?.phaseOrRepeat)
+            ? exercise.phaseOrRepeat.length
+            : 0
+        )
+      : []
+  ),
+
+  favoriteTargetCount: (favoriteTargets || []).length,
+  favoriteTargetIds: (favoriteTargets || []).map(target =>
+    getTargetId(target?.favorite?.id)
+  ),
+
+  favoritePhaseCounts: (favoriteTargets || []).map(target =>
+    Array.isArray(target?.exercise)
+      ? target.exercise.map(exercise =>
+          Array.isArray(exercise?.phaseOrRepeat)
+            ? exercise.phaseOrRepeat.length
+            : 0
+        )
+      : []
+  ),
+})
 
         // Verhindert, dass derselbe nicht verfügbare Target-Endpunkt
         // für jeden Lauftag erneut aufgerufen wird.
