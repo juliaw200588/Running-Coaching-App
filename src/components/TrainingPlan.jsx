@@ -785,19 +785,8 @@ export default function TrainingPlan({ plan, onReset, user }) {
           : null
 
         return (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(60,30,20,0.45)', zIndex: 300, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-            <div style={{
-              background: 'white',
-              borderRadius: '28px 28px 0 0',
-              padding: '24px 24px max(118px, calc(env(safe-area-inset-bottom) + 104px))',
-              width: '100%',
-              maxWidth: 520,
-              maxHeight: 'calc(100dvh - 72px)',
-              overflowY: 'auto',
-              WebkitOverflowScrolling: 'touch',
-              boxShadow: '0 -8px 40px rgba(255,140,105,0.2)',
-              boxSizing: 'border-box',
-            }}>
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(60,30,20,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+            <div style={{ background: 'white', borderRadius: '28px 28px 0 0', padding: '24px 24px 44px', width: '100%', maxWidth: 520, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 -8px 40px rgba(255,140,105,0.2)' }}>
               <div style={{ width: 36, height: 4, background: '#F0E8E0', borderRadius: 99, margin: '0 auto 18px' }} />
               <div style={{ fontSize: 11, color: '#C4A882', marginBottom: 2, fontFamily: 'sans-serif' }}>{detailModal.tag}</div>
               <h3 style={{ fontSize: 18, fontWeight: 'bold', color: '#3D2B1F', marginBottom: 18 }}>{detailModal.einheit}</h3>
@@ -844,58 +833,12 @@ export default function TrainingPlan({ plan, onReset, user }) {
                 </div>
               )}
 
-              <div
-                style={{
-                  position: 'sticky',
-                  bottom: 0,
-                  zIndex: 5,
-                  display: 'flex',
-                  gap: 8,
-                  margin: '20px -24px -90px',
-                  padding: '12px 24px max(16px, env(safe-area-inset-bottom))',
-                  background: 'linear-gradient(to bottom, rgba(255,255,255,0.82), white 24%)',
-                  backdropFilter: 'blur(10px)',
-                  WebkitBackdropFilter: 'blur(10px)',
-                  borderTop: '1px solid #F5EDE8',
-                }}
-              >
-                <button
-                  onClick={() => {
-                    setDetailModal(null)
-                    setStoryOpen(false)
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: 14,
-                    borderRadius: 16,
-                    border: '1.5px solid #F0E8E0',
-                    background: 'white',
-                    color: '#B8A090',
-                    fontSize: 14,
-                    fontWeight: 'bold',
-                    cursor: 'pointer',
-                    fontFamily: 'sans-serif',
-                  }}
-                >
+              <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
+                <button onClick={() => setDetailModal(null)} style={{ flex: 1, padding: 14, borderRadius: 16, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
                   Schließen
                 </button>
-
-                <button
-                  onClick={() => setStoryOpen(true)}
-                  style={{
-                    flex: 1.4,
-                    padding: 14,
-                    borderRadius: 16,
-                    border: 'none',
-                    background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)',
-                    color: 'white',
-                    fontSize: 14,
-                    fontWeight: 'bold',
-                    cursor: 'pointer',
-                    fontFamily: 'sans-serif',
-                  }}
-                >
-                  📸 Story erstellen
+                <button onClick={() => setStoryOpen(true)} style={{ flex: 1.4, padding: 14, borderRadius: 16, border: 'none', background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)', color: 'white', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+                  📤 Aktivität teilen
                 </button>
               </div>
             </div>

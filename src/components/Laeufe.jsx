@@ -109,6 +109,20 @@ const parseJsonArray = (value) => {
   return []
 }
 
+const formatDate = (dateString) => {
+  if (!dateString) return null
+
+  const date = new Date(`${dateString}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return dateString
+
+  return date.toLocaleDateString('de-DE', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
 export default function Laeufe({ user, plan }) {
   const [view, setView] = useState('list')
   const [runs, setRuns] = useState([])
@@ -633,48 +647,61 @@ if (run.status === 'pending') {
                 </div>
               )}
 
-              {reassigning === d.id ? (
-                (() => {
-                  const dCandidates = getCandidates(d)
-                  const dSelected = reassignSelections[d.id] ?? (dCandidates[0]?.key || '')
-                  return (
-                    <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid #F0E8E0' }}>
-                      <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 6, fontFamily: 'sans-serif' }}>
-                        Neuem Plan-Tag zuordnen
-                      </label>
-                      <select
-                        value={dSelected}
-                        onChange={e => setReassignSelections(p => ({ ...p, [d.id]: e.target.value }))}
-                        style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 13, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', cursor: 'pointer', marginBottom: 10 }}>
-                        {dCandidates.length === 0 && <option value="">Kein passender offener Tag gefunden</option>}
-                        {dCandidates.map(c => (
-                          <option key={c.key} value={c.key}>{candidateLabel(c)}</option>
-                        ))}
-                        <option value="extra">— Als Extra-Lauf speichern (kein Plan-Tag) —</option>
-                      </select>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button onClick={() => setReassigning(null)}
-                          style={{ padding: '10px 14px', borderRadius: 10, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
-                          Abbrechen
-                        </button>
-                        <button onClick={() => reassignRun(d, dSelected)} disabled={!dSelected || saving}
-                          style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: 'none', background: !dSelected || saving ? '#F0E8E0' : 'linear-gradient(135deg,#FF8C69,#FFB347)', color: !dSelected || saving ? '#C4A882' : 'white', fontSize: 12, fontWeight: 'bold', cursor: !dSelected || saving ? 'default' : 'pointer', fontFamily: 'sans-serif' }}>
-                          {saving ? '⏳ Speichere…' : '✓ Bestätigen'}
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })()
-              ) : (
-                <button onClick={() => { setReassigning(d.id); setReassignSelections(p => ({ ...p, [d.id]: undefined })) }}
-                  style={{ width: '100%', marginTop: 18, padding: 12, borderRadius: 14, border: '1.5px solid #F0E0D0', background: 'white', color: '#8B7355', fontSize: 13, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
-                  Neu zuordnen
-                </button>
-              )}
 
-              <button onClick={() => { setDetailRun(null); setReassigning(null) }} style={{ width: '100%', marginTop: 10, padding: 14, borderRadius: 16, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
-                Schließen
-              </button>
+              <div
+                style={{
+                  position: 'sticky',
+                  bottom: 0,
+                  zIndex: 5,
+                  display: 'flex',
+                  gap: 8,
+                  marginTop: 18,
+                  padding: '12px 0 max(12px, env(safe-area-inset-bottom))',
+                  background: 'linear-gradient(to bottom, rgba(255,255,255,0.8), white 24%)',
+                  backdropFilter: 'blur(10px)',
+                  WebkitBackdropFilter: 'blur(10px)',
+                }}
+              >
+                <button
+                  onClick={() => {
+                    setDetailRun(null)
+                    setReassigning(null)
+                    setStoryOpen(false)
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: 14,
+                    borderRadius: 16,
+                    border: '1.5px solid #F0E8E0',
+                    background: 'white',
+                    color: '#B8A090',
+                    fontSize: 14,
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    fontFamily: 'sans-serif',
+                  }}
+                >
+                  Schließen
+                </button>
+
+                <button
+                  onClick={() => setStoryOpen(true)}
+                  style={{
+                    flex: 1.45,
+                    padding: 14,
+                    borderRadius: 16,
+                    border: 'none',
+                    background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)',
+                    color: 'white',
+                    fontSize: 14,
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    fontFamily: 'sans-serif',
+                  }}
+                >
+                  📤 Aktivität teilen
+                </button>
+              </div>
             </div>
           </div>
         )

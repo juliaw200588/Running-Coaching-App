@@ -228,7 +228,7 @@ export default function StoryShareModal({
 
   const renderCanvas = async () => {
     if (!cardRef.current) {
-      throw new Error('Die Story-Vorschau ist noch nicht bereit.')
+      throw new Error('Die Aktivitätsvorschau ist noch nicht bereit.')
     }
 
     const { default: html2canvas } = await import('html2canvas')
@@ -261,7 +261,7 @@ export default function StoryShareModal({
   }
 
   const shareOrDownload = async (blob) => {
-    const file = new File([blob], 'sport-story.png', {
+    const file = new File([blob], 'aktivitaet.png', {
       type: 'image/png',
     })
 
@@ -285,7 +285,7 @@ export default function StoryShareModal({
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = 'sport-story.png'
+    link.download = 'aktivitaet.png'
     link.target = '_blank'
     link.rel = 'noopener'
     document.body.appendChild(link)
@@ -333,7 +333,7 @@ export default function StoryShareModal({
       const blob = await createBlob(canvas)
       await shareOrDownload(blob)
     } catch (error) {
-      console.error('Story-Bild konnte nicht erstellt werden:', error)
+      console.error('Aktivitätsbild konnte nicht erstellt werden:', error)
 
       const detail =
         error?.message ||
@@ -370,7 +370,7 @@ export default function StoryShareModal({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Story-Bild erstellen"
+      aria-label="Aktivität teilen"
       style={{
         position: 'fixed',
         inset: 0,
@@ -406,6 +406,18 @@ export default function StoryShareModal({
             boxShadow: '0 6px 22px rgba(61,43,31,0.16)',
           }}
         >
+          <div
+            style={{
+              fontFamily: 'sans-serif',
+              fontSize: 17,
+              color: '#3D2B1F',
+              fontWeight: 'bold',
+              marginBottom: 4,
+            }}
+          >
+            Aktivität teilen
+          </div>
+
           <div
             style={{
               fontFamily: 'sans-serif',
@@ -873,7 +885,7 @@ export default function StoryShareModal({
           >
             {creating
               ? '⏳ Bild wird erstellt…'
-              : '📸 Erstellen & teilen'}
+              : '📤 Bild erstellen & teilen'}
           </button>
         </div>
       </div>
