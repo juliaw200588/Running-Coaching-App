@@ -89,6 +89,24 @@ const diffDays = (a, b) => Math.round((new Date(a) - new Date(b)) / 86400000)
 // einen Tag zurückspringen kann - z.B. lokale Mitternacht 14.07. wird zu 13.07. 22:00 UTC).
 const toLocalDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
+const isRunningActivity = (activity) =>
+  (activity?.sport_type || 'running') === 'running'
+
+const activityMeta = (activity) => {
+  const type = activity?.sport_type || 'running'
+
+  const map = {
+    running: { icon: '🏃‍♀️', label: 'Lauf' },
+    walking: { icon: '🚶', label: 'Walking' },
+    hiking: { icon: '🥾', label: 'Wanderung' },
+    cycling: { icon: '🚴', label: 'Radtour' },
+    mountain_biking: { icon: '🚵', label: 'Mountainbike-Tour' },
+    swimming: { icon: '🏊', label: 'Schwimmen' },
+  }
+
+  return map[type] || { icon: '🏅', label: activity?.activity_name || 'Aktivität' }
+}
+
 export default function PolarConnect({ user, plan }) {
   const [connected, setConnected] = useState(false)
   const [syncing, setSyncing] = useState(false)
@@ -227,10 +245,10 @@ export default function PolarConnect({ user, plan }) {
       if (data.error) {
         setMessage({ type: 'error', text: `Fehler: ${data.error}` })
       } else if (!data.activities?.length) {
-        setMessage({ type: 'info', text: 'Keine neuen Läufe gefunden.' })
+        setMessage({ type: 'info', text: 'Keine neuen Aktivitäten gefunden.' })
       } else {
         await loadPending() // Server hat bereits in polar_pending_activities gespeichert
-        setMessage({ type: 'success', text: `✅ ${data.count} neue Läufe gefunden – bitte zuordnen.` })
+        setMessage({ type: 'success', text: `✅ ${data.count} neue Aktivitäten gefunden.` })
       }
     } catch (e) {
       setMessage({ type: 'error', text: 'Verbindungsfehler. Bitte erneut versuchen.' })
@@ -268,83 +286,118 @@ export default function PolarConnect({ user, plan }) {
 
   const assignActivity = async (activity, chosenKey) => {
     setAssigning(activity.id)
-    const schuhId = shoeSelections[activity.id] || null
+
+    const running = isRunningActivity(activity)
+    const schuhId = running
+      ? shoeSelections[activity.id] || null
+      : null
+
     try {
-      if (chosenKey === 'extra') {
-        const extraKey = `extra_polar_${activity.datum}_${crypto.randomUUID().slice(0, 8)}`
-        await supabase.from('logs').upsert({
-          user_id: user.id,
-          day_key: extraKey,
-          pace: activity.pace || null,
-          km: activity.distanz || null,
-          bpm: activity.herzfrequenz || null,
-          note: 'Extra-Lauf, automatisch von Polar importiert (kein Plan-Tag)',
-          schuh_id: schuhId,
-          actual_date: activity.datum || null,
-          running_index: activity.running_index || null,
-          cadence: activity.cadence || null,
-          uhrzeit: activity.uhrzeit || null,
-          hf_max: activity.hf_max || null,
-          hoehenmeter: activity.hoehenmeter || null,
-          gefuehl: activity.gefuehl || null,
-          training_load: activity.training_load || null,
-          recovery_time: activity.recovery_time || null,
-          polar_exercise_id: activity.polar_exercise_id || null,
-          kalorien: activity.kalorien || null,
-          route_waypoints: activity.route_waypoints || null,
-          km_splits: activity.km_splits || null,
-          run_segments: activity.run_segments || null,
-        }, { onConflict: 'user_id,day_key' })
-      } else {
-        await supabase.from('logs').upsert({
-          user_id: user.id,
-          day_key: chosenKey,
-          pace: activity.pace || null,
-          km: activity.distanz || null,
-          bpm: activity.herzfrequenz || null,
-          note: 'Automatisch von Polar synchronisiert',
-          schuh_id: schuhId,
-          actual_date: activity.datum || null,
-          running_index: activity.running_index || null,
-          cadence: activity.cadence || null,
-          uhrzeit: activity.uhrzeit || null,
-          hf_max: activity.hf_max || null,
-          hoehenmeter: activity.hoehenmeter || null,
-          gefuehl: activity.gefuehl || null,
-          training_load: activity.training_load || null,
-          recovery_time: activity.recovery_time || null,
-          polar_exercise_id: activity.polar_exercise_id || null,
-          kalorien: activity.kalorien || null,
-          route_waypoints: activity.route_waypoints || null,
-          km_splits: activity.km_splits || null,
-          run_segments: activity.run_segments || null,
-        }, { onConflict: 'user_id,day_key' })
+      const generalKey =
+        `activity_polar_${activity.datum || 'unknown'}_` +
+        `${String(activity.polar_exercise_id || crypto.randomUUID())}`
+
+      const targetKey =
+        running && chosenKey && chosenKey !== 'extra'
+          ? chosenKey
+          : generalKey
+
+      const note = running
+        ? chosenKey === 'extra'
+          ? 'Extra-Lauf, automatisch von Polar importiert (kein Plan-Tag)'
+          : 'Automatisch von Polar synchronisiert'
+        : `${activity.activity_name || activityMeta(activity).label}, automatisch von Polar importiert`
+
+      await supabase.from('logs').upsert({
+        user_id: user.id,
+        day_key: targetKey,
+        pace: activity.pace || null,
+        km: activity.distanz || null,
+        bpm: activity.herzfrequenz || null,
+        note,
+        schuh_id: schuhId,
+        actual_date: activity.datum || null,
+        running_index: running ? activity.running_index || null : null,
+        cadence: activity.cadence || null,
+        uhrzeit: activity.uhrzeit || null,
+        hf_max: activity.hf_max || null,
+        hoehenmeter: activity.hoehenmeter || null,
+        gefuehl: activity.gefuehl || null,
+        training_load: activity.training_load || null,
+        recovery_time: activity.recovery_time || null,
+        polar_exercise_id: activity.polar_exercise_id || null,
+        kalorien: activity.kalorien || null,
+        route_waypoints: activity.route_waypoints || null,
+        km_splits: activity.km_splits || null,
+        run_segments: running ? activity.run_segments || null : null,
+
+        sport_type: activity.sport_type || 'running',
+        source: activity.source || 'polar',
+        activity_name:
+          activity.activity_name || activityMeta(activity).label,
+        duration_seconds: activity.duration_seconds || null,
+        moving_time_seconds: activity.moving_time_seconds || null,
+        distance_meters: activity.distance_meters || null,
+        average_speed_kmh: activity.average_speed_kmh || null,
+        max_speed_kmh: activity.max_speed_kmh || null,
+        elevation_gain: activity.elevation_gain || null,
+        elevation_loss: activity.elevation_loss || null,
+      }, { onConflict: 'user_id,day_key' })
+
+      if (running && chosenKey && chosenKey !== 'extra') {
         await supabase.from('training_done').upsert({
           user_id: user.id,
           day_key: chosenKey,
           done: true,
         }, { onConflict: 'user_id,day_key' })
+
         setOccupiedKeys(prev => new Set([...prev, chosenKey]))
       }
 
-      // Schuh-km hochzählen, genau wie beim manuellen Log (TrainingPlan.jsx)
-      if (schuhId && activity.distanz) {
-        const gelaufeneKm = parseFloat(String(activity.distanz).replace(',', '.')) || 0
+      // Laufschuh-Kilometer ausschließlich für echte Laufaktivitäten hochzählen.
+      if (running && schuhId && activity.distanz) {
+        const gelaufeneKm =
+          parseFloat(String(activity.distanz).replace(',', '.')) || 0
+
         if (gelaufeneKm > 0) {
-          const { data: schuh } = await supabase.from('shoes').select('start_km').eq('id', schuhId).single()
+          const { data: schuh } = await supabase
+            .from('shoes')
+            .select('start_km')
+            .eq('id', schuhId)
+            .single()
+
           if (schuh) {
-            await supabase.from('shoes').update({ start_km: (schuh.start_km || 0) + gelaufeneKm }).eq('id', schuhId)
+            await supabase
+              .from('shoes')
+              .update({
+                start_km: (schuh.start_km || 0) + gelaufeneKm,
+              })
+              .eq('id', schuhId)
           }
         }
       }
 
-      await supabase.from('polar_pending_activities').delete().eq('id', activity.id)
+      await supabase
+        .from('polar_pending_activities')
+        .delete()
+        .eq('id', activity.id)
+
       setPending(prev => prev.filter(a => a.id !== activity.id))
-      setMessage({ type: 'success', text: '✅ Zugeordnet! Seite wird aktualisiert…' })
-      setTimeout(() => window.location.reload(), 900)
+
+      setMessage({
+        type: 'success',
+        text: running
+          ? '✅ Lauf übernommen!'
+          : `✅ ${activityMeta(activity).label} übernommen!`,
+      })
+
+      setTimeout(() => window.location.reload(), 700)
     } catch (e) {
-      console.error('Zuordnung fehlgeschlagen:', e)
-      setMessage({ type: 'error', text: 'Zuordnung fehlgeschlagen. Bitte erneut versuchen.' })
+      console.error('Aktivität übernehmen fehlgeschlagen:', e)
+      setMessage({
+        type: 'error',
+        text: 'Aktivität konnte nicht übernommen werden. Bitte erneut versuchen.',
+      })
       setAssigning(null)
     }
   }
@@ -384,13 +437,13 @@ const discardActivity = async (activity) => {
     setPending(prev => prev.filter(a => a.id !== activity.id))
     setMessage({
       type: 'success',
-      text: 'Lauf wurde dauerhaft verworfen.',
+      text: 'Aktivität wurde dauerhaft verworfen.',
     })
   } catch (error) {
     console.error('Polar-Aktivität konnte nicht verworfen werden:', error)
     setMessage({
       type: 'error',
-      text: 'Der Lauf konnte nicht dauerhaft verworfen werden.',
+      text: 'Die Aktivität konnte nicht dauerhaft verworfen werden.',
     })
   }
 }
@@ -445,7 +498,6 @@ const discardActivity = async (activity) => {
           kalorien: activity.kalorien || null,
           route_waypoints: activity.route_waypoints || null,
           km_splits: activity.km_splits || null,
-          run_segments: activity.run_segments || null,
         }, { onConflict: 'user_id,day_key' })
       } else {
         await supabase.from('logs').upsert({
@@ -469,7 +521,6 @@ const discardActivity = async (activity) => {
           kalorien: activity.kalorien || null,
           route_waypoints: activity.route_waypoints || null,
           km_splits: activity.km_splits || null,
-          run_segments: activity.run_segments || null,
         }, { onConflict: 'user_id,day_key' })
         await supabase.from('training_done').upsert({
           user_id: user.id,
@@ -544,7 +595,7 @@ const discardActivity = async (activity) => {
         {connected && (
           <button onClick={handleSync} disabled={syncing}
             style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none', background: syncing ? '#F0E8E0' : 'linear-gradient(135deg,#7EC8A4,#5BA88A)', color: syncing ? '#C4A882' : 'white', fontSize: 14, fontWeight: 'bold', cursor: syncing ? 'default' : 'pointer', fontFamily: 'sans-serif', transition: 'all 0.2s' }}>
-            {syncing ? '⏳ Synchronisiere…' : '🔄 Läufe synchronisieren'}
+            {syncing ? '⏳ Synchronisiere…' : '🔄 Aktivitäten synchronisieren'}
           </button>
         )}
       </div>
@@ -552,72 +603,253 @@ const discardActivity = async (activity) => {
       {pending.length > 0 && (
         <div>
           <div style={{ fontSize: 13, fontWeight: 'bold', color: '#5C3D2E', fontFamily: 'sans-serif', marginBottom: 10 }}>
-            Läufe zuordnen ({pending.length})
+            Aktivitäten übernehmen ({pending.length})
           </div>
           {pending.map((a) => {
             const id = a.id
-            const candidates = getCandidates(a)
-            const selected = selections[id] ?? (candidates[0]?.key || '')
+            const running = isRunningActivity(a)
+            const meta = activityMeta(a)
+            const candidates = running ? getCandidates(a) : []
+            const selected =
+              selections[id] ?? (candidates[0]?.key || '')
             const isAssigning = assigning === id
 
             return (
-              <div key={id} style={{ background: 'white', borderRadius: 14, padding: '14px 16px', border: '1.5px solid #F0E8E0', marginBottom: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <div style={{ fontSize: 13, fontWeight: 'bold', color: '#3D2B1F', fontFamily: 'sans-serif' }}>
-                    🏃‍♀️ {a.datum ? new Date(a.datum).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Unbekannt'}
+              <div
+                key={id}
+                style={{
+                  background: 'white',
+                  borderRadius: 14,
+                  padding: '14px 16px',
+                  border: '1.5px solid #F0E8E0',
+                  marginBottom: 10,
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 8,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 'bold',
+                      color: '#3D2B1F',
+                      fontFamily: 'sans-serif',
+                    }}
+                  >
+                    {meta.icon} {a.activity_name || meta.label} ·{' '}
+                    {a.datum
+                      ? new Date(`${a.datum}T00:00:00`).toLocaleDateString(
+                          'de-DE',
+                          {
+                            weekday: 'short',
+                            day: 'numeric',
+                            month: 'short',
+                          }
+                        )
+                      : 'Unbekannt'}
                   </div>
-                  {a.dauer && <div style={{ fontSize: 12, color: '#B8A090', fontFamily: 'sans-serif' }}>{a.dauer}</div>}
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-                  {a.distanz && <span style={{ fontSize: 11, background: '#FFF0E6', color: '#C17A3A', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>📍 {a.distanz}</span>}
-                  {a.pace && <span style={{ fontSize: 11, background: '#E8F0FF', color: '#4060C0', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>⏱ {a.pace}</span>}
-                  {a.herzfrequenz && <span style={{ fontSize: 11, background: '#FDECEA', color: '#B85464', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>❤️ {a.herzfrequenz}</span>}
-                  {a.kalorien && <span style={{ fontSize: 11, background: '#F0FAF4', color: '#5BA88A', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>🔥 {a.kalorien} kcal</span>}
-                  {a.running_index && <span style={{ fontSize: 11, background: '#F5F0FF', color: '#A78BCA', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>🏃 RI {a.running_index}</span>}
-                  {a.cadence && <span style={{ fontSize: 11, background: '#E8F5EF', color: '#3D8B6E', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>👣 {a.cadence} spm</span>}
+
+                  {a.dauer && (
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: '#B8A090',
+                        fontFamily: 'sans-serif',
+                      }}
+                    >
+                      {a.dauer}
+                    </div>
+                  )}
                 </div>
 
-                <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>
-                  Welchem Plan-Tag zuordnen?
-                </label>
-                <select
-                  value={selected}
-                  onChange={e => setSelections(p => ({ ...p, [id]: e.target.value }))}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 13, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', cursor: 'pointer', marginBottom: 10 }}>
-                  {candidates.length === 0 && <option value="">Kein passender offener Tag gefunden</option>}
-                  {candidates.map(c => (
-                    <option key={c.key} value={c.key}>
-                      {candidateLabel(c)}
-                    </option>
-                  ))}
-                  <option value="extra">— Als Extra-Lauf speichern (kein Plan-Tag) —</option>
-                </select>
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 8,
+                    flexWrap: 'wrap',
+                    marginBottom: 12,
+                  }}
+                >
+                  {a.distanz && (
+                    <span style={{ fontSize: 11, background: '#FFF0E6', color: '#C17A3A', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>
+                      📍 {a.distanz}
+                    </span>
+                  )}
 
-                {schuhe.length > 0 && (
-                  <div style={{ marginBottom: 10 }}>
+                  {running && a.pace && (
+                    <span style={{ fontSize: 11, background: '#E8F0FF', color: '#4060C0', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>
+                      ⏱ {a.pace}
+                    </span>
+                  )}
+
+                  {!running && a.average_speed_kmh != null && (
+                    <span style={{ fontSize: 11, background: '#E8F0FF', color: '#4060C0', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>
+                      ⚡ {Number(a.average_speed_kmh).toFixed(1)} km/h
+                    </span>
+                  )}
+
+                  {a.elevation_gain != null && (
+                    <span style={{ fontSize: 11, background: '#FFF8E1', color: '#A07830', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>
+                      ⛰️ {Math.round(Number(a.elevation_gain))} hm
+                    </span>
+                  )}
+
+                  {a.herzfrequenz && (
+                    <span style={{ fontSize: 11, background: '#FDECEA', color: '#B85464', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>
+                      ❤️ {a.herzfrequenz}
+                    </span>
+                  )}
+
+                  {a.kalorien && (
+                    <span style={{ fontSize: 11, background: '#F0FAF4', color: '#5BA88A', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>
+                      🔥 {a.kalorien} kcal
+                    </span>
+                  )}
+
+                  {running && a.running_index && (
+                    <span style={{ fontSize: 11, background: '#F5F0FF', color: '#A78BCA', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>
+                      🏃 RI {a.running_index}
+                    </span>
+                  )}
+
+                  {running && a.cadence && (
+                    <span style={{ fontSize: 11, background: '#E8F5EF', color: '#3D8B6E', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>
+                      👣 {a.cadence} spm
+                    </span>
+                  )}
+                </div>
+
+                {running ? (
+                  <>
                     <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>
-                      Laufschuhe
+                      Welchem Plan-Tag zuordnen?
                     </label>
+
                     <select
-                      value={shoeSelections[id] || ''}
-                      onChange={e => setShoeSelections(p => ({ ...p, [id]: e.target.value }))}
-                      style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 13, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', cursor: 'pointer' }}>
-                      <option value="">Kein Schuh ausgewählt</option>
-                      {schuhe.map(s => (
-                        <option key={s.id} value={s.id}>{s.marke} {s.modell} ({Math.round(s.start_km || 0)} km)</option>
+                      value={selected}
+                      onChange={e =>
+                        setSelections(prev => ({
+                          ...prev,
+                          [id]: e.target.value,
+                        }))
+                      }
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 13, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', cursor: 'pointer', marginBottom: 10 }}
+                    >
+                      {candidates.length === 0 && (
+                        <option value="">
+                          Kein passender offener Tag gefunden
+                        </option>
+                      )}
+
+                      {candidates.map(candidate => (
+                        <option
+                          key={candidate.key}
+                          value={candidate.key}
+                        >
+                          {candidateLabel(candidate)}
+                        </option>
                       ))}
+
+                      <option value="extra">
+                        — Als Extra-Lauf speichern (kein Plan-Tag) —
+                      </option>
                     </select>
+
+                    {schuhe.length > 0 && (
+                      <div style={{ marginBottom: 10 }}>
+                        <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>
+                          Laufschuhe
+                        </label>
+
+                        <select
+                          value={shoeSelections[id] || ''}
+                          onChange={e =>
+                            setShoeSelections(prev => ({
+                              ...prev,
+                              [id]: e.target.value,
+                            }))
+                          }
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 13, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', cursor: 'pointer' }}
+                        >
+                          <option value="">Kein Schuh ausgewählt</option>
+
+                          {schuhe.map(shoe => (
+                            <option key={shoe.id} value={shoe.id}>
+                              {shoe.marke} {shoe.modell} (
+                              {Math.round(shoe.start_km || 0)} km)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div
+                    style={{
+                      padding: '9px 11px',
+                      borderRadius: 11,
+                      background: '#F0FAF4',
+                      border: '1px solid #B8E4CC',
+                      color: '#3D8B6E',
+                      fontSize: 11,
+                      fontFamily: 'sans-serif',
+                      marginBottom: 10,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    Diese Aktivität wird direkt unter „Aktivitäten“
+                    gespeichert. Eine Laufplan-Zuordnung und Laufschuh-Auswahl
+                    sind nicht erforderlich.
                   </div>
                 )}
 
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={() => discardActivity(a)}
-                    style={{ padding: '10px 14px', borderRadius: 10, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+                  <button
+                    onClick={() => discardActivity(a)}
+                    style={{ padding: '10px 14px', borderRadius: 10, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}
+                  >
                     Verwerfen
                   </button>
-                  <button onClick={() => assignActivity(a, selected)} disabled={!selected || isAssigning}
-                    style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: 'none', background: !selected || isAssigning ? '#F0E8E0' : 'linear-gradient(135deg,#FF8C69,#FFB347)', color: !selected || isAssigning ? '#C4A882' : 'white', fontSize: 12, fontWeight: 'bold', cursor: !selected || isAssigning ? 'default' : 'pointer', fontFamily: 'sans-serif' }}>
-                    {isAssigning ? '⏳ Speichere…' : '✓ Zuordnen'}
+
+                  <button
+                    onClick={() =>
+                      assignActivity(a, running ? selected : null)
+                    }
+                    disabled={
+                      (running && !selected) || isAssigning
+                    }
+                    style={{
+                      flex: 1,
+                      padding: '10px 14px',
+                      borderRadius: 10,
+                      border: 'none',
+                      background:
+                        (running && !selected) || isAssigning
+                          ? '#F0E8E0'
+                          : 'linear-gradient(135deg,#FF8C69,#FFB347)',
+                      color:
+                        (running && !selected) || isAssigning
+                          ? '#C4A882'
+                          : 'white',
+                      fontSize: 12,
+                      fontWeight: 'bold',
+                      cursor:
+                        (running && !selected) || isAssigning
+                          ? 'default'
+                          : 'pointer',
+                      fontFamily: 'sans-serif',
+                    }}
+                  >
+                    {isAssigning
+                      ? '⏳ Speichere…'
+                      : running
+                        ? '✓ Zuordnen'
+                        : '✓ Übernehmen'}
                   </button>
                 </div>
               </div>

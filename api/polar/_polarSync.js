@@ -587,8 +587,9 @@ function normalizeSpeedToKmh(value) {
   const speed = numberOrNull(value)
   if (speed === null || speed < 0) return null
 
-  // Polar-Statistiken liefern Geschwindigkeit üblicherweise in m/s.
-  return Math.round(speed * 3.6 * 100) / 100
+  // Polar AccessLink V4 liefert die Geschwindigkeitsstatistiken bereits
+  // in km/h. Deshalb darf hier nicht noch einmal mit 3,6 multipliziert werden.
+  return Math.round(speed * 100) / 100
 }
 
 function extractSpeedStats(exercise, session, distanceMeters, durationMillis) {
