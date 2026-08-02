@@ -185,17 +185,29 @@ const MultisportDashboard = ({ activity }) => {
         ['👣', 'Kadenz', activity.cadence ? `${activity.cadence} spm` : null],
         ['🏃', 'Running Index', activity.runningIndex],
       ]
-    : [
-        ['⏱', 'Dauer', formatDuration(activity.durationSeconds, activity.duration)],
-        ['📍', 'Distanz', activity.km],
-        ['⚡', 'Ø Geschwindigkeit', activity.averageSpeedKmh != null ? `${Number(activity.averageSpeedKmh).toFixed(1)} km/h` : null],
-        ['🚀', 'Max. Geschwindigkeit', activity.maxSpeedKmh != null ? `${Number(activity.maxSpeedKmh).toFixed(1)} km/h` : null],
-        ['⛰️', 'Aufstieg', activity.elevationGain != null ? `${Math.round(Number(activity.elevationGain))} hm` : activity.hoehenmeter ? `${activity.hoehenmeter} hm` : null],
-        ['↘️', 'Abstieg', activity.elevationLoss != null ? `${Math.round(Number(activity.elevationLoss))} hm` : null],
-        ['❤️', 'Ø Herzfrequenz', activity.bpm],
-        ['💗', 'Max. Herzfrequenz', activity.hfMax ? `${activity.hfMax} bpm` : null],
-        ['🔥', 'Kalorien', activity.kalorien ? `${activity.kalorien} kcal` : null],
-      ]
+    : activity.sportType === 'mountain_biking'
+      ? [
+          ['📍', 'Distanz', activity.km],
+          ['⏱', 'Dauer', formatDuration(activity.durationSeconds, activity.duration)],
+          ['⛰️', 'Aufstieg', activity.elevationGain != null ? `${Math.round(Number(activity.elevationGain))} hm` : activity.hoehenmeter ? `${activity.hoehenmeter} hm` : null],
+          ['⚡', 'Ø Geschwindigkeit', activity.averageSpeedKmh != null ? `${Number(activity.averageSpeedKmh).toFixed(1)} km/h` : null],
+          ['🚀', 'Max. Geschwindigkeit', activity.maxSpeedKmh != null ? `${Number(activity.maxSpeedKmh).toFixed(1)} km/h` : null],
+          ['↘️', 'Abstieg', activity.elevationLoss != null ? `${Math.round(Number(activity.elevationLoss))} hm` : null],
+          ['❤️', 'Ø Herzfrequenz', activity.bpm],
+          ['💗', 'Max. Herzfrequenz', activity.hfMax ? `${activity.hfMax} bpm` : null],
+          ['🔥', 'Kalorien', activity.kalorien ? `${activity.kalorien} kcal` : null],
+        ]
+      : [
+          ['⏱', 'Dauer', formatDuration(activity.durationSeconds, activity.duration)],
+          ['📍', 'Distanz', activity.km],
+          ['⚡', 'Ø Geschwindigkeit', activity.averageSpeedKmh != null ? `${Number(activity.averageSpeedKmh).toFixed(1)} km/h` : null],
+          ['🚀', 'Max. Geschwindigkeit', activity.maxSpeedKmh != null ? `${Number(activity.maxSpeedKmh).toFixed(1)} km/h` : null],
+          ['⛰️', 'Aufstieg', activity.elevationGain != null ? `${Math.round(Number(activity.elevationGain))} hm` : activity.hoehenmeter ? `${activity.hoehenmeter} hm` : null],
+          ['↘️', 'Abstieg', activity.elevationLoss != null ? `${Math.round(Number(activity.elevationLoss))} hm` : null],
+          ['❤️', 'Ø Herzfrequenz', activity.bpm],
+          ['💗', 'Max. Herzfrequenz', activity.hfMax ? `${activity.hfMax} bpm` : null],
+          ['🔥', 'Kalorien', activity.kalorien ? `${activity.kalorien} kcal` : null],
+        ]
 
   const visible = metrics.filter(([, , value]) => value !== null && value !== undefined && value !== '')
 
