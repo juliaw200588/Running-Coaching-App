@@ -92,6 +92,149 @@ const STATUS_LABEL = {
   extra: 'Extra-Lauf',
 }
 
+const SPORT_FILTERS = [
+  { key: 'all', label: 'Alle', icon: '✨' },
+  { key: 'running', label: 'Laufen', icon: '🏃' },
+  { key: 'hiking', label: 'Wandern', icon: '🥾' },
+  { key: 'cycling', label: 'Radfahren', icon: '🚴' },
+  { key: 'mountain_biking', label: 'MTB', icon: '🚵' },
+]
+
+const SPORT_CONFIG = {
+  running: {
+    label: 'Lauf',
+    plural: 'Läufe',
+    icon: '🏃',
+    color: '#FF8C69',
+    soft: '#FFF0E6',
+  },
+  walking: {
+    label: 'Walking',
+    plural: 'Walking',
+    icon: '🚶',
+    color: '#76A85B',
+    soft: '#F1F8EC',
+  },
+  hiking: {
+    label: 'Wanderung',
+    plural: 'Wanderungen',
+    icon: '🥾',
+    color: '#76A85B',
+    soft: '#F1F8EC',
+  },
+  cycling: {
+    label: 'Radtour',
+    plural: 'Radtouren',
+    icon: '🚴',
+    color: '#62A7D6',
+    soft: '#EEF7FC',
+  },
+  mountain_biking: {
+    label: 'Mountainbike-Tour',
+    plural: 'Mountainbike',
+    icon: '🚵',
+    color: '#8B6B4A',
+    soft: '#F7F0E8',
+  },
+  swimming: {
+    label: 'Schwimmen',
+    plural: 'Schwimmen',
+    icon: '🏊',
+    color: '#4AA8B8',
+    soft: '#EAF8FA',
+  },
+}
+
+const getSportConfig = (sportType) =>
+  SPORT_CONFIG[sportType] || {
+    label: 'Aktivität',
+    plural: 'Aktivitäten',
+    icon: '🏅',
+    color: '#A78BCA',
+    soft: '#F7F2FF',
+  }
+
+const isRunningActivity = (activity) =>
+  (activity?.sportType || 'running') === 'running'
+
+const formatDuration = (seconds, fallback = null) => {
+  const value = Number(seconds)
+  if (!Number.isFinite(value) || value <= 0) return fallback
+
+  const hours = Math.floor(value / 3600)
+  const minutes = Math.floor((value % 3600) / 60)
+  const secs = Math.round(value % 60)
+
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, '0')} h`
+  return `${minutes}:${String(secs).padStart(2, '0')} min`
+}
+
+const MultisportDashboard = ({ activity }) => {
+  const running = isRunningActivity(activity)
+  const sport = getSportConfig(activity.sportType)
+
+  const metrics = running
+    ? [
+        ['🕐', 'Uhrzeit', activity.uhrzeit],
+        ['📍', 'Distanz', activity.km],
+        ['⏱', 'Pace', activity.pace],
+        ['❤️', 'Ø Herzfrequenz', activity.bpm],
+        ['🔥', 'Kalorien', activity.kalorien ? `${activity.kalorien} kcal` : null],
+        ['💗', 'Max. Herzfrequenz', activity.hfMax ? `${activity.hfMax} bpm` : null],
+        ['⛰️', 'Höhenmeter', activity.elevationGain != null ? `${Math.round(Number(activity.elevationGain))} hm` : activity.hoehenmeter ? `${activity.hoehenmeter} m` : null],
+        ['👣', 'Kadenz', activity.cadence ? `${activity.cadence} spm` : null],
+        ['🏃', 'Running Index', activity.runningIndex],
+      ]
+    : [
+        ['⏱', 'Dauer', formatDuration(activity.durationSeconds, activity.duration)],
+        ['📍', 'Distanz', activity.km],
+        ['⚡', 'Ø Geschwindigkeit', activity.averageSpeedKmh != null ? `${Number(activity.averageSpeedKmh).toFixed(1)} km/h` : null],
+        ['🚀', 'Max. Geschwindigkeit', activity.maxSpeedKmh != null ? `${Number(activity.maxSpeedKmh).toFixed(1)} km/h` : null],
+        ['⛰️', 'Aufstieg', activity.elevationGain != null ? `${Math.round(Number(activity.elevationGain))} hm` : activity.hoehenmeter ? `${activity.hoehenmeter} hm` : null],
+        ['↘️', 'Abstieg', activity.elevationLoss != null ? `${Math.round(Number(activity.elevationLoss))} hm` : null],
+        ['❤️', 'Ø Herzfrequenz', activity.bpm],
+        ['💗', 'Max. Herzfrequenz', activity.hfMax ? `${activity.hfMax} bpm` : null],
+        ['🔥', 'Kalorien', activity.kalorien ? `${activity.kalorien} kcal` : null],
+      ]
+
+  const visible = metrics.filter(([, , value]) => value !== null && value !== undefined && value !== '')
+
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10, fontFamily: 'sans-serif' }}>
+        {sport.label}-Daten
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+        {visible.map(([icon, label, value]) => (
+          <div
+            key={label}
+            style={{
+              minWidth: 0,
+              minHeight: 88,
+              padding: '11px 9px',
+              borderRadius: 14,
+              border: '1.5px solid #F0E8E0',
+              background: '#FFF9F6',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              fontFamily: 'sans-serif',
+            }}
+          >
+            <div style={{ fontSize: 9, color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.6, lineHeight: 1.25 }}>
+              {label}
+            </div>
+            <div style={{ fontSize: 14, color: '#3D2B1F', fontWeight: 'bold', lineHeight: 1.2, wordBreak: 'break-word' }}>
+              {icon} {value}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 const parseJsonArray = (value) => {
   if (Array.isArray(value)) return value
   if (!value) return []
@@ -138,6 +281,7 @@ export default function Laeufe({ user, plan }) {
   const [routeMapLoading, setRouteMapLoading] = useState(false)
   const [routeMapError, setRouteMapError] = useState(null)
   const [storyOpen, setStoryOpen] = useState(false)
+  const [sportFilter, setSportFilter] = useState('all')
 
   const planDays = plan ? getPlanDayDates(plan) : []
   const planDayByKey = (key) => planDays.find(d => d.key === key)
@@ -221,8 +365,18 @@ export default function Laeufe({ user, plan }) {
           routeWaypoints: parseJsonArray(l.route_waypoints),
           kmSplits: parseJsonArray(l.km_splits),
           runSegments: parseJsonArray(l.run_segments),
+          sportType: l.sport_type || 'running',
+          activityName: l.activity_name || null,
+          durationSeconds: l.duration_seconds,
+          movingTimeSeconds: l.moving_time_seconds,
+          distanceMeters: l.distance_meters,
+          averageSpeedKmh: l.average_speed_kmh,
+          maxSpeedKmh: l.max_speed_kmh,
+          elevationGain: l.elevation_gain,
+          elevationLoss: l.elevation_loss,
+          duration: l.duration_seconds ? formatDuration(l.duration_seconds) : null,
           status: isExtra ? 'extra' : 'assigned',
-          source: isPolar ? 'polar' : 'manual',
+          source: l.source || (isPolar ? 'polar' : 'manual'),
           planInfo: planDay ? { weekN: planDay.weekN, tag: planDay.tag, einheit: planDay.einheit } : null,
         })
       })
@@ -251,8 +405,18 @@ export default function Laeufe({ user, plan }) {
           routeWaypoints: parseJsonArray(p.route_waypoints),
           kmSplits: parseJsonArray(p.km_splits),
           runSegments: parseJsonArray(p.run_segments),
+          sportType: p.sport_type || 'running',
+          activityName: p.activity_name || null,
+          durationSeconds: p.duration_seconds,
+          movingTimeSeconds: p.moving_time_seconds,
+          distanceMeters: p.distance_meters,
+          averageSpeedKmh: p.average_speed_kmh,
+          maxSpeedKmh: p.max_speed_kmh,
+          elevationGain: p.elevation_gain,
+          elevationLoss: p.elevation_loss,
+          duration: p.dauer || (p.duration_seconds ? formatDuration(p.duration_seconds) : null),
           status: 'pending',
-          source: 'polar',
+          source: p.source || 'polar',
           planInfo: null,
         })
       })
@@ -410,88 +574,221 @@ if (run.status === 'pending') {
     border: `1px solid ${type === 'success' ? '#B8E4CC' : '#F5C4CC'}`,
   })
 
-  const RunCard = ({ run }) => {
+  const ActivityCard = ({ run }) => {
     const isPending = run.status === 'pending'
+    const running = isRunningActivity(run)
+    const sport = getSportConfig(run.sportType)
     const isReassigning = reassigning === run.id
-    const candidates = isReassigning ? getCandidates(run) : []
+    const candidates = running && isReassigning ? getCandidates(run) : []
     const selected = reassignSelections[run.id] ?? (candidates[0]?.key || '')
 
-    // Noch nicht zugeordnete Läufe: Auswahl bleibt direkt auf der Karte, da hier erst
-    // die grundlegende Zuordnung passieren muss, bevor es überhaupt Details gibt.
+    const dateLabel = run.date
+      ? new Date(`${run.date}T00:00:00`).toLocaleDateString('de-DE', {
+          weekday: 'short',
+          day: 'numeric',
+          month: 'short',
+        })
+      : 'Kein Datum'
+
+    const title = run.planInfo
+      ? run.planInfo.einheit
+      : run.activityName || sport.label
+
+    const MetricChips = () => (
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {run.km && (
+          <span style={{ fontSize: 11, background: '#FFF0E6', color: '#C17A3A', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>
+            📍 {run.km}
+          </span>
+        )}
+
+        {running && run.pace && (
+          <span style={{ fontSize: 11, background: '#E8F0FF', color: '#4060C0', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>
+            ⏱ {run.pace}
+          </span>
+        )}
+
+        {!running && run.averageSpeedKmh != null && (
+          <span style={{ fontSize: 11, background: '#E8F0FF', color: '#4060C0', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>
+            ⚡ {Number(run.averageSpeedKmh).toFixed(1)} km/h
+          </span>
+        )}
+
+        {!running && run.elevationGain != null && (
+          <span style={{ fontSize: 11, background: '#FFF8E1', color: '#A07830', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>
+            ⛰️ {Math.round(Number(run.elevationGain))} hm
+          </span>
+        )}
+
+        {run.bpm && (
+          <span style={{ fontSize: 11, background: '#FDECEA', color: '#B85464', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>
+            ❤️ {run.bpm}
+          </span>
+        )}
+
+        {!running && run.duration && (
+          <span style={{ fontSize: 11, background: '#F5EDE8', color: '#8B6B5A', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>
+            ⏱ {run.duration}
+          </span>
+        )}
+
+        {!isPending && (
+          <span style={{ fontSize: 11, background: '#F5EDE8', color: '#8B6B5A', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>
+            {run.source === 'polar' ? '⌚ Polar' : '✏️ Manuell'}
+          </span>
+        )}
+      </div>
+    )
+
     if (isPending) {
       return (
-        <div style={{ background: 'white', borderRadius: 14, padding: '14px 16px', border: '1.5px solid #F0E8E0', marginBottom: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <div style={{ fontSize: 13, fontWeight: 'bold', color: '#3D2B1F', fontFamily: 'sans-serif' }}>
-              🏃‍♀️ {run.date ? new Date(run.date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Kein Datum'}
+        <div
+          style={{
+            background: 'white',
+            borderRadius: 14,
+            padding: '14px 16px',
+            border: `1.5px solid ${sport.color}33`,
+            borderLeft: `4px solid ${sport.color}`,
+            marginBottom: 10,
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', marginBottom: 8 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 'bold', color: '#3D2B1F', fontFamily: 'sans-serif' }}>
+                {sport.icon} {title}
+              </div>
+              <div style={{ fontSize: 11, color: '#B8A090', fontFamily: 'sans-serif', marginTop: 2 }}>
+                {dateLabel}
+              </div>
             </div>
-            <span style={{ fontSize: 10, background: STATUS_COLOR[run.status] + '22', color: STATUS_COLOR[run.status], padding: '3px 10px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>
-              {STATUS_LABEL[run.status]}
+
+            <span style={{ fontSize: 10, background: STATUS_COLOR.pending + '22', color: STATUS_COLOR.pending, padding: '3px 10px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif', whiteSpace: 'nowrap' }}>
+              Noch offen
             </span>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-            {run.km && <span style={{ fontSize: 11, background: '#FFF0E6', color: '#C17A3A', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>📍 {run.km}</span>}
-            {run.pace && <span style={{ fontSize: 11, background: '#E8F0FF', color: '#4060C0', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>⏱ {run.pace}</span>}
-            {run.bpm && <span style={{ fontSize: 11, background: '#FDECEA', color: '#B85464', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>❤️ {run.bpm}</span>}
+
+          <div style={{ marginBottom: 10 }}>
+            <MetricChips />
           </div>
 
-          {isReassigning ? (
-            <>
-              <select
-                value={selected}
-                onChange={e => setReassignSelections(p => ({ ...p, [run.id]: e.target.value }))}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 13, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', cursor: 'pointer', marginBottom: 10 }}>
-                {candidates.length === 0 && <option value="">Kein passender offener Tag gefunden</option>}
-                {candidates.map(c => (
-                  <option key={c.key} value={c.key}>{candidateLabel(c)}</option>
-                ))}
-                <option value="extra">— Als Extra-Lauf speichern (kein Plan-Tag) —</option>
-              </select>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => setReassigning(null)}
-                  style={{ padding: '10px 14px', borderRadius: 10, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
-                  Abbrechen
-                </button>
-                <button onClick={() => reassignRun(run, selected)} disabled={!selected || saving}
-                  style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: 'none', background: !selected || saving ? '#F0E8E0' : 'linear-gradient(135deg,#FF8C69,#FFB347)', color: !selected || saving ? '#C4A882' : 'white', fontSize: 12, fontWeight: 'bold', cursor: !selected || saving ? 'default' : 'pointer', fontFamily: 'sans-serif' }}>
-                  {saving ? '⏳ Speichere…' : '✓ Bestätigen'}
-                </button>
-              </div>
-            </>
+          {running ? (
+            isReassigning ? (
+              <>
+                <select
+                  value={selected}
+                  onChange={event =>
+                    setReassignSelections(previous => ({
+                      ...previous,
+                      [run.id]: event.target.value,
+                    }))
+                  }
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 13, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', cursor: 'pointer', marginBottom: 10 }}
+                >
+                  {candidates.length === 0 && (
+                    <option value="">Kein passender offener Tag gefunden</option>
+                  )}
+                  {candidates.map(candidate => (
+                    <option key={candidate.key} value={candidate.key}>
+                      {candidateLabel(candidate)}
+                    </option>
+                  ))}
+                  <option value="extra">
+                    — Als Extra-Lauf speichern (kein Plan-Tag) —
+                  </option>
+                </select>
+
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    onClick={() => setReassigning(null)}
+                    style={{ padding: '10px 14px', borderRadius: 10, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}
+                  >
+                    Abbrechen
+                  </button>
+
+                  <button
+                    onClick={() => reassignRun(run, selected)}
+                    disabled={!selected || saving}
+                    style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: 'none', background: !selected || saving ? '#F0E8E0' : 'linear-gradient(135deg,#FF8C69,#FFB347)', color: !selected || saving ? '#C4A882' : 'white', fontSize: 12, fontWeight: 'bold', cursor: !selected || saving ? 'default' : 'pointer', fontFamily: 'sans-serif' }}
+                  >
+                    {saving ? '⏳ Speichere…' : '✓ Bestätigen'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <button
+                onClick={() => {
+                  setReassigning(run.id)
+                  setReassignSelections(previous => ({
+                    ...previous,
+                    [run.id]: undefined,
+                  }))
+                }}
+                style={{ width: '100%', padding: '8px', borderRadius: 10, border: '1.5px solid #F0E0D0', background: 'white', color: '#8B7355', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}
+              >
+                Lauf zuordnen
+              </button>
+            )
           ) : (
-            <button onClick={() => { setReassigning(run.id); setReassignSelections(p => ({ ...p, [run.id]: undefined })) }}
-              style={{ width: '100%', padding: '8px', borderRadius: 10, border: '1.5px solid #F0E0D0', background: 'white', color: '#8B7355', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
-              Zuordnen
-            </button>
+            <div style={{ fontSize: 11, color: '#8B6B5A', background: sport.soft, borderRadius: 10, padding: '9px 10px', fontFamily: 'sans-serif', lineHeight: 1.4 }}>
+              Noch nicht übernommen. Öffne im Profil unter „Geräte“ die Polar-Synchronisation.
+            </div>
           )}
         </div>
       )
     }
 
-    // Bereits zugeordnete/Extra-Läufe: ganze Karte klickbar, öffnet Details.
-    // Keine Buttons mehr direkt auf der Karte - das ist eine Browse-Liste, kein
-    // Aktions-Panel. "Neu zuordnen" gibt's im Detail-Modal, nicht mehr permanent hier.
     return (
-      <div onClick={() => setDetailRun(run)}
-        style={{ background: 'white', borderRadius: 14, padding: '14px 16px', border: '1.5px solid #F0E8E0', marginBottom: 10, cursor: 'pointer' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <div style={{ fontSize: 13, fontWeight: 'bold', color: '#3D2B1F', fontFamily: 'sans-serif' }}>
-            🏃‍♀️ {run.date ? new Date(run.date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' }) : 'Kein Datum'}
+      <div
+        onClick={() => setDetailRun(run)}
+        style={{
+          background: 'white',
+          borderRadius: 14,
+          padding: '14px 16px',
+          border: `1.5px solid ${sport.color}33`,
+          borderLeft: `4px solid ${sport.color}`,
+          marginBottom: 10,
+          cursor: 'pointer',
+          boxShadow: '0 3px 12px rgba(61,43,31,0.035)',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', marginBottom: 10 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 'bold', color: '#3D2B1F', fontFamily: 'sans-serif' }}>
+              {sport.icon} {title}
+            </div>
+            <div style={{ fontSize: 11, color: '#B8A090', fontFamily: 'sans-serif', marginTop: 3 }}>
+              {dateLabel}
+            </div>
           </div>
-          <span style={{ fontSize: 10, background: STATUS_COLOR[run.status] + '22', color: STATUS_COLOR[run.status], padding: '3px 10px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>
-            {STATUS_LABEL[run.status]}{run.planInfo ? `: Wo.${run.planInfo.weekN} ${run.planInfo.tag}` : ''}
-          </span>
+
+          {running && run.planInfo ? (
+            <span style={{ fontSize: 10, background: '#EAF7F0', color: '#5BA88A', padding: '3px 9px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif', whiteSpace: 'nowrap' }}>
+              Wo.{run.planInfo.weekN} {run.planInfo.tag}
+            </span>
+          ) : (
+            <span style={{ fontSize: 10, background: sport.soft, color: sport.color, padding: '3px 9px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif', whiteSpace: 'nowrap' }}>
+              {sport.label}
+            </span>
+          )}
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {run.km && <span style={{ fontSize: 11, background: '#FFF0E6', color: '#C17A3A', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>📍 {run.km}</span>}
-          {run.pace && <span style={{ fontSize: 11, background: '#E8F0FF', color: '#4060C0', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>⏱ {run.pace}</span>}
-          {run.bpm && <span style={{ fontSize: 11, background: '#FDECEA', color: '#B85464', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>❤️ {run.bpm}</span>}
-          <span style={{ fontSize: 11, background: '#F5EDE8', color: '#8B6B5A', padding: '3px 10px', borderRadius: 99, fontFamily: 'sans-serif', fontWeight: 'bold' }}>{run.source === 'polar' ? '⌚ Polar' : '✏️ Manuell'}</span>
+
+        <MetricChips />
+
+        <div style={{ textAlign: 'right', fontSize: 10, color: '#D4C4B8', fontFamily: 'sans-serif', marginTop: 7 }}>
+          Details ansehen ›
         </div>
-        <div style={{ textAlign: 'right', fontSize: 10, color: '#D4C4B8', fontFamily: 'sans-serif', marginTop: 6 }}>Details ansehen ›</div>
       </div>
     )
   }
+
+  const filteredRuns =
+    sportFilter === 'all'
+      ? runs
+      : sportFilter === 'hiking'
+        ? runs.filter(run =>
+            run.sportType === 'hiking' || run.sportType === 'walking'
+          )
+        : runs.filter(run => run.sportType === sportFilter)
 
   // Kalender-Aufbau
   const year = calMonth.getFullYear()
@@ -499,7 +796,7 @@ if (run.status === 'pending') {
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7
   const runsByDate = {}
-  runs.forEach(r => {
+  filteredRuns.forEach(r => {
     if (!r.date) return
     if (!runsByDate[r.date]) runsByDate[r.date] = []
     runsByDate[r.date].push(r)
@@ -534,16 +831,82 @@ if (run.status === 'pending') {
         </button>
       </div>
 
+      {(view === 'list' || view === 'cal') && (
+        <div
+          style={{
+            display: 'flex',
+            gap: 7,
+            overflowX: 'auto',
+            WebkitOverflowScrolling: 'touch',
+            paddingBottom: 5,
+            marginBottom: 14,
+            scrollbarWidth: 'none',
+          }}
+        >
+          {SPORT_FILTERS.map(filter => {
+            const active = sportFilter === filter.key
+
+            return (
+              <button
+                key={filter.key}
+                onClick={() => {
+                  setSportFilter(filter.key)
+                  setSelectedDate(null)
+                }}
+                style={{
+                  flex: '0 0 auto',
+                  padding: '8px 12px',
+                  borderRadius: 99,
+                  border: active
+                    ? '2px solid #FF8C69'
+                    : '1.5px solid #F0E0D0',
+                  background: active ? '#FFF3EC' : 'white',
+                  color: active ? '#C16045' : '#8B6B5A',
+                  fontSize: 11,
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  fontFamily: 'sans-serif',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {filter.icon} {filter.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       {view === 'stats' && <Statistics user={user} plan={plan} />}
 
       {view === 'list' && (
-        runs.length === 0 ? (
+        filteredRuns.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 20px', color: '#B8A090', fontFamily: 'sans-serif' }}>
-            <div style={{ fontSize: 40, marginBottom: 10 }}>🏃‍♀️</div>
-            <div>Noch keine Läufe vorhanden.</div>
+            <div style={{ fontSize: 40, marginBottom: 10 }}>
+              {sportFilter === 'all'
+                ? '🏅'
+                : SPORT_FILTERS.find(filter => filter.key === sportFilter)?.icon || '🏅'}
+            </div>
+            <div>
+              In dieser Kategorie sind noch keine Aktivitäten vorhanden.
+            </div>
           </div>
         ) : (
-          runs.map(run => <RunCard key={run.id} run={run} />)
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 9, fontFamily: 'sans-serif' }}>
+              <div style={{ fontSize: 12, color: '#8B6B5A', fontWeight: 'bold' }}>
+                {sportFilter === 'all'
+                  ? 'Alle Aktivitäten'
+                  : SPORT_FILTERS.find(filter => filter.key === sportFilter)?.label}
+              </div>
+              <div style={{ fontSize: 11, color: '#B8A090' }}>
+                {filteredRuns.length} {filteredRuns.length === 1 ? 'Aktivität' : 'Aktivitäten'}
+              </div>
+            </div>
+
+            {filteredRuns.map(run => (
+              <ActivityCard key={run.id} run={run} />
+            ))}
+          </>
         )
       )}
 
@@ -586,13 +949,15 @@ if (run.status === 'pending') {
             </div>
           </div>
 
-          {selectedRuns.map(run => <RunCard key={run.id} run={run} />)}
+          {selectedRuns.map(run => <ActivityCard key={run.id} run={run} />)}
         </div>
       )}
 
       {detailRun && (() => {
         const d = detailRun
         const shoeName = null
+        const running = isRunningActivity(d)
+        const sport = getSportConfig(d.sportType)
 
         return (
           <div
@@ -634,7 +999,10 @@ if (run.status === 'pending') {
                 {d.date ? new Date(d.date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' }) : ''}
               </div>
               <h3 style={{ fontSize: 18, fontWeight: 'bold', color: '#3D2B1F', marginBottom: 18 }}>
-                {d.planInfo ? `Wo.${d.planInfo.weekN} ${d.planInfo.tag} · ${d.planInfo.einheit}` : (d.status === 'extra' ? 'Extra-Lauf' : 'Lauf')}
+                {sport.icon}{' '}
+                {d.planInfo
+                  ? `Wo.${d.planInfo.weekN} ${d.planInfo.tag} · ${d.planInfo.einheit}`
+                  : d.activityName || (d.status === 'extra' && running ? 'Extra-Lauf' : sport.label)}
               </h3>
 
               {(routeMapLoading || routeMapUrl || routeMapError) && (
@@ -651,27 +1019,42 @@ if (run.status === 'pending') {
                 </div>
               )}
 
-              <MetricDashboard
-                time={d.uhrzeit}
-                distance={d.km}
-                pace={d.pace}
-                averageHeartRate={d.bpm}
-                calories={d.kalorien ? `${d.kalorien} kcal` : null}
-                maxHeartRate={d.hfMax ? `${d.hfMax} bpm` : null}
-                elevation={d.hoehenmeter ? `${d.hoehenmeter} m` : null}
-                cadence={d.cadence ? `${d.cadence} spm` : null}
-                runningIndex={d.runningIndex}
-                shoe={shoeName}
-              />
+              {running ? (
+                <>
+                  <MetricDashboard
+                    time={d.uhrzeit}
+                    distance={d.km}
+                    pace={d.pace}
+                    averageHeartRate={d.bpm}
+                    calories={d.kalorien ? `${d.kalorien} kcal` : null}
+                    maxHeartRate={d.hfMax ? `${d.hfMax} bpm` : null}
+                    elevation={d.elevationGain != null ? `${Math.round(Number(d.elevationGain))} hm` : d.hoehenmeter ? `${d.hoehenmeter} m` : null}
+                    cadence={d.cadence ? `${d.cadence} spm` : null}
+                    runningIndex={d.runningIndex}
+                    shoe={shoeName}
+                  />
 
-              <PhaseTimeline phases={d.runSegments} />
+                  <PhaseTimeline phases={d.runSegments} />
 
-              <PhaseCards phases={d.runSegments} />
+                  <PhaseCards phases={d.runSegments} />
 
-              <SplitAccordion
-                splits={d.kmSplits}
-                defaultOpen={!Array.isArray(d.runSegments) || d.runSegments.length === 0}
-              />
+                  <SplitAccordion
+                    splits={d.kmSplits}
+                    defaultOpen={!Array.isArray(d.runSegments) || d.runSegments.length === 0}
+                  />
+                </>
+              ) : (
+                <>
+                  <MultisportDashboard activity={d} />
+
+                  {Array.isArray(d.kmSplits) && d.kmSplits.length > 0 && (
+                    <SplitAccordion
+                      splits={d.kmSplits}
+                      defaultOpen={false}
+                    />
+                  )}
+                </>
+              )}
 
               {d.note && (
                 <div style={{ marginTop: 16, padding: '12px 14px', background: '#F5EDE8', borderRadius: 12, fontSize: 12, color: '#8B6B5A', fontFamily: 'sans-serif', lineHeight: 1.6 }}>
@@ -747,12 +1130,18 @@ if (run.status === 'pending') {
         title={
           detailRun?.planInfo
             ? `Wo.${detailRun.planInfo.weekN} ${detailRun.planInfo.tag} · ${detailRun.planInfo.einheit}`
-            : 'Laufeinheit'
+            : detailRun?.activityName || getSportConfig(detailRun?.sportType).label
         }
         date={detailRun?.date ? formatDate(detailRun.date) : null}
         routeMapUrl={routeMapUrl}
         distance={detailRun?.km}
-        pace={detailRun?.pace}
+        pace={
+          isRunningActivity(detailRun)
+            ? detailRun?.pace
+            : detailRun?.averageSpeedKmh != null
+              ? `${Number(detailRun.averageSpeedKmh).toFixed(1)} km/h`
+              : null
+        }
         heartRate={detailRun?.bpm}
         calories={detailRun?.kalorien ? `${detailRun.kalorien} kcal` : null}
         phases={detailRun?.runSegments || []}
