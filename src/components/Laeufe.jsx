@@ -183,6 +183,7 @@ export default function Laeufe({ user, plan }) {
           kalorien: l.kalorien,
           routeWaypoints: l.route_waypoints,
           kmSplits: l.km_splits,
+          runSegments: l.run_segments,
           status: isExtra ? 'extra' : 'assigned',
           source: isPolar ? 'polar' : 'manual',
           planInfo: planDay ? { weekN: planDay.weekN, tag: planDay.tag, einheit: planDay.einheit } : null,
@@ -201,6 +202,18 @@ export default function Laeufe({ user, plan }) {
           bpm: p.herzfrequenz,
           note: null,
           schuhId: null,
+          runningIndex: p.running_index,
+          cadence: p.cadence,
+          uhrzeit: p.uhrzeit,
+          hfMax: p.hf_max,
+          hoehenmeter: p.hoehenmeter,
+          gefuehl: p.gefuehl,
+          trainingLoad: p.training_load,
+          recoveryTime: p.recovery_time,
+          kalorien: p.kalorien,
+          routeWaypoints: p.route_waypoints,
+          kmSplits: p.km_splits,
+          runSegments: p.run_segments,
           status: 'pending',
           source: 'polar',
           planInfo: null,
@@ -314,6 +327,7 @@ if (run.status === 'pending') {
           kalorien: run.kalorien,
           route_waypoints: run.routeWaypoints,
           km_splits: run.kmSplits,
+          run_segments: run.runSegments,
         }, { onConflict: 'user_id,day_key' })
       } else {
         await supabase.from('logs').upsert({
@@ -337,6 +351,7 @@ if (run.status === 'pending') {
           kalorien: run.kalorien,
           route_waypoints: run.routeWaypoints,
           km_splits: run.kmSplits,
+          run_segments: run.runSegments,
         }, { onConflict: 'user_id,day_key' })
         await supabase.from('training_done').upsert({ user_id: user.id, day_key: chosenKey, done: true }, { onConflict: 'user_id,day_key' })
       }
@@ -593,19 +608,199 @@ if (run.status === 'pending') {
                 </div>
               )}
 
+              {d.runSegments && d.runSegments.length > 0 && (
+                <div style={{ marginTop: 18 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <div style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, fontFamily: 'sans-serif' }}>
+                      Trainingsphasen
+                    </div>
+                    <div style={{ fontSize: 10, color: '#C4A882', fontFamily: 'sans-serif' }}>
+                      {d.runSegments.length} Phasen
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {d.runSegments.map((segment, index) => {
+                      const name = String(segment.name || 'Phase')
+                      const normalizedName = name.toLowerCase()
+
+                      const isInterval =
+                        normalizedName.includes('intervall') ||
+                        normalizedName.includes('tempo') ||
+                        normalizedName.includes('schnell')
+
+                      const isRecovery =
+                        normalizedName.includes('locker') ||
+                        normalizedName.includes('pause') ||
+                        normalizedName.includes('erholung')
+
+                      const isWarmup =
+                        normalizedName.includes('einlaufen') ||
+                        normalizedName.includes('warm')
+
+                      const isCooldown =
+                        normalizedName.includes('auslaufen') ||
+                        normalizedName.includes('cool')
+
+                      const accent = isInterval
+                        ? '#E56B6F'
+                        : isRecovery
+                          ? '#E3B341'
+                          : isWarmup || isCooldown
+                            ? '#5BA88A'
+                            : '#A78BCA'
+
+                      const softBackground = isInterval
+                        ? '#FFF3F2'
+                        : isRecovery
+                          ? '#FFF9E8'
+                          : isWarmup || isCooldown
+                            ? '#F2FBF6'
+                            : '#F7F2FF'
+
+                      const phaseIcon = isInterval
+                        ? '🔥'
+                        : isRecovery
+                          ? '🌿'
+                          : isWarmup
+                            ? '🟢'
+                            : isCooldown
+                              ? '🏁'
+                              : '🏃'
+
+                      const duration =
+                        segment.actualDurationSeconds != null
+                          ? `${Math.floor(segment.actualDurationSeconds / 60)}:${String(
+                              segment.actualDurationSeconds % 60
+                            ).padStart(2, '0')} min`
+                          : null
+
+                      const distance =
+                        segment.actualDistanceMeters != null
+                          ? segment.actualDistanceMeters >= 1000
+                            ? `${(segment.actualDistanceMeters / 1000).toFixed(2)} km`
+                            : `${Math.round(segment.actualDistanceMeters)} m`
+                          : null
+
+                      return (
+                        <div
+                          key={`${segment.index || index}-${segment.name || 'phase'}`}
+                          style={{
+                            background: softBackground,
+                            border: '1px solid #F0E8E0',
+                            borderLeft: `5px solid ${accent}`,
+                            borderRadius: 14,
+                            padding: '12px 13px',
+                            fontFamily: 'sans-serif',
+                            boxShadow: '0 3px 10px rgba(92,61,46,0.04)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', marginBottom: 10 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontSize: 16 }}>{phaseIcon}</span>
+                              <div>
+                                <div style={{ fontSize: 13, color: '#3D2B1F', fontWeight: 'bold' }}>
+                                  {segment.index || index + 1}. {name}
+                                </div>
+                                {(segment.plannedDistanceMeters != null || segment.plannedDurationSeconds != null) && (
+                                  <div style={{ fontSize: 10, color: '#A58B7A', marginTop: 2 }}>
+                                    Geplant:{' '}
+                                    {segment.plannedDistanceMeters != null
+                                      ? `${Math.round(segment.plannedDistanceMeters)} m`
+                                      : `${Math.round(segment.plannedDurationSeconds / 60)} min`}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ fontSize: 12, color: '#3D2B1F', fontWeight: 'bold' }}>
+                                {[distance, duration].filter(Boolean).join(' · ') || '–'}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                              gap: 8,
+                            }}
+                          >
+                            {segment.pace && (
+                              <div style={{ background: 'rgba(255,255,255,0.72)', borderRadius: 10, padding: '8px 9px' }}>
+                                <div style={{ fontSize: 9, color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.6 }}>Pace</div>
+                                <div style={{ fontSize: 12, color: '#3D2B1F', fontWeight: 'bold', marginTop: 2 }}>⏱ {segment.pace}</div>
+                              </div>
+                            )}
+
+                            {segment.avgHeartRate != null && (
+                              <div style={{ background: 'rgba(255,255,255,0.72)', borderRadius: 10, padding: '8px 9px' }}>
+                                <div style={{ fontSize: 9, color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.6 }}>Ø Herzfrequenz</div>
+                                <div style={{ fontSize: 12, color: '#3D2B1F', fontWeight: 'bold', marginTop: 2 }}>❤️ {segment.avgHeartRate} bpm</div>
+                              </div>
+                            )}
+
+                            {segment.maxHeartRate != null && (
+                              <div style={{ background: 'rgba(255,255,255,0.72)', borderRadius: 10, padding: '8px 9px' }}>
+                                <div style={{ fontSize: 9, color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.6 }}>Max. Herzfrequenz</div>
+                                <div style={{ fontSize: 12, color: '#3D2B1F', fontWeight: 'bold', marginTop: 2 }}>💓 {segment.maxHeartRate} bpm</div>
+                              </div>
+                            )}
+
+                            {segment.avgCadence != null && (
+                              <div style={{ background: 'rgba(255,255,255,0.72)', borderRadius: 10, padding: '8px 9px' }}>
+                                <div style={{ fontSize: 9, color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.6 }}>Kadenz</div>
+                                <div style={{ fontSize: 12, color: '#3D2B1F', fontWeight: 'bold', marginTop: 2 }}>👣 {segment.avgCadence} spm</div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
               {d.kmSplits && d.kmSplits.length > 0 && (
-                <div style={{ marginTop: 16 }}>
+                <div style={{ marginTop: 20 }}>
                   <div style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8, fontFamily: 'sans-serif' }}>
                     Kilometer-Splits
                   </div>
-                  {d.kmSplits.map(s => (
-                    <div key={s.km} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 4px', borderBottom: '1px solid #F5EDE8', fontSize: 12, fontFamily: 'sans-serif' }}>
-                      <span style={{ color: '#8B6B5A' }}>km {s.km}</span>
-                      <span style={{ color: '#3D2B1F', fontWeight: 'bold' }}>
-                        {s.dauerSek ? `${Math.floor(s.dauerSek / 60)}:${String(s.dauerSek % 60).padStart(2, '0')} min` : '–'}
-                      </span>
-                    </div>
-                  ))}
+
+                  <div style={{ background: '#FFF8F5', border: '1px solid #F0E8E0', borderRadius: 14, overflow: 'hidden' }}>
+                    {d.kmSplits.map(split => (
+                      <div
+                        key={split.km}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '58px 1fr 1fr',
+                          alignItems: 'center',
+                          gap: 10,
+                          padding: '9px 12px',
+                          borderBottom: split.km === d.kmSplits[d.kmSplits.length - 1]?.km ? 'none' : '1px solid #F0E8E0',
+                          fontSize: 12,
+                          fontFamily: 'sans-serif',
+                        }}
+                      >
+                        <span style={{ color: '#8B6B5A', fontWeight: 'bold' }}>km {split.km}</span>
+
+                        <span style={{ color: '#3D2B1F', fontWeight: 'bold' }}>
+                          {split.pace || (
+                            split.dauerSek
+                              ? `${Math.floor(split.dauerSek / 60)}:${String(
+                                  split.dauerSek % 60
+                                ).padStart(2, '0')} min`
+                              : '–'
+                          )}
+                        </span>
+
+                        <span style={{ color: '#B85464', textAlign: 'right' }}>
+                          {split.hfAvg != null ? `❤️ ${split.hfAvg}` : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
