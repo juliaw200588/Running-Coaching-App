@@ -109,20 +109,6 @@ const parseJsonArray = (value) => {
   return []
 }
 
-const formatDate = (dateString) => {
-  if (!dateString) return null
-
-  const date = new Date(`${dateString}T00:00:00`)
-  if (Number.isNaN(date.getTime())) return dateString
-
-  return date.toLocaleDateString('de-DE', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  })
-}
-
 export default function Laeufe({ user, plan }) {
   const [view, setView] = useState('list')
   const [runs, setRuns] = useState([])
@@ -686,47 +672,9 @@ if (run.status === 'pending') {
                 </button>
               )}
 
-              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                <button
-                  onClick={() => {
-                    setDetailRun(null)
-                    setReassigning(null)
-                    setStoryOpen(false)
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: 14,
-                    borderRadius: 16,
-                    border: '1.5px solid #F0E8E0',
-                    background: 'white',
-                    color: '#B8A090',
-                    fontSize: 14,
-                    fontWeight: 'bold',
-                    cursor: 'pointer',
-                    fontFamily: 'sans-serif',
-                  }}
-                >
-                  Schließen
-                </button>
-
-                <button
-                  onClick={() => setStoryOpen(true)}
-                  style={{
-                    flex: 1.4,
-                    padding: 14,
-                    borderRadius: 16,
-                    border: 'none',
-                    background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)',
-                    color: 'white',
-                    fontSize: 14,
-                    fontWeight: 'bold',
-                    cursor: 'pointer',
-                    fontFamily: 'sans-serif',
-                  }}
-                >
-                  📸 Story-Bild
-                </button>
-              </div>
+              <button onClick={() => { setDetailRun(null); setReassigning(null) }} style={{ width: '100%', marginTop: 10, padding: 14, borderRadius: 16, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+                Schließen
+              </button>
             </div>
           </div>
         )
@@ -745,6 +693,7 @@ if (run.status === 'pending') {
         distance={detailRun?.km}
         pace={detailRun?.pace}
         heartRate={detailRun?.bpm}
+        calories={detailRun?.kalorien ? `${detailRun.kalorien} kcal` : null}
         phases={detailRun?.runSegments || []}
         runningIndex={detailRun?.runningIndex}
         elevation={detailRun?.hoehenmeter ? `${detailRun.hoehenmeter} m` : null}
