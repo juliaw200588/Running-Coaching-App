@@ -861,7 +861,7 @@ export default function StoryShareModal({
             style={{
               flex: 2,
               padding: '15px 13px',
-              borderRadius: 10,
+              borderRadius: 15,
               border: 'none',
               background:
                 'linear-gradient(135deg,#FF8C69,#FF6B9D)',
