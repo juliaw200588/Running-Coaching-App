@@ -177,6 +177,7 @@ export default function StoryShareModal({
   distance,
   pace,
   heartRate,
+  calories,
   runningIndex,
   elevation,
   phases = [],
@@ -380,6 +381,8 @@ export default function StoryShareModal({
         padding:
           'max(12px, env(safe-area-inset-top)) 12px max(18px, env(safe-area-inset-bottom))',
         boxSizing: 'border-box',
+        scrollPaddingTop: 140,
+        scrollPaddingBottom: 110,
       }}
     >
       <div
@@ -534,12 +537,13 @@ export default function StoryShareModal({
             background: isInterval
               ? 'linear-gradient(165deg, #FFF8F0 0%, #FFF0F2 48%, #F0FAF4 100%)'
               : 'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 52%, #FFF0F5 100%)',
-            padding: isMinimal ? 34 : 28,
+            padding: isMinimal ? '38px 34px 96px' : isInterval ? '30px 28px 104px' : '30px 28px 96px',
             color: '#3D2B1F',
             fontFamily: "'Georgia', 'Times New Roman', serif",
             overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column',
+            minHeight: 0,
           }}
         >
           <div
@@ -554,10 +558,12 @@ export default function StoryShareModal({
               src={logoSrc}
               alt=""
               style={{
-                width: 48,
-                height: 48,
+                width: 58,
+                height: 58,
                 borderRadius: '50%',
                 objectFit: 'cover',
+                boxShadow: '0 8px 20px rgba(255,140,105,0.18)',
+                border: '1px solid rgba(255,255,255,0.9)',
               }}
             />
 
@@ -604,7 +610,7 @@ export default function StoryShareModal({
               crossOrigin="anonymous"
               style={{
                 width: '100%',
-                height: isInterval ? 210 : 245,
+                height: isInterval ? 198 : 238,
                 objectFit: 'cover',
                 borderRadius: 20,
                 border: '1px solid #E9DED4',
@@ -629,6 +635,9 @@ export default function StoryShareModal({
               ['⏱', 'Pace', pace],
               ...(showHeartRate
                 ? [['❤️', 'Ø HF', heartRate]]
+                : []),
+              ...(isMinimal && calories
+                ? [['🔥', 'Kalorien', calories]]
                 : []),
             ].map(([icon, label, value]) => (
               <div
@@ -675,7 +684,7 @@ export default function StoryShareModal({
                   background: 'rgba(255,255,255,0.86)',
                   border: '1px solid #EFE4DB',
                   borderRadius: 20,
-                  padding: 15,
+                  padding: isInterval ? 18 : 15,
                 }}
               >
                 <div
@@ -786,7 +795,7 @@ export default function StoryShareModal({
           <div
             style={{
               marginTop: 'auto',
-              paddingTop: 18,
+              paddingTop: 26,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -801,8 +810,8 @@ export default function StoryShareModal({
               src={logoSrc}
               alt=""
               style={{
-                width: 22,
-                height: 22,
+                width: 28,
+                height: 28,
                 borderRadius: '50%',
               }}
             />
@@ -818,10 +827,12 @@ export default function StoryShareModal({
             display: 'flex',
             gap: 10,
             marginTop: 12,
-            paddingTop: 10,
-            paddingBottom: 'max(4px, env(safe-area-inset-bottom))',
+            paddingTop: 14,
+            paddingBottom: 'max(14px, calc(env(safe-area-inset-bottom) + 8px))',
             background:
-              'linear-gradient(to bottom, rgba(50,30,20,0), rgba(50,30,20,0.88) 24%)',
+              'linear-gradient(to bottom, rgba(50,30,20,0), rgba(50,30,20,0.94) 22%)',
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
           }}
         >
           <button
@@ -830,7 +841,7 @@ export default function StoryShareModal({
             disabled={creating}
             style={{
               flex: 1,
-              padding: 13,
+              padding: '15px 13px',
               borderRadius: 15,
               border: '1px solid #E8D9CF',
               background: 'white',
@@ -849,7 +860,7 @@ export default function StoryShareModal({
             disabled={creating}
             style={{
               flex: 2,
-              padding: 13,
+              padding: '15px 13px',
               borderRadius: 15,
               border: 'none',
               background:
