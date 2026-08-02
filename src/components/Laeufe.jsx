@@ -87,6 +87,23 @@ const STATUS_LABEL = {
   extra: 'Extra-Lauf',
 }
 
+const parseJsonArray = (value) => {
+  if (Array.isArray(value)) return value
+  if (!value) return []
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      return Array.isArray(parsed) ? parsed : []
+    } catch (error) {
+      console.warn('JSON-Feld konnte nicht gelesen werden:', error)
+      return []
+    }
+  }
+
+  return []
+}
+
 export default function Laeufe({ user, plan }) {
   const [view, setView] = useState('list')
   const [runs, setRuns] = useState([])
@@ -181,9 +198,9 @@ export default function Laeufe({ user, plan }) {
           polarExerciseId: l.polar_exercise_id,
           routeMapUrl: l.route_map_url,
           kalorien: l.kalorien,
-          routeWaypoints: l.route_waypoints,
-          kmSplits: l.km_splits,
-          runSegments: l.run_segments,
+          routeWaypoints: parseJsonArray(l.route_waypoints),
+          kmSplits: parseJsonArray(l.km_splits),
+          runSegments: parseJsonArray(l.run_segments),
           status: isExtra ? 'extra' : 'assigned',
           source: isPolar ? 'polar' : 'manual',
           planInfo: planDay ? { weekN: planDay.weekN, tag: planDay.tag, einheit: planDay.einheit } : null,
@@ -211,9 +228,9 @@ export default function Laeufe({ user, plan }) {
           trainingLoad: p.training_load,
           recoveryTime: p.recovery_time,
           kalorien: p.kalorien,
-          routeWaypoints: p.route_waypoints,
-          kmSplits: p.km_splits,
-          runSegments: p.run_segments,
+          routeWaypoints: parseJsonArray(p.route_waypoints),
+          kmSplits: parseJsonArray(p.km_splits),
+          runSegments: parseJsonArray(p.run_segments),
           status: 'pending',
           source: 'polar',
           planInfo: null,
@@ -608,7 +625,7 @@ if (run.status === 'pending') {
                 </div>
               )}
 
-              {d.runSegments && d.runSegments.length > 0 && (
+              {Array.isArray(d.runSegments) && d.runSegments.length > 0 && (
                 <div style={{ marginTop: 18 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                     <div style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, fontFamily: 'sans-serif' }}>
@@ -762,7 +779,7 @@ if (run.status === 'pending') {
                 </div>
               )}
 
-              {d.kmSplits && d.kmSplits.length > 0 && (
+              {Array.isArray(d.kmSplits) && d.kmSplits.length > 0 && (
                 <div style={{ marginTop: 20 }}>
                   <div style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8, fontFamily: 'sans-serif' }}>
                     Kilometer-Splits
