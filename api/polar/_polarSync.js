@@ -1161,6 +1161,29 @@ async function loadDetailedRunningExercises(
           targetSegments = target
             ? extractTargetPhases(target, exercise)
             : null
+            console.log('[Polar V4] PHASEN-ERGEBNIS:', {
+  exerciseId,
+  targetFound: Boolean(target),
+
+  topLevelPhases:
+    target?.exercise?.[0]?.phaseOrRepeat?.map(item => ({
+      name: item?.name,
+      repeatCount: item?.repeatCount,
+      childCount: Array.isArray(item?.phaseOrRepeat)
+        ? item.phaseOrRepeat.length
+        : 0,
+      type: item?.type,
+    })) || [],
+
+  extractedCount: targetSegments?.length || 0,
+
+  extractedSegments:
+    targetSegments?.map(segment => ({
+      name: segment.name,
+      distance: segment.plannedDistanceMeters,
+      duration: segment.plannedDurationSeconds,
+    })) || [],
+})
         } catch (error) {
           console.warn(
             '[Polar V4] Trainingsphasen konnten nicht ausgewertet werden:',
