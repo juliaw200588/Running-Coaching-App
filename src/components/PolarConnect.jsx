@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabase.js'
 const TAG_OFFSET = { Mo: 0, Di: 1, Mi: 2, Do: 3, Fr: 4, Sa: 5, So: 6 }
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
+const MULTISPORT_MIGRATION_VERSION = 2
+
 // Schätzt die geplante Distanz eines Tages aus dem Freitext (gleiche Logik wie in
 // TrainingPlan.jsx für die "ca. X km"-Wochenanzeige) - wird hier genutzt, um Polar-Läufe
 // nicht nur nach Datum, sondern auch nach Distanz-Ähnlichkeit zuzuordnen.
@@ -126,6 +128,8 @@ export default function PolarConnect({ user, plan }) {
   const [historyShoeSelections, setHistoryShoeSelections] = useState({})
   const [historyAssigning, setHistoryAssigning] = useState(null)
   const [historyAssignedIds, setHistoryAssignedIds] = useState(new Set())
+  const [showMultisportMigration, setShowMultisportMigration] = useState(false)
+  const [migrationRunning, setMigrationRunning] = useState(false)
 
   const planDays = plan ? getPlanDayDates(plan) : []
 
@@ -194,10 +198,37 @@ export default function PolarConnect({ user, plan }) {
       .eq('user_id', user.id)
       .single()
 
-    if (data?.polar_user_id || data?.polar_access_token) {
+    const isConnected = Boolean(
+      data?.polar_user_id || data?.polar_access_token
+    )
+
+    if (isConnected) {
       setConnected(true)
       setLastSync(data.polar_connected_at)
+
+      try {
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('multisport_migration_version')
+          .eq('id', user.id)
+          .single()
+
+        const migrationVersion =
+          Number(profileData?.multisport_migration_version) || 0
+
+        if (migrationVersion < MULTISPORT_MIGRATION_VERSION) {
+          setShowMultisportMigration(true)
+        }
+      } catch (error) {
+        console.warn(
+          'Multisport-Migrationsstatus konnte nicht geladen werden:',
+          error
+        )
+      }
+    } else {
+      setConnected(false)
     }
+
     setLoading(false)
   }
 
@@ -255,6 +286,75 @@ export default function PolarConnect({ user, plan }) {
     }
     setSyncing(false)
   }
+
+  const markMultisportMigrationDone = async () => {
+    const { error } = await supabase
+      .from('profiles')
+      .upsert({
+        id: user.id,
+        multisport_migration_version: MULTISPORT_MIGRATION_VERSION,
+      })
+
+    if (error) throw error
+  }
+
+  const handleMultisportMigrationLater = () => {
+    setShowMultisportMigration(false)
+  }
+
+  const handleMultisportMigrationNow = async () => {
+    if (migrationRunning) return
+
+    setMigrationRunning(true)
+    setMessage(null)
+
+    try {
+      // Frühere Verwerfungen werden einmalig zurückgesetzt. Bereits
+      // übernommene Aktivitäten werden vom Server anhand Polar-ID und
+      // Importversion erkannt und deshalb nicht erneut angeboten.
+      const { error: deleteError } = await supabase
+        .from('polar_ignored_activities')
+        .delete()
+        .eq('user_id', user.id)
+
+      if (deleteError) throw deleteError
+
+      await markMultisportMigrationDone()
+      setShowMultisportMigration(false)
+
+      const response = await fetch('/api/polar/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || data.error) {
+        throw new Error(data.error || 'Synchronisierung fehlgeschlagen.')
+      }
+
+      await loadPending()
+
+      setMessage({
+        type: data.activities?.length ? 'success' : 'info',
+        text: data.activities?.length
+          ? `🎉 ${data.count} Aktivitäten aus den neuen Sportarten gefunden.`
+          : 'Keine weiteren Aktivitäten aus den neuen Sportarten gefunden.',
+      })
+    } catch (error) {
+      console.error('Multisport-Migration fehlgeschlagen:', error)
+      setMessage({
+        type: 'error',
+        text:
+          'Die früheren Aktivitäten konnten nicht erneut gesucht werden. ' +
+          'Bitte versuche es später noch einmal.',
+      })
+    } finally {
+      setMigrationRunning(false)
+    }
+  }
+
 
   const getCandidates = (activity) => {
     if (!activity.datum) return []
@@ -342,6 +442,8 @@ export default function PolarConnect({ user, plan }) {
         max_speed_kmh: activity.max_speed_kmh || null,
         elevation_gain: activity.elevation_gain || null,
         elevation_loss: activity.elevation_loss || null,
+        polar_import_version:
+          activity.polar_import_version || 1,
       }, { onConflict: 'user_id,day_key' })
 
       if (running && chosenKey && chosenKey !== 'extra') {
@@ -561,6 +663,192 @@ const discardActivity = async (activity) => {
 
   return (
     <div>
+      {showMultisportMigration && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1000,
+            background: 'rgba(50,30,20,0.68)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 'max(18px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom))',
+            boxSizing: 'border-box',
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: 430,
+              maxHeight: '90dvh',
+              overflowY: 'auto',
+              background:
+                'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 55%, #FFF0F5 100%)',
+              borderRadius: 24,
+              padding: 22,
+              boxSizing: 'border-box',
+              boxShadow: '0 24px 70px rgba(61,43,31,0.28)',
+              fontFamily: 'sans-serif',
+            }}
+          >
+            <div
+              style={{
+                width: 58,
+                height: 58,
+                borderRadius: 18,
+                background: 'white',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 30,
+                marginBottom: 14,
+                boxShadow: '0 8px 24px rgba(255,140,105,0.16)',
+              }}
+            >
+              🌿
+            </div>
+
+            <div
+              style={{
+                fontSize: 11,
+                color: '#C17A3A',
+                fontWeight: 'bold',
+                textTransform: 'uppercase',
+                letterSpacing: 1,
+                marginBottom: 6,
+              }}
+            >
+              Neu in Version 2.0
+            </div>
+
+            <h3
+              style={{
+                margin: '0 0 10px',
+                color: '#3D2B1F',
+                fontFamily: "'Georgia', 'Times New Roman', serif",
+                fontSize: 24,
+              }}
+            >
+              Flora ist jetzt Multisport!
+            </h3>
+
+            <div
+              style={{
+                fontSize: 14,
+                color: '#6F5648',
+                lineHeight: 1.6,
+                marginBottom: 16,
+              }}
+            >
+              Ab sofort kannst du neben Läufen auch diese Aktivitäten
+              verwalten und auswerten:
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: 8,
+                marginBottom: 16,
+              }}
+            >
+              {[
+                ['🚴', 'Radfahren'],
+                ['🚵', 'Mountainbike'],
+                ['🥾', 'Wandern'],
+                ['🏊', 'Schwimmen'],
+              ].map(([icon, label]) => (
+                <div
+                  key={label}
+                  style={{
+                    background: 'rgba(255,255,255,0.86)',
+                    border: '1px solid #EFE4DB',
+                    borderRadius: 13,
+                    padding: '10px 11px',
+                    color: '#5C3D2E',
+                    fontSize: 12,
+                    fontWeight: 'bold',
+                  }}
+                >
+                  {icon} {label}
+                </div>
+              ))}
+            </div>
+
+            <div
+              style={{
+                padding: '11px 12px',
+                borderRadius: 13,
+                background: '#FFF5EE',
+                border: '1px solid #FFD4B0',
+                color: '#8B6B5A',
+                fontSize: 12,
+                lineHeight: 1.5,
+                marginBottom: 9,
+              }}
+            >
+              Früher verworfene Polar-Aktivitäten dieser Sportarten
+              können jetzt erneut gesucht werden.
+            </div>
+
+            <div
+              style={{
+                color: '#8B6B5A',
+                fontSize: 11,
+                lineHeight: 1.5,
+                marginBottom: 18,
+              }}
+            >
+              💡 Bereits übernommene Aktivitäten bleiben unverändert und
+              werden nicht doppelt eingespielt.
+            </div>
+
+            <div style={{ display: 'flex', gap: 9 }}>
+              <button
+                type="button"
+                onClick={handleMultisportMigrationLater}
+                disabled={migrationRunning}
+                style={{
+                  flex: 1,
+                  padding: 13,
+                  borderRadius: 14,
+                  border: '1.5px solid #E8D9CF',
+                  background: 'white',
+                  color: '#8B6B5A',
+                  fontWeight: 'bold',
+                  cursor: migrationRunning ? 'default' : 'pointer',
+                }}
+              >
+                Später
+              </button>
+
+              <button
+                type="button"
+                onClick={handleMultisportMigrationNow}
+                disabled={migrationRunning}
+                style={{
+                  flex: 1.5,
+                  padding: 13,
+                  borderRadius: 14,
+                  border: 'none',
+                  background:
+                    'linear-gradient(135deg,#FF8C69,#FF6B9D)',
+                  color: 'white',
+                  fontWeight: 'bold',
+                  cursor: migrationRunning ? 'default' : 'pointer',
+                  opacity: migrationRunning ? 0.72 : 1,
+                }}
+              >
+                {migrationRunning
+                  ? '⏳ Suche läuft…'
+                  : 'Jetzt suchen'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {message && <div style={msgStyle(message.type)}>{message.text}</div>}
 
       <div style={{ background: connected ? '#F0FAF4' : 'white', borderRadius: 16, padding: '18px 20px', border: `1.5px solid ${connected ? '#B8E4CC' : '#F0E8E0'}`, marginBottom: 16 }}>

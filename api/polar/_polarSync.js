@@ -4,6 +4,15 @@ const POLAR_API_BASE = 'https://www.polaraccesslink.com/v4/data'
 const POLAR_TOKEN_URL = 'https://auth.polar.com/oauth/token'
 const LOOKBACK_DAYS = 30
 
+const SPORT_IMPORT_VERSIONS = {
+  running: 1,
+  walking: 1,
+  hiking: 1,
+  cycling: 1,
+  mountain_biking: 1,
+  swimming: 1,
+}
+
 // Polar V4 Sync v2.1:
 // Detaildaten bleiben erhalten, auch wenn Training Targets nicht verfügbar sind.
 
@@ -757,6 +766,8 @@ function mapV4Exercise(
     // Neue allgemeine Aktivitätsfelder.
     sport_type: sportType,
     source: 'polar',
+    polar_import_version:
+      SPORT_IMPORT_VERSIONS[sportType] || 1,
     activity_name:
       typeof title === 'string' && title.trim()
         ? title.trim()
@@ -1464,45 +1475,6 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
     loadTrainingSessions(token),
   ])
 
-  console.log(
-  '[Polar V4] SESSION-DIAGNOSE:',
-  collectExercises(sessions).map(({ session, exercise }) => {
-    const sportName = resolveSportName(
-      sportsMap,
-      session,
-      exercise
-    )
-
-    const startTime = firstDefined(
-      exercise?.startTime,
-      session?.startTime
-    )
-
-    return {
-      exerciseId:
-        exercise?.identifier?.id ||
-        session?.identifier?.id ||
-        null,
-
-      startTime,
-
-      sportName,
-
-      sportType: detectSportType(sportName),
-
-      distanceMeters: firstDefined(
-        exercise?.distanceMeters,
-        session?.distanceMeters
-      ),
-
-      durationMillis: firstDefined(
-        exercise?.durationMillis,
-        session?.durationMillis
-      ),
-    }
-  })
-)
-
   const detailedById = await loadDetailedSupportedExercises(
     token,
     sessions,
@@ -1513,6 +1485,32 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
   console.log('[Polar V4] Unterstützte Aktivitäten mit Detaildaten:', detailedById.size)
 
   const stored = []
+
+  const { data: importedRows, error: importedError } = await supabase
+    .from('logs')
+    .select('polar_exercise_id, sport_type, polar_import_version')
+    .eq('user_id', userId)
+    .not('polar_exercise_id', 'is', null)
+
+  if (importedError) {
+    console.error(
+      '[Polar V4] Bereits übernommene Aktivitäten konnten nicht geladen werden:',
+      importedError
+    )
+    throw new Error(
+      'Bereits übernommene Polar-Aktivitäten konnten nicht geprüft werden'
+    )
+  }
+
+  const importedById = new Map(
+    (importedRows || []).map(row => [
+      String(row.polar_exercise_id),
+      {
+        sportType: row.sport_type || 'running',
+        importVersion: Number(row.polar_import_version) || 1,
+      },
+    ])
+  )
 
   const { data: ignoredRows, error: ignoredError } = await supabase
     .from('polar_ignored_activities')
@@ -1581,6 +1579,39 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
         detailed.targetSegments.length
       ) {
         row.run_segments = detailed.targetSegments
+      }
+
+      const imported = row.polar_exercise_id
+        ? importedById.get(String(row.polar_exercise_id))
+        : null
+
+      const currentImportVersion =
+        SPORT_IMPORT_VERSIONS[sportType] || 1
+
+      if (
+        imported &&
+        imported.importVersion >= currentImportVersion
+      ) {
+        console.log(
+          '[Polar V4] Bereits übernommene Aktivität übersprungen:',
+          row.polar_exercise_id
+        )
+        continue
+      }
+
+      if (
+        imported &&
+        imported.importVersion < currentImportVersion
+      ) {
+        console.log(
+          '[Polar V4] Aktivität wird wegen neuer Importversion erneut angeboten:',
+          {
+            polarExerciseId: row.polar_exercise_id,
+            sportType,
+            previousVersion: imported.importVersion,
+            currentVersion: currentImportVersion,
+          }
+        )
       }
 
 if (
