@@ -8,10 +8,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    const activities = await fetchAndPersistPolarActivitiesV4(userId)
-    return res.status(200).json({ activities, count: activities.length })
-  } catch (e) {
-    console.error('[Polar V4 Sync Endpoint] Fehler:', e)
-    return res.status(500).json({ error: e.message })
+    const result = await fetchAndPersistPolarActivitiesV4(userId)
+    const activities = result?.activities || []
+
+    return res.status(200).json({
+      activities,
+      count: activities.length,
+      updatedCount: result?.updatedCount || 0,
+    })
+  } catch (error) {
+    console.error('[Polar V4 Sync Endpoint] Fehler:', error)
+    return res.status(500).json({ error: error.message })
   }
 }

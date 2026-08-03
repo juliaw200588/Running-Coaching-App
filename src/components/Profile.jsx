@@ -128,7 +128,7 @@ function SchuhForm({ schuh, onSave, onCancel }) {
   )
 }
 
-export default function Profile({ user, plan }) {
+export default function Profile({ user, plan, onOpenActivities }) {
   const [activeTab, setActiveTab] = useState('profil')
   const [profile, setProfile] = useState({ name: '', wohnort: '', geburtsdatum: '', groesse: '', gewicht: '', max_hf: '', ruhe_hf: '', wochen_km: '' })
   const [privacy, setPrivacy] = useState({ plan: 'freunde', fortschritt: 'freunde', logs: 'freunde', schuhe: 'freunde' })
@@ -414,7 +414,7 @@ export default function Profile({ user, plan }) {
         )}
 
         {activeTab === 'geraete' && (
-          <PolarConnect user={user} plan={plan} />
+          <PolarConnect user={user} plan={plan} onOpenActivities={onOpenActivities} />
         )}
       </div>
     </div>

@@ -1465,6 +1465,98 @@ async function savePendingActivity(row) {
   }
 }
 
+
+const POLAR_MANAGED_LOG_FIELDS = [
+  'pace',
+  'km',
+  'bpm',
+  'actual_date',
+  'running_index',
+  'cadence',
+  'uhrzeit',
+  'hoehenmeter',
+  'hf_max',
+  'training_load',
+  'recovery_time',
+  'kalorien',
+  'route_waypoints',
+  'km_splits',
+  'run_segments',
+  'sport_type',
+  'source',
+  'activity_name',
+  'duration_seconds',
+  'moving_time_seconds',
+  'distance_meters',
+  'average_speed_kmh',
+  'max_speed_kmh',
+  'elevation_gain',
+  'elevation_loss',
+  'polar_import_version',
+]
+
+function pickPolarManagedFields(row) {
+  return POLAR_MANAGED_LOG_FIELDS.reduce((result, field) => {
+    if (Object.prototype.hasOwnProperty.call(row, field)) {
+      result[field] = row[field]
+    }
+    return result
+  }, {})
+}
+
+async function updateImportedActivity(userId, row) {
+  const updates = pickPolarManagedFields({
+    pace: row.pace,
+    km: row.distanz,
+    bpm: row.herzfrequenz,
+    actual_date: row.datum,
+    running_index: row.running_index,
+    cadence: row.cadence,
+    uhrzeit: row.uhrzeit,
+    hoehenmeter: row.hoehenmeter,
+    hf_max: row.hf_max,
+    training_load: row.training_load,
+    recovery_time: row.recovery_time,
+    kalorien: row.kalorien,
+    route_waypoints: row.route_waypoints,
+    km_splits: row.km_splits,
+    run_segments: row.run_segments,
+    sport_type: row.sport_type,
+    source: row.source,
+    activity_name: row.activity_name,
+    duration_seconds: row.duration_seconds,
+    moving_time_seconds: row.moving_time_seconds,
+    distance_meters: row.distance_meters,
+    average_speed_kmh: row.average_speed_kmh,
+    max_speed_kmh: row.max_speed_kmh,
+    elevation_gain: row.elevation_gain,
+    elevation_loss: row.elevation_loss,
+    polar_import_version: row.polar_import_version,
+  })
+
+  const { error } = await supabase
+    .from('logs')
+    .update(updates)
+    .eq('user_id', userId)
+    .eq('polar_exercise_id', String(row.polar_exercise_id))
+
+  if (error) {
+    console.error('[Polar V4] Bestehende Aktivität aktualisieren fehlgeschlagen:', {
+      polarExerciseId: row.polar_exercise_id,
+      error,
+    })
+    throw new Error(
+      `Bestehende Polar-Aktivität ${row.polar_exercise_id} konnte nicht aktualisiert werden`
+    )
+  }
+
+  await supabase
+    .from('polar_pending_activities')
+    .delete()
+    .eq('user_id', userId)
+    .eq('polar_exercise_id', String(row.polar_exercise_id))
+}
+
 export async function fetchAndPersistPolarActivitiesV4(userId) {
   if (!userId) throw new Error('userId fehlt')
 
@@ -1485,6 +1577,7 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
   console.log('[Polar V4] Unterstützte Aktivitäten mit Detaildaten:', detailedById.size)
 
   const stored = []
+  let updatedCount = 0
 
   const { data: importedRows, error: importedError } = await supabase
     .from('logs')
@@ -1604,7 +1697,7 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
         imported.importVersion < currentImportVersion
       ) {
         console.log(
-          '[Polar V4] Aktivität wird wegen neuer Importversion erneut angeboten:',
+          '[Polar V4] Bestehende Aktivität wird automatisch aktualisiert:',
           {
             polarExerciseId: row.polar_exercise_id,
             sportType,
@@ -1612,6 +1705,10 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
             currentVersion: currentImportVersion,
           }
         )
+
+        await updateImportedActivity(userId, row)
+        updatedCount += 1
+        continue
       }
 
 if (
@@ -1638,7 +1735,12 @@ if (
   }
 
   console.log('[Polar V4] Gespeicherte Aktivitäten:', stored.length)
-  return stored
+  console.log('[Polar V4] Aktualisierte Aktivitäten:', updatedCount)
+
+  return {
+    activities: stored,
+    updatedCount,
+  }
 }
 
 export { supabase }

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase.js'
+import IgnoredActivities from './IgnoredActivities.jsx'
 
 const TAG_OFFSET = { Mo: 0, Di: 1, Mi: 2, Do: 3, Fr: 4, Sa: 5, So: 6 }
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
@@ -109,7 +110,7 @@ const activityMeta = (activity) => {
   return map[type] || { icon: '🏅', label: activity?.activity_name || 'Aktivität' }
 }
 
-export default function PolarConnect({ user, plan }) {
+export default function PolarConnect({ user, plan, onOpenActivities }) {
   const [connected, setConnected] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -130,6 +131,9 @@ export default function PolarConnect({ user, plan }) {
   const [historyAssignedIds, setHistoryAssignedIds] = useState(new Set())
   const [showMultisportMigration, setShowMultisportMigration] = useState(false)
   const [migrationRunning, setMigrationRunning] = useState(false)
+  const [showIgnoredActivities, setShowIgnoredActivities] = useState(false)
+  const [ignoredCount, setIgnoredCount] = useState(0)
+  const [syncSummary, setSyncSummary] = useState(null)
 
   const planDays = plan ? getPlanDayDates(plan) : []
 
@@ -138,6 +142,7 @@ export default function PolarConnect({ user, plan }) {
     loadOccupiedKeys()
     loadPending()
     loadSchuhe()
+    loadIgnoredCount()
 
     // Live-Updates: neue Läufe (z.B. automatisch vom Polar-Webhook eingetragen)
     // tauchen sofort auf, ohne dass die Seite neu geladen werden muss.
@@ -174,6 +179,24 @@ export default function PolarConnect({ user, plan }) {
       if (data) setPending(data)
     } catch (e) {
       console.error('Pending Aktivitäten laden fehlgeschlagen:', e)
+    }
+  }
+
+
+  const loadIgnoredCount = async () => {
+    try {
+      const { count, error } = await supabase
+        .from('polar_ignored_activities')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+
+      if (error) throw error
+      setIgnoredCount(count || 0)
+    } catch (error) {
+      console.warn(
+        'Anzahl nicht übernommener Aktivitäten konnte nicht geladen werden:',
+        error
+      )
     }
   }
 
@@ -262,29 +285,86 @@ export default function PolarConnect({ user, plan }) {
     setMessage({ type: 'info', text: 'Polar Verbindung getrennt.' })
   }
 
-  const handleSync = async () => {
+  const handleSync = async ({ quiet = false } = {}) => {
     setSyncing(true)
-    setMessage(null)
+    if (!quiet) setMessage(null)
+    setSyncSummary(null)
+
     try {
       const response = await fetch('/api/polar/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id })
+        body: JSON.stringify({ userId: user.id }),
       })
+
       const data = await response.json()
 
-      if (data.error) {
-        setMessage({ type: 'error', text: `Fehler: ${data.error}` })
-      } else if (!data.activities?.length) {
-        setMessage({ type: 'info', text: 'Keine neuen Aktivitäten gefunden.' })
-      } else {
-        await loadPending() // Server hat bereits in polar_pending_activities gespeichert
-        setMessage({ type: 'success', text: `✅ ${data.count} neue Aktivitäten gefunden.` })
+      if (!response.ok || data.error) {
+        setMessage({
+          type: 'error',
+          text: `Fehler: ${data.error || 'Synchronisierung fehlgeschlagen.'}`,
+        })
+        return data
       }
-    } catch (e) {
-      setMessage({ type: 'error', text: 'Verbindungsfehler. Bitte erneut versuchen.' })
+
+      await Promise.all([loadPending(), loadIgnoredCount()])
+
+      const activities = data.activities || []
+      const groups = activities.reduce((acc, activity) => {
+        const type = activity.sport_type || 'running'
+        acc[type] = (acc[type] || 0) + 1
+        return acc
+      }, {})
+
+      setSyncSummary({
+        count: data.count || activities.length,
+        groups,
+        updatedCount: data.updatedCount || 0,
+      })
+
+      if (!quiet) {
+        if (!activities.length && !(data.updatedCount > 0)) {
+          setMessage({
+            type: 'info',
+            text: 'Keine neuen oder aktualisierten Aktivitäten gefunden.',
+          })
+        } else {
+          const parts = []
+          if (activities.length) {
+            parts.push(
+              `${activities.length} neue ${
+                activities.length === 1 ? 'Aktivität' : 'Aktivitäten'
+              }`
+            )
+          }
+          if (data.updatedCount > 0) {
+            parts.push(
+              `${data.updatedCount} ${
+                data.updatedCount === 1
+                  ? 'bestehende Aktivität aktualisiert'
+                  : 'bestehende Aktivitäten aktualisiert'
+              }`
+            )
+          }
+
+          setMessage({
+            type: 'success',
+            text: `✅ ${parts.join(' und ')}.`,
+          })
+        }
+      }
+
+      return data
+    } catch (error) {
+      console.error('Polar-Synchronisierung fehlgeschlagen:', error)
+      setMessage({
+        type: 'error',
+        text: 'Verbindungsfehler. Bitte erneut versuchen.',
+      })
+      return { error: error.message }
+    } finally {
+      setSyncing(false)
     }
-    setSyncing(false)
   }
 
   const markMultisportMigrationDone = async () => {
@@ -309,9 +389,6 @@ export default function PolarConnect({ user, plan }) {
     setMessage(null)
 
     try {
-      // Frühere Verwerfungen werden einmalig zurückgesetzt. Bereits
-      // übernommene Aktivitäten werden vom Server anhand Polar-ID und
-      // Importversion erkannt und deshalb nicht erneut angeboten.
       const { error: deleteError } = await supabase
         .from('polar_ignored_activities')
         .delete()
@@ -319,28 +396,29 @@ export default function PolarConnect({ user, plan }) {
 
       if (deleteError) throw deleteError
 
-      await markMultisportMigrationDone()
-      setShowMultisportMigration(false)
+      const result = await handleSync({ quiet: true })
 
-      const response = await fetch('/api/polar/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok || data.error) {
-        throw new Error(data.error || 'Synchronisierung fehlgeschlagen.')
+      if (result?.error) {
+        throw new Error(result.error)
       }
 
-      await loadPending()
+      await markMultisportMigrationDone()
+      await loadIgnoredCount()
+      setShowMultisportMigration(false)
+
+      const count = result?.activities?.length || 0
+      const updatedCount = result?.updatedCount || 0
 
       setMessage({
-        type: data.activities?.length ? 'success' : 'info',
-        text: data.activities?.length
-          ? `🎉 ${data.count} Aktivitäten aus den neuen Sportarten gefunden.`
-          : 'Keine weiteren Aktivitäten aus den neuen Sportarten gefunden.',
+        type: count || updatedCount ? 'success' : 'info',
+        text:
+          count || updatedCount
+            ? `🎉 ${count} neue Aktivitäten gefunden${
+                updatedCount
+                  ? ` und ${updatedCount} bestehende aktualisiert`
+                  : ''
+              }.`
+            : 'Keine weiteren Aktivitäten aus den neuen Sportarten gefunden.',
       })
     } catch (error) {
       console.error('Multisport-Migration fehlgeschlagen:', error)
@@ -354,7 +432,6 @@ export default function PolarConnect({ user, plan }) {
       setMigrationRunning(false)
     }
   }
-
 
   const getCandidates = (activity) => {
     if (!activity.datum) return []
@@ -484,16 +561,38 @@ export default function PolarConnect({ user, plan }) {
         .delete()
         .eq('id', activity.id)
 
-      setPending(prev => prev.filter(a => a.id !== activity.id))
+      const remaining = pending.filter(a => a.id !== activity.id)
+      setPending(remaining)
 
-      setMessage({
-        type: 'success',
-        text: running
-          ? '✅ Lauf übernommen!'
-          : `✅ ${activityMeta(activity).label} übernommen!`,
-      })
+      if (remaining.length > 0) {
+        setMessage({
+          type: 'success',
+          text: running
+            ? `✅ Lauf übernommen. Noch ${remaining.length} ${
+                remaining.length === 1
+                  ? 'Aktivität ist'
+                  : 'Aktivitäten sind'
+              } offen.`
+            : `✅ ${activityMeta(activity).label} übernommen. Noch ${
+                remaining.length
+              } ${
+                remaining.length === 1
+                  ? 'Aktivität ist'
+                  : 'Aktivitäten sind'
+              } offen.`,
+        })
+        setAssigning(null)
+      } else {
+        setMessage({
+          type: 'success',
+          text: '✅ Alle offenen Aktivitäten wurden übernommen.',
+        })
+        setAssigning(null)
 
-      setTimeout(() => window.location.reload(), 700)
+        setTimeout(() => {
+          onOpenActivities?.()
+        }, 650)
+      }
     } catch (e) {
       console.error('Aktivität übernehmen fehlgeschlagen:', e)
       setMessage({
@@ -516,6 +615,12 @@ const discardActivity = async (activity) => {
         {
           user_id: user.id,
           polar_exercise_id: String(activity.polar_exercise_id),
+          sport_type: activity.sport_type || 'running',
+          activity_name:
+            activity.activity_name || activityMeta(activity).label,
+          activity_date: activity.datum || null,
+          distance_text: activity.distanz || null,
+          activity_data: activity,
         },
         {
           onConflict: 'user_id,polar_exercise_id',
@@ -537,15 +642,16 @@ const discardActivity = async (activity) => {
     }
 
     setPending(prev => prev.filter(a => a.id !== activity.id))
+    setIgnoredCount(prev => prev + 1)
     setMessage({
       type: 'success',
-      text: 'Aktivität wurde dauerhaft verworfen.',
+      text: 'Aktivität wurde nicht übernommen.',
     })
   } catch (error) {
-    console.error('Polar-Aktivität konnte nicht verworfen werden:', error)
+    console.error('Polar-Aktivität konnte nicht nicht übernommen werden:', error)
     setMessage({
       type: 'error',
-      text: 'Die Aktivität konnte nicht dauerhaft verworfen werden.',
+      text: 'Die Aktivität konnte nicht nicht übernommen werden.',
     })
   }
 }
@@ -663,6 +769,18 @@ const discardActivity = async (activity) => {
 
   return (
     <div>
+      {showIgnoredActivities && (
+        <IgnoredActivities
+          user={user}
+          onClose={() => setShowIgnoredActivities(false)}
+          onReleased={async () => {
+            await loadIgnoredCount()
+            await handleSync({ quiet: true })
+            await loadPending()
+          }}
+        />
+      )}
+
       {showMultisportMigration && (
         <div
           style={{
@@ -1101,7 +1219,7 @@ const discardActivity = async (activity) => {
                     onClick={() => discardActivity(a)}
                     style={{ padding: '10px 14px', borderRadius: 10, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}
                   >
-                    Verwerfen
+                    Nicht übernehmen
                   </button>
 
                   <button
@@ -1154,6 +1272,89 @@ const discardActivity = async (activity) => {
 
       {false && connected && (
         <div style={{ marginBottom: 16 }}>
+          {ignoredCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowIgnoredActivities(true)}
+              style={{
+                width: '100%',
+                marginTop: 12,
+                padding: '12px 14px',
+                borderRadius: 13,
+                border: '1.5px solid #F0E8E0',
+                background: 'white',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+                cursor: 'pointer',
+                fontFamily: 'sans-serif',
+                textAlign: 'left',
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: '#5C3D2E',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  Nicht übernommene Polar-Aktivitäten
+                </div>
+                <div
+                  style={{
+                    fontSize: 10,
+                    color: '#B8A090',
+                    marginTop: 3,
+                  }}
+                >
+                  {ignoredCount}{' '}
+                  {ignoredCount === 1 ? 'Aktivität' : 'Aktivitäten'}
+                </div>
+              </div>
+
+              <span style={{ color: '#C4A882', fontSize: 18 }}>›</span>
+            </button>
+          )}
+
+          {syncSummary && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: '11px 12px',
+                borderRadius: 12,
+                background: '#F0FAF4',
+                border: '1px solid #B8E4CC',
+                color: '#5BA88A',
+                fontSize: 11,
+                lineHeight: 1.5,
+                fontFamily: 'sans-serif',
+              }}
+            >
+              <div style={{ fontWeight: 'bold', marginBottom: 4 }}>
+                Synchronisation abgeschlossen
+              </div>
+              {syncSummary.count > 0
+                ? Object.entries(syncSummary.groups).map(([type, count]) => (
+                    <div key={type}>
+                      {activityMeta({ sport_type: type }).icon}{' '}
+                      {count} {activityMeta({ sport_type: type }).label}
+                      {count !== 1 ? 'en' : ''}
+                    </div>
+                  ))
+                : 'Keine neuen Aktivitäten gefunden.'}
+              {syncSummary.updatedCount > 0 && (
+                <div style={{ marginTop: 4 }}>
+                  🔄 {syncSummary.updatedCount}{' '}
+                  {syncSummary.updatedCount === 1
+                    ? 'bestehende Aktivität aktualisiert'
+                    : 'bestehende Aktivitäten aktualisiert'}
+                </div>
+              )}
+            </div>
+          )}
+
           {!showHistory ? (
             <button onClick={loadHistory}
               style={{ width: '100%', padding: '10px', borderRadius: 12, border: '1.5px solid #F0E0D0', background: 'white', color: '#8B7355', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>

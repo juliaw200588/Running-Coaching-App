@@ -447,7 +447,13 @@ function App() {
             : <Onboarding onPlanGenerated={handlePlanGenerated} />
         )}
         {activeTab === 'activities' && <Laeufe user={user} plan={plan} />}
-        {activeTab === 'profile' && <Profile user={user} plan={plan} />}
+        {activeTab === 'profile' && (
+          <Profile
+            user={user}
+            plan={plan}
+            onOpenActivities={() => setActiveTab('activities')}
+          />
+        )}
       </div>
 
       <BottomNav activeTab={activeTab} onChange={setActiveTab} />
