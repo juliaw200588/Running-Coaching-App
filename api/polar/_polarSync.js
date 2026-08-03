@@ -1464,6 +1464,45 @@ export async function fetchAndPersistPolarActivitiesV4(userId) {
     loadTrainingSessions(token),
   ])
 
+  console.log(
+  '[Polar V4] SESSION-DIAGNOSE:',
+  collectExercises(sessions).map(({ session, exercise }) => {
+    const sportName = resolveSportName(
+      sportsMap,
+      session,
+      exercise
+    )
+
+    const startTime = firstDefined(
+      exercise?.startTime,
+      session?.startTime
+    )
+
+    return {
+      exerciseId:
+        exercise?.identifier?.id ||
+        session?.identifier?.id ||
+        null,
+
+      startTime,
+
+      sportName,
+
+      sportType: detectSportType(sportName),
+
+      distanceMeters: firstDefined(
+        exercise?.distanceMeters,
+        session?.distanceMeters
+      ),
+
+      durationMillis: firstDefined(
+        exercise?.durationMillis,
+        session?.durationMillis
+      ),
+    }
+  })
+)
+
   const detailedById = await loadDetailedSupportedExercises(
     token,
     sessions,
