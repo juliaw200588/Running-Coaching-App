@@ -161,6 +161,17 @@ const getTerrainType = split => {
   return 'flat'
 }
 
+const getSteepnessClass = split => {
+  const distanceKm = Math.max(0.1, Number(split.distanceMeters || 0) / 1000)
+  const net = Number(split.ascent || 0) - Number(split.descent || 0)
+  const grade = (net / (distanceKm * 1000)) * 100
+
+  if (grade >= 6) return { key: 'steep', color: '#E56B6F', label: 'steiler Anstieg' }
+  if (grade >= 3) return { key: 'up', color: '#F3A45F', label: 'Anstieg' }
+  if (grade <= -3) return { key: 'down', color: '#71B998', label: 'Abfahrt' }
+  return { key: 'flat', color: '#83C5A7', label: 'flach' }
+}
+
 export default function ElevationPerformanceChart({
   routeWaypoints = [],
   splits = [],
@@ -170,6 +181,7 @@ export default function ElevationPerformanceChart({
   defaultOpen = true,
 }) {
   const [detailsOpen, setDetailsOpen] = useState(defaultOpen)
+  const [activeSplitIndex, setActiveSplitIndex] = useState(null)
 
   const profile = useMemo(
     () => downsample(buildProfile(routeWaypoints)),
@@ -208,6 +220,47 @@ export default function ElevationPerformanceChart({
       innerHeight -
       ((point.altitude - minAltitude) / altitudeRange) * innerHeight,
   }))
+
+  const highestProfilePoint =
+    profile.length > 0
+      ? profile.reduce((best, point) =>
+          point.altitude > best.altitude ? point : best
+        )
+      : null
+
+  const lowestProfilePoint =
+    profile.length > 0
+      ? profile.reduce((best, point) =>
+          point.altitude < best.altitude ? point : best
+        )
+      : null
+
+  const getProfilePointPosition = point => {
+    if (!point) return null
+
+    return {
+      x: padding.left + (point.distance / distanceRange) * innerWidth,
+      y:
+        padding.top +
+        innerHeight -
+        ((point.altitude - minAltitude) / altitudeRange) * innerHeight,
+    }
+  }
+
+  const highestPosition = getProfilePointPosition(highestProfilePoint)
+  const lowestPosition = getProfilePointPosition(lowestProfilePoint)
+
+  const activeSplit =
+    activeSplitIndex == null
+      ? null
+      : splitMetrics.find(split => split.index === activeSplitIndex)
+
+  const activeSplitStartKm = activeSplit
+    ? Math.max(0, Number(activeSplit.index) - 1)
+    : null
+  const activeSplitEndKm = activeSplit
+    ? Math.min(distanceRange, Number(activeSplit.index))
+    : null
 
   const linePath = scaled
     .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
@@ -253,6 +306,20 @@ export default function ElevationPerformanceChart({
     sportType === 'running' || sportType === 'hiking'
       ? averageFor(terrainGroups.down, 'paceSeconds')
       : averageFor(terrainGroups.down, 'speed')
+
+  const strongestClimb = [...splitMetrics]
+    .filter(split => split.ascent - split.descent > 0)
+    .sort(
+      (a, b) =>
+        b.ascent - b.descent - (a.ascent - a.descent)
+    )[0]
+
+  const strongestDescent = [...splitMetrics]
+    .filter(split => split.descent - split.ascent > 0)
+    .sort(
+      (a, b) =>
+        b.descent - b.ascent - (a.descent - a.ascent)
+    )[0]
 
   const insight =
     uphillAverage && downhillAverage
@@ -302,24 +369,63 @@ export default function ElevationPerformanceChart({
             style={{
               display: 'flex',
               flexWrap: 'wrap',
-              gap: '4px 12px',
-              marginTop: 5,
-              color: '#8B6B5A',
+              gap: 6,
+              marginTop: 7,
               fontSize: 10,
               lineHeight: 1.4,
             }}
           >
             {elevationGain != null && (
-              <span>↗️ {Math.round(Number(elevationGain))} hm</span>
+              <span
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: 99,
+                  background: '#F0FAF4',
+                  color: '#3D8B6E',
+                  fontWeight: 'bold',
+                }}
+              >
+                ↗️ {Math.round(Number(elevationGain))} hm
+              </span>
             )}
             {elevationLoss != null && (
-              <span>↘️ {Math.round(Number(elevationLoss))} hm</span>
+              <span
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: 99,
+                  background: '#EEF7FC',
+                  color: '#497EAA',
+                  fontWeight: 'bold',
+                }}
+              >
+                ↘️ {Math.round(Number(elevationLoss))} hm
+              </span>
             )}
             {maxAltitude !== null && (
-              <span>Höchster Punkt {Math.round(maxAltitude)} m</span>
+              <span
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: 99,
+                  background: '#FFF6E8',
+                  color: '#A07830',
+                  fontWeight: 'bold',
+                }}
+              >
+                🔺 {Math.round(maxAltitude)} m
+              </span>
             )}
             {minAltitude !== null && (
-              <span>Niedrigster Punkt {Math.round(minAltitude)} m</span>
+              <span
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: 99,
+                  background: '#F7F2FF',
+                  color: '#7A63A6',
+                  fontWeight: 'bold',
+                }}
+              >
+                🔻 {Math.round(minAltitude)} m
+              </span>
             )}
           </div>
         </div>
@@ -342,6 +448,18 @@ export default function ElevationPerformanceChart({
           {detailsOpen ? 'Weniger' : 'Mehr'}
         </button>
       </div>
+
+      {profile.length >= 2 && minAltitude !== null && maxAltitude !== null && (
+        <div
+          style={{
+            fontSize: 9,
+            color: '#B8A090',
+            marginBottom: 5,
+          }}
+        >
+          Maßstab {Math.round(minAltitude)}–{Math.round(maxAltitude)} m
+        </div>
+      )}
 
       {profile.length >= 2 && (
         <div style={{ overflowX: 'hidden' }}>
@@ -387,6 +505,25 @@ export default function ElevationPerformanceChart({
               )
             })}
 
+            {activeSplit && (
+              <rect
+                x={
+                  padding.left +
+                  (activeSplitStartKm / distanceRange) * innerWidth
+                }
+                y={padding.top}
+                width={Math.max(
+                  3,
+                  ((activeSplitEndKm - activeSplitStartKm) / distanceRange) *
+                    innerWidth
+                )}
+                height={innerHeight}
+                fill="#FF8C69"
+                opacity="0.10"
+                rx="3"
+              />
+            )}
+
             <path d={areaPath} fill="url(#elevationFill)" />
             <path
               d={linePath}
@@ -396,6 +533,60 @@ export default function ElevationPerformanceChart({
               strokeLinejoin="round"
               strokeLinecap="round"
             />
+
+            {highestPosition && (
+              <g>
+                <line
+                  x1={highestPosition.x}
+                  x2={highestPosition.x}
+                  y1={highestPosition.y - 24}
+                  y2={highestPosition.y - 4}
+                  stroke="#E56B6F"
+                  strokeWidth="1.5"
+                />
+                <circle
+                  cx={highestPosition.x}
+                  cy={highestPosition.y}
+                  r="4"
+                  fill="#E56B6F"
+                  stroke="white"
+                  strokeWidth="2"
+                />
+                <text
+                  x={highestPosition.x}
+                  y={Math.max(11, highestPosition.y - 28)}
+                  textAnchor="middle"
+                  fontSize="8"
+                  fontWeight="bold"
+                  fill="#B85464"
+                >
+                  {Math.round(highestProfilePoint.altitude)} m
+                </text>
+              </g>
+            )}
+
+            {lowestPosition && (
+              <g>
+                <circle
+                  cx={lowestPosition.x}
+                  cy={lowestPosition.y}
+                  r="3.5"
+                  fill="#7A63A6"
+                  stroke="white"
+                  strokeWidth="2"
+                />
+                <text
+                  x={lowestPosition.x}
+                  y={Math.min(chartHeight - 31, lowestPosition.y + 15)}
+                  textAnchor="middle"
+                  fontSize="8"
+                  fontWeight="bold"
+                  fill="#7A63A6"
+                >
+                  {Math.round(lowestProfilePoint.altitude)} m
+                </text>
+              </g>
+            )}
 
             {[0, 0.25, 0.5, 0.75, 1].map(ratio => {
               const x = padding.left + ratio * innerWidth
@@ -455,7 +646,7 @@ export default function ElevationPerformanceChart({
                 marginBottom: 10,
               }}
             >
-              Orange = deutlicher Anstieg · Grün = flach oder bergab
+              Rot = steil · Orange = Anstieg · Grün = flach oder bergab
             </div>
 
             <div
@@ -471,17 +662,14 @@ export default function ElevationPerformanceChart({
             >
               {splitMetrics.map(split => {
                 const terrain = getTerrainType(split)
+                const steepness = getSteepnessClass(split)
                 const normalized =
                   sportType === 'running' || sportType === 'hiking'
                     ? (maxEffort - split.effortValue) / effortRange
                     : (split.effortValue - minEffort) / effortRange
                 const height = 42 + Math.max(0, normalized) * 42
-                const color =
-                  terrain === 'up'
-                    ? '#F3A45F'
-                    : terrain === 'down'
-                      ? '#71B998'
-                      : '#83C5A7'
+                const color = steepness.color
+                const active = activeSplitIndex === split.index
 
                 return (
                   <div
@@ -510,16 +698,32 @@ export default function ElevationPerformanceChart({
                           })}`}
                     </div>
 
-                    <div
-                      title={`+${Math.round(split.ascent)} / -${Math.round(
-                        split.descent
-                      )} hm`}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setActiveSplitIndex(current =>
+                          current === split.index ? null : split.index
+                        )
+                      }
+                      title={`${steepness.label} · +${Math.round(
+                        split.ascent
+                      )} / -${Math.round(split.descent)} hm`}
                       style={{
                         width: '100%',
                         height,
                         borderRadius: '5px 5px 2px 2px',
                         background: color,
                         position: 'relative',
+                        border: active
+                          ? '2px solid #5C3D2E'
+                          : '2px solid transparent',
+                        boxShadow: active
+                          ? '0 0 0 3px rgba(92,61,46,0.10)'
+                          : 'none',
+                        cursor: 'pointer',
+                        padding: 0,
+                        transition: 'transform 0.15s ease',
+                        transform: active ? 'translateY(-3px)' : 'none',
                       }}
                     >
                       {(split.ascent > 0 || split.descent > 0) && (
@@ -539,7 +743,7 @@ export default function ElevationPerformanceChart({
                           +{Math.round(split.ascent)}
                         </div>
                       )}
-                    </div>
+                    </button>
 
                     <div
                       style={{
@@ -554,22 +758,100 @@ export default function ElevationPerformanceChart({
                 )
               })}
             </div>
+
+            {activeSplit && (
+              <div
+                style={{
+                  marginTop: 9,
+                  padding: '9px 10px',
+                  borderRadius: 11,
+                  background: '#FFF8F5',
+                  border: '1px solid #F0E0D0',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  alignItems: 'center',
+                  fontSize: 10,
+                  color: '#8B6B5A',
+                }}
+              >
+                <div>
+                  <strong style={{ color: '#3D2B1F' }}>
+                    km {activeSplit.index}
+                  </strong>
+                  {' · '}
+                  +{Math.round(activeSplit.ascent)} / -
+                  {Math.round(activeSplit.descent)} hm
+                </div>
+
+                <div style={{ fontWeight: 'bold', color: '#3D2B1F' }}>
+                  {sportType === 'running' || sportType === 'hiking'
+                    ? formatPace(activeSplit.paceSeconds)
+                    : `${activeSplit.speed.toLocaleString('de-DE', {
+                        maximumFractionDigits: 1,
+                      })} km/h`}
+                </div>
+              </div>
+            )}
           </div>
 
-          {insight && (
+          {(insight || strongestClimb || strongestDescent) && (
             <div
               style={{
                 marginTop: 10,
-                padding: '10px 11px',
-                borderRadius: 12,
-                background: '#F0FAF4',
-                border: '1px solid #B8E4CC',
-                color: '#3D8B6E',
-                fontSize: 10,
-                lineHeight: 1.5,
+                display: 'grid',
+                gap: 7,
               }}
             >
-              💡 {insight}
+              {strongestClimb && (
+                <div
+                  style={{
+                    padding: '9px 10px',
+                    borderRadius: 11,
+                    background: '#FFF6E8',
+                    border: '1px solid #F3D2A5',
+                    color: '#A07830',
+                    fontSize: 10,
+                    lineHeight: 1.45,
+                  }}
+                >
+                  ⛰️ Stärkster Anstieg bei km {strongestClimb.index}: +
+                  {Math.round(strongestClimb.ascent)} hm
+                </div>
+              )}
+
+              {strongestDescent && (
+                <div
+                  style={{
+                    padding: '9px 10px',
+                    borderRadius: 11,
+                    background: '#EEF7FC',
+                    border: '1px solid #C9E4F4',
+                    color: '#497EAA',
+                    fontSize: 10,
+                    lineHeight: 1.45,
+                  }}
+                >
+                  ↘️ Stärkste Abfahrt bei km {strongestDescent.index}: -
+                  {Math.round(strongestDescent.descent)} hm
+                </div>
+              )}
+
+              {insight && (
+                <div
+                  style={{
+                    padding: '10px 11px',
+                    borderRadius: 12,
+                    background: '#F0FAF4',
+                    border: '1px solid #B8E4CC',
+                    color: '#3D8B6E',
+                    fontSize: 10,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  💡 {insight}
+                </div>
+              )}
             </div>
           )}
         </>
