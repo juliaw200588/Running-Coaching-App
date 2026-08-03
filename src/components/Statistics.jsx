@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import Insights from './Insights.jsx'
 
 const SPORT_FILTERS = [
   { key: 'all', label: 'Alle', icon: '✨' },
@@ -142,6 +143,7 @@ export default function Statistics({ user, plan }) {
   const [referenceDate, setReferenceDate] = useState(new Date())
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
+  const [activeAnalyticsView, setActiveAnalyticsView] = useState('statistics')
 
   useEffect(() => {
     if (!user) return
@@ -555,6 +557,60 @@ export default function Statistics({ user, plan }) {
     )
   }
 
+  const analyticsNavigation = (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: 8,
+        marginBottom: 14,
+        padding: 4,
+        background: '#F5EDE8',
+        borderRadius: 14,
+      }}
+    >
+      {[
+        ['statistics', '📊 Statistik'],
+        ['insights', '💡 Insights'],
+      ].map(([key, label]) => {
+        const active = activeAnalyticsView === key
+
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setActiveAnalyticsView(key)}
+            style={{
+              padding: '10px 8px',
+              borderRadius: 11,
+              border: 'none',
+              background: active ? 'white' : 'transparent',
+              color: active ? '#3D2B1F' : '#9A8173',
+              boxShadow: active
+                ? '0 3px 10px rgba(61,43,31,0.08)'
+                : 'none',
+              fontSize: 11,
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              fontFamily: 'sans-serif',
+            }}
+          >
+            {label}
+          </button>
+        )
+      })}
+    </div>
+  )
+
+  if (activeAnalyticsView === 'insights') {
+    return (
+      <div>
+        {analyticsNavigation}
+        <Insights user={user} />
+      </div>
+    )
+  }
+
   const selectedSport = getSportConfig(sportFilter)
   const maxSeriesValue = Math.max(
     1,
@@ -826,6 +882,8 @@ export default function Statistics({ user, plan }) {
 
   return (
     <div>
+      {analyticsNavigation}
+
       <div
         style={{
           display: 'flex',
