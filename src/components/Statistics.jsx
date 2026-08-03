@@ -70,6 +70,25 @@ const parsePace = value => {
   return Number(match[1]) + Number(match[2]) / 60
 }
 
+const getDistanceKm = log =>
+  Number(log?.distance_meters) > 0
+    ? Number(log.distance_meters) / 1000
+    : parseKm(log?.km)
+
+const getDurationSeconds = log => {
+  const direct = Number(log?.moving_time_seconds || log?.duration_seconds)
+  if (Number.isFinite(direct) && direct > 0) return direct
+
+  const distance = getDistanceKm(log)
+  const pace = parsePace(log?.pace)
+
+  if (distance > 0 && pace) {
+    return distance * pace * 60
+  }
+
+  return 0
+}
+
 const formatPace = value => {
   if (!Number.isFinite(value) || value <= 0) return '–'
   const minutes = Math.floor(value)
@@ -79,8 +98,13 @@ const formatPace = value => {
 
 const formatHours = seconds => {
   const value = Number(seconds)
-  if (!Number.isFinite(value) || value <= 0) return '0 h'
-  return `${Math.round((value / 3600) * 10) / 10} h`
+  if (!Number.isFinite(value) || value <= 0) return '0:00 h'
+
+  const totalMinutes = Math.round(value / 60)
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+
+  return `${hours}:${String(minutes).padStart(2, '0')} h`
 }
 
 const formatNumber = value =>
@@ -198,24 +222,14 @@ export default function Statistics({ user, plan }) {
   const stats = useMemo(() => {
     const totalActivities = filteredLogs.length
     const totalKm = filteredLogs.reduce(
-      (sum, log) =>
-        sum +
-        (Number(log.distance_meters) > 0
-          ? Number(log.distance_meters) / 1000
-          : parseKm(log.km)),
+      (sum, log) => sum + getDistanceKm(log),
       0
     )
 
-    const totalSeconds = filteredLogs.reduce((sum, log) => {
-      const duration = Number(log.moving_time_seconds || log.duration_seconds)
-      if (Number.isFinite(duration) && duration > 0) return sum + duration
-
-      const km = parseKm(log.km)
-      const pace = parsePace(log.pace)
-      if (km > 0 && pace) return sum + km * pace * 60
-
-      return sum
-    }, 0)
+    const totalSeconds = filteredLogs.reduce(
+      (sum, log) => sum + getDurationSeconds(log),
+      0
+    )
 
     const elevationGain = filteredLogs.reduce(
       (sum, log) =>
@@ -231,13 +245,30 @@ export default function Statistics({ user, plan }) {
       0
     )
 
-    const heartRates = filteredLogs
-      .map(log => Number.parseInt(log.bpm, 10))
-      .filter(value => Number.isFinite(value) && value > 0)
+    const weightedHeartRate = filteredLogs.reduce(
+      (acc, log) => {
+        const heartRate = Number.parseInt(log.bpm, 10)
+        const duration = getDurationSeconds(log)
 
-    const averageHeartRate = heartRates.length
-      ? heartRates.reduce((sum, value) => sum + value, 0) / heartRates.length
-      : null
+        if (
+          Number.isFinite(heartRate) &&
+          heartRate > 0 &&
+          duration > 0
+        ) {
+          acc.numerator += heartRate * duration
+          acc.denominator += duration
+        }
+
+        return acc
+      },
+      { numerator: 0, denominator: 0 }
+    )
+
+    const averageHeartRate =
+      weightedHeartRate.denominator > 0
+        ? weightedHeartRate.numerator /
+          weightedHeartRate.denominator
+        : null
 
     const sportType = sportFilter === 'all' ? null : sportFilter
     const isRunning = sportType === 'running'
@@ -245,13 +276,29 @@ export default function Statistics({ user, plan }) {
     const isCycling = sportType === 'cycling'
     const isMtb = sportType === 'mountain_biking'
 
-    const paces = filteredLogs
+    const paceLogs = filteredLogs.filter(log => {
+      const pace = parsePace(log.pace)
+      return pace && getDistanceKm(log) > 0
+    })
+
+    const paceDistance = paceLogs.reduce(
+      (sum, log) => sum + getDistanceKm(log),
+      0
+    )
+
+    const paceSeconds = paceLogs.reduce(
+      (sum, log) => sum + getDurationSeconds(log),
+      0
+    )
+
+    const averagePace =
+      paceDistance > 0
+        ? paceSeconds / 60 / paceDistance
+        : null
+
+    const paces = paceLogs
       .map(log => parsePace(log.pace))
       .filter(value => Number.isFinite(value) && value > 0)
-
-    const averagePace = paces.length
-      ? paces.reduce((sum, value) => sum + value, 0) / paces.length
-      : null
 
     const fastestPace = paces.length ? Math.min(...paces) : null
 
@@ -308,19 +355,13 @@ export default function Statistics({ user, plan }) {
 
     const longestDistance = filteredLogs.length
       ? Math.max(
-          ...filteredLogs.map(log =>
-            Number(log.distance_meters) > 0
-              ? Number(log.distance_meters) / 1000
-              : parseKm(log.km)
-          )
+          ...filteredLogs.map(log => getDistanceKm(log))
         )
       : 0
 
     const longestDuration = filteredLogs.length
       ? Math.max(
-          ...filteredLogs.map(log =>
-            Number(log.moving_time_seconds || log.duration_seconds) || 0
-          )
+          ...filteredLogs.map(log => getDurationSeconds(log))
         )
       : 0
 
@@ -335,10 +376,7 @@ export default function Statistics({ user, plan }) {
       : 0
 
     const highestHmPer10Km = filteredLogs.reduce((best, log) => {
-      const distance =
-        Number(log.distance_meters) > 0
-          ? Number(log.distance_meters) / 1000
-          : parseKm(log.km)
+      const distance = getDistanceKm(log)
 
       const gain =
         Number(log.elevation_gain) ||
@@ -364,13 +402,9 @@ export default function Statistics({ user, plan }) {
         }
 
         acc[key].count += 1
-        acc[key].km +=
-          Number(log.distance_meters) > 0
-            ? Number(log.distance_meters) / 1000
-            : parseKm(log.km)
+        acc[key].km += getDistanceKm(log)
 
-        acc[key].seconds +=
-          Number(log.moving_time_seconds || log.duration_seconds) || 0
+        acc[key].seconds += getDurationSeconds(log)
 
         acc[key].elevation +=
           Number(log.elevation_gain) ||
@@ -412,12 +446,8 @@ export default function Statistics({ user, plan }) {
 
       const item = timeSeriesMap.get(key)
       item.count += 1
-      item.km +=
-        Number(log.distance_meters) > 0
-          ? Number(log.distance_meters) / 1000
-          : parseKm(log.km)
-      item.seconds +=
-        Number(log.moving_time_seconds || log.duration_seconds) || 0
+      item.km += getDistanceKm(log)
+      item.seconds += getDurationSeconds(log)
       item.elevation +=
         Number(log.elevation_gain) ||
         Number(log.hoehenmeter) ||
@@ -431,6 +461,10 @@ export default function Statistics({ user, plan }) {
     let maxSerie = 0
     let currentSerie = 0
 
+    const allRunningLogs = logs.filter(
+      log => (log.sport_type || 'running') === 'running'
+    )
+
     if (isRunning && plan?.phases) {
       for (const phase of plan.phases) {
         for (const week of phase.weeks || []) {
@@ -438,7 +472,7 @@ export default function Statistics({ user, plan }) {
 
           const completed = requiredDays.filter((day, index) => {
             const key = `${phase.id}_w${week.n}_d${index}`
-            return filteredLogs.some(log => log.day_key === key)
+            return allRunningLogs.some(log => log.day_key === key)
           })
 
           if (
@@ -478,7 +512,7 @@ export default function Statistics({ user, plan }) {
       isCycling,
       isMtb,
     }
-  }, [filteredLogs, sportFilter, period, plan])
+  }, [filteredLogs, sportFilter, period, plan, logs])
 
   const periodLabel = useMemo(() => {
     if (period === 'month') {
@@ -525,9 +559,11 @@ export default function Statistics({ user, plan }) {
   const maxSeriesValue = Math.max(
     1,
     ...stats.timeSeries.map(item =>
-      sportFilter === 'mountain_biking'
-        ? item.elevation
-        : item.km
+      period === 'year' && sportFilter === 'all'
+        ? item.count
+        : sportFilter === 'mountain_biking'
+          ? item.elevation
+          : item.km
     )
   )
 
@@ -591,10 +627,12 @@ export default function Statistics({ user, plan }) {
                 sub: 'unterwegs',
               },
               {
-                label: 'Ø Geschwindigkeit',
-                value: stats.averageSpeed
-                  ? `${formatNumber(stats.averageSpeed)} km/h`
-                  : '–',
+                label: 'Ø Pace',
+                value: stats.averagePace
+                  ? `${formatPace(stats.averagePace)} min/km`
+                  : stats.averageSpeed
+                    ? `${formatNumber(stats.averageSpeed)} km/h`
+                    : '–',
                 sub: 'Durchschnitt',
               },
               {
@@ -1199,10 +1237,16 @@ export default function Statistics({ user, plan }) {
                 }}
               >
                 {period === 'year'
-                  ? 'Aktivitäten pro Monat'
-                  : sportFilter === 'mountain_biking'
-                    ? 'Höhenmeter pro Woche'
-                    : 'Kilometer pro Woche'}
+                  ? sportFilter === 'all'
+                    ? 'Aktivitäten pro Monat'
+                    : sportFilter === 'mountain_biking'
+                      ? 'Höhenmeter pro Monat'
+                      : 'Kilometer pro Monat'
+                  : sportFilter === 'all'
+                    ? 'Gesamtstrecke pro Woche'
+                    : sportFilter === 'mountain_biking'
+                      ? 'Höhenmeter pro Woche'
+                      : 'Kilometer pro Woche'}
               </div>
 
               <div
@@ -1215,9 +1259,11 @@ export default function Statistics({ user, plan }) {
               >
                 {stats.timeSeries.map((item, index) => {
                   const value =
-                    sportFilter === 'mountain_biking'
-                      ? item.elevation
-                      : item.km
+                    period === 'year' && sportFilter === 'all'
+                      ? item.count
+                      : sportFilter === 'mountain_biking'
+                        ? item.elevation
+                        : item.km
 
                   const label =
                     period === 'year'
