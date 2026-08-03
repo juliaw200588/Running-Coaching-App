@@ -84,6 +84,12 @@ const monthKey = date =>
 
 const normalizeSport = type => (type === 'walking' ? 'hiking' : type || 'running')
 
+const INSIGHT_SECTIONS = [
+  { key: 'development', label: '📈 Entwicklung' },
+  { key: 'records', label: '🏅 Bestleistungen' },
+  { key: 'habits', label: '🔥 Gewohnheiten' },
+]
+
 const InsightCard = ({ insight }) => {
   const meta = getMeta(insight.sportType)
 
@@ -238,11 +244,12 @@ export default function Insights({ user }) {
       })
 
       result.push({
+        category: 'habits',
         sportType: 'all',
         icon: '📅',
         title: 'Aktivster Monat',
         value: label,
-        description: `${values.count} Aktivitäten, ${formatKm(values.km)} und ${formatHours(values.seconds)} Trainingszeit.`,
+        description: `In diesem Monat warst du ${values.count}-mal aktiv und hast dabei ${formatKm(values.km)} sowie ${formatHours(values.seconds)} Trainingszeit gesammelt.`,
       })
     }
 
@@ -260,11 +267,12 @@ export default function Insights({ user }) {
       )
 
       result.push({
+        category: 'habits',
         sportType: 'all',
         icon: '🔥',
         title: 'Dein aktivster Wochentag',
         value: dayName,
-        description: `${favoriteDay[1]} deiner Aktivitäten fanden an diesem Wochentag statt.`,
+        description: `An diesem Wochentag warst du bisher am häufigsten aktiv – insgesamt ${favoriteDay[1]}-mal.`,
       })
     }
 
@@ -277,11 +285,12 @@ export default function Insights({ user }) {
     if (favoriteSport) {
       const meta = getMeta(favoriteSport[0])
       result.push({
+        category: 'habits',
         sportType: favoriteSport[0],
         icon: '💚',
         title: 'Häufigste Sportart',
         value: meta.label,
-        description: `${favoriteSport[1]} Aktivitäten im ausgewerteten Zeitraum.`,
+        description: `Diese Sportart hast du im ausgewerteten Zeitraum mit ${favoriteSport[1]} Aktivitäten am häufigsten ausgeübt.`,
       })
     }
 
@@ -291,11 +300,12 @@ export default function Insights({ user }) {
 
       const longest = [...items].sort((a, b) => b.kmValue - a.kmValue)[0]
       result.push({
+        category: 'records',
         sportType: type,
         icon: '🏅',
         title,
         value: formatKm(longest.kmValue),
-        description: `Am ${longest.date.toLocaleDateString('de-DE')} – ${formatHours(longest.secondsValue)} unterwegs${longest.elevationValue ? ` und ${formatHm(longest.elevationValue)} Aufstieg` : ''}.`,
+        description: `Deine bisher längste Einheit dieser Sportart: ${formatHours(longest.secondsValue)} unterwegs${longest.elevationValue ? ` und dabei ${formatHm(longest.elevationValue)} Aufstieg gesammelt` : ''}.`,
       })
     }
 
@@ -312,11 +322,12 @@ export default function Insights({ user }) {
 
       if (highest.elevationValue > 0) {
         result.push({
+          category: 'records',
           sportType: 'mountain_biking',
           icon: '⛰️',
           title: 'Höhenmeterreichste MTB-Tour',
           value: formatHm(highest.elevationValue),
-          description: `${formatKm(highest.kmValue)} am ${highest.date.toLocaleDateString('de-DE')}.`,
+          description: `Auf dieser ${formatKm(highest.kmValue)} langen Tour hast du bisher die meisten Höhenmeter überwunden.`,
         })
       }
     }
@@ -329,13 +340,14 @@ export default function Insights({ user }) {
 
       if (fastest) {
         result.push({
+          category: 'records',
           sportType: 'cycling',
           icon: '⚡',
           title: 'Schnellste Radtour',
           value: `${fastest.speedValue.toLocaleString('de-DE', {
             maximumFractionDigits: 1,
           })} km/h`,
-          description: `${formatKm(fastest.kmValue)} am ${fastest.date.toLocaleDateString('de-DE')}.`,
+          description: `Durchschnittsgeschwindigkeit deiner bisher schnellsten Radtour über ${formatKm(fastest.kmValue)}.`,
         })
       }
     }
@@ -370,11 +382,12 @@ export default function Insights({ user }) {
         const improvement = oldPace - newPace
 
         result.push({
+          category: 'development',
           sportType: 'running',
           icon: '📈',
           title: 'Pace verbessert',
           value: `${Math.round(improvement)} Sek./km`,
-          description: `Deine neueren Läufe waren im gewichteten Durchschnitt schneller (${formatPace(newPace)} statt ${formatPace(oldPace)}).`,
+          description: `Deine durchschnittliche Pace hat sich verbessert: von ${formatPace(oldPace)} auf ${formatPace(newPace)}.`,
         })
       }
     }
@@ -399,11 +412,12 @@ export default function Insights({ user }) {
 
     if (bestStreak >= 2) {
       result.push({
+        category: 'habits',
         sportType: 'all',
         icon: '🔥',
         title: 'Längste Aktivitätsserie',
         value: `${bestStreak} Tage`,
-        description: 'An so vielen aufeinanderfolgenden Tagen warst du aktiv.',
+        description: `So viele Tage in Folge warst du aktiv – deine bisher längste zusammenhängende Serie.`,
       })
     }
 
@@ -466,22 +480,6 @@ export default function Insights({ user }) {
         })}
       </div>
 
-      <div
-        style={{
-          padding: '12px 13px',
-          borderRadius: 14,
-          background: '#FFF8F0',
-          border: '1px solid #FFE0CC',
-          color: '#8B6B5A',
-          fontSize: 11,
-          lineHeight: 1.5,
-          fontFamily: 'sans-serif',
-          marginBottom: 12,
-        }}
-      >
-        💡 Insights werden automatisch aus deinen vorhandenen Aktivitäten berechnet. Dafür entstehen keine API-Kosten.
-      </div>
-
       {visibleInsights.length === 0 ? (
         <div
           style={{
@@ -500,13 +498,39 @@ export default function Insights({ user }) {
           </div>
         </div>
       ) : (
-        <div style={{ display: 'grid', gap: 10 }}>
-          {visibleInsights.map((insight, index) => (
-            <InsightCard
-              key={`${insight.sportType}-${insight.title}-${index}`}
-              insight={insight}
-            />
-          ))}
+        <div style={{ display: 'grid', gap: 16 }}>
+          {INSIGHT_SECTIONS.map(section => {
+            const sectionInsights = visibleInsights.filter(
+              insight => insight.category === section.key
+            )
+
+            if (sectionInsights.length === 0) return null
+
+            return (
+              <section key={section.key}>
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 'bold',
+                    color: '#5C3D2E',
+                    marginBottom: 8,
+                    fontFamily: 'sans-serif',
+                  }}
+                >
+                  {section.label}
+                </div>
+
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {sectionInsights.map((insight, index) => (
+                    <InsightCard
+                      key={`${insight.sportType}-${insight.title}-${index}`}
+                      insight={insight}
+                    />
+                  ))}
+                </div>
+              </section>
+            )
+          })}
         </div>
       )}
     </div>
