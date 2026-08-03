@@ -5,6 +5,7 @@ import MetricDashboard from './MetricDashboard.jsx'
 import PhaseTimeline from './PhaseTimeline.jsx'
 import PhaseCards from './PhaseCards.jsx'
 import SplitAccordion from './SplitAccordion.jsx'
+import ElevationPerformanceChart from './ElevationPerformanceChart.jsx'
 import StoryShareModal from './StoryShareModal.jsx'
 
 const TAG_OFFSET = { Mo: 0, Di: 1, Mi: 2, Do: 3, Fr: 4, Sa: 5, So: 6 }
@@ -1011,6 +1012,15 @@ if (run.status === 'pending') {
                     shoe={shoeName}
                   />
 
+                  <ElevationPerformanceChart
+                    routeWaypoints={d.routeWaypoints}
+                    splits={d.kmSplits}
+                    sportType={d.sportType}
+                    elevationGain={d.elevationGain ?? d.hoehenmeter}
+                    elevationLoss={d.elevationLoss}
+                    defaultOpen={false}
+                  />
+
                   <PhaseTimeline phases={d.runSegments} />
 
                   <PhaseCards phases={d.runSegments} />
@@ -1023,6 +1033,20 @@ if (run.status === 'pending') {
               ) : (
                 <>
                   <MultisportDashboard activity={d} />
+
+                  <ElevationPerformanceChart
+                    routeWaypoints={d.routeWaypoints}
+                    splits={d.kmSplits}
+                    sportType={d.sportType}
+                    elevationGain={d.elevationGain ?? d.hoehenmeter}
+                    elevationLoss={d.elevationLoss}
+                    defaultOpen={
+                      d.sportType === 'mountain_biking' ||
+                      d.sportType === 'hiking' ||
+                      d.sportType === 'walking' ||
+                      d.sportType === 'cycling'
+                    }
+                  />
 
                   {Array.isArray(d.kmSplits) && d.kmSplits.length > 0 && (
                     <SplitAccordion
