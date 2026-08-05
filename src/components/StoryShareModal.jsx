@@ -467,7 +467,6 @@ export default function StoryShareModal({
   const [showCalories, setShowCalories] = useState(true)
   const [showElevation, setShowElevation] = useState(true)
   const [showElevationProfile, setShowElevationProfile] = useState(true)
-  const [showLogo, setShowLogo] = useState(true)
   const [showHighlight, setShowHighlight] = useState(true)
   const [highlightData, setHighlightData] = useState(null)
   const [highlightLoading, setHighlightLoading] = useState(false)
@@ -521,7 +520,6 @@ export default function StoryShareModal({
     )
     setShowCalories(true)
     setShowHeartRate(true)
-    setShowLogo(true)
     setShowHighlight(true)
     setShowElevation(!isRunning || Number(elevationGain) >= 100)
     setShowElevationProfile(
@@ -1027,11 +1025,11 @@ export default function StoryShareModal({
         : 0.92
 
   const routeDisplayWidth = onlyRoute
-    ? '92%'
+    ? '88%'
     : layout.routeWidth
 
   const routeDisplayLeft = onlyRoute
-    ? '4%'
+    ? '6%'
     : layout.routeLeft
 
   const routeDisplayHeight = onlyRoute
@@ -1222,7 +1220,6 @@ export default function StoryShareModal({
             <Toggle checked={showTimeline} onChange={setShowTimeline} label="Phasen" />
             <Toggle checked={showHeartRate} onChange={setShowHeartRate} label="Herzfrequenz" />
             <Toggle checked={showCalories} onChange={setShowCalories} label="Kalorien" />
-            <Toggle checked={showLogo} onChange={setShowLogo} label="Logo" />
 
             {(effectiveElevation || isElevationSport) && (
               <Toggle checked={showElevation} onChange={setShowElevation} label="Höhenmeter" />
@@ -1298,7 +1295,6 @@ export default function StoryShareModal({
             position: 'relative',
           }}
         >
-          {showLogo && !isRouteOnly && (
             <div
               style={{
                 display: 'flex',
@@ -1325,21 +1321,10 @@ export default function StoryShareModal({
               <div>
                 <div
                   style={{
-                    fontSize: layout.highlightSize,
-                    fontFamily: 'sans-serif',
-                    color: secondaryText,
-                    letterSpacing: 1,
-                  }}
-                >
-                  DEIN TRAININGSWEG
-                </div>
-
-                <div
-                  style={{
                     fontSize: 11,
                     fontFamily: 'sans-serif',
                     color: secondaryText,
-                    marginTop: 2,
+                    marginTop: 0,
                   }}
                 >
                   {date || 'Aktivität'}
@@ -1360,7 +1345,6 @@ export default function StoryShareModal({
                 )}
               </div>
             </div>
-          )}
 
           {!isRouteOnly && (
             <div
@@ -1382,7 +1366,8 @@ export default function StoryShareModal({
 
           {showMap && routeOverlay && (isPremium || isRouteOnly) && (
             <svg
-              viewBox={`0 0 ${routeOverlay.width} ${routeOverlay.height}`}
+              viewBox={`-45 -45 ${routeOverlay.width + 90} ${routeOverlay.height + 90}`}
+              preserveAspectRatio="xMidYMid meet"
               style={{
                 width: routeDisplayWidth,
                 height: routeDisplayHeight,
@@ -1393,6 +1378,7 @@ export default function StoryShareModal({
                 marginBottom: onlyRoute ? 0 : layout.blockGap,
                 zIndex: 2,
                 overflow: 'visible',
+                contain: 'none',
                 filter: hasPhoto
                   ? 'drop-shadow(0 4px 10px rgba(0,0,0,0.34))'
                   : 'drop-shadow(0 4px 10px rgba(255,123,90,0.20))',
