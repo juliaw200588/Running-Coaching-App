@@ -1,10 +1,22 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 
 const TEMPLATES = [
+  { id: 'premium', label: 'Premium Story' },
   { id: 'classic', label: 'Classic' },
   { id: 'interval', label: 'Intervall' },
   { id: 'minimal', label: 'Minimal' },
+  { id: 'route', label: 'Nur Route' },
+  { id: 'square', label: 'Quadrat' },
 ]
+
+const SPORT_META = {
+  running: { icon: '🏃', label: 'Laufen' },
+  hiking: { icon: '🥾', label: 'Wandern' },
+  walking: { icon: '🚶', label: 'Walking' },
+  cycling: { icon: '🚴', label: 'Radfahren' },
+  mountain_biking: { icon: '🚵', label: 'Mountainbike' },
+  swimming: { icon: '🏊', label: 'Schwimmen' },
+}
 
 const classifyPhase = (name = '') => {
   const normalized = String(name).toLowerCase()
@@ -61,7 +73,7 @@ const classifyPhase = (name = '') => {
   }
 }
 
-const shortPhaseLabel = (phase) => {
+const shortPhaseLabel = phase => {
   if (phase?.plannedDistanceMeters != null) {
     const value = Number(phase.plannedDistanceMeters)
     return value >= 1000
@@ -76,7 +88,7 @@ const shortPhaseLabel = (phase) => {
   return '–'
 }
 
-const paceToSeconds = (pace) => {
+const paceToSeconds = pace => {
   const match = String(pace || '').match(/(\d+):(\d{2})/)
   return match ? Number(match[1]) * 60 + Number(match[2]) : null
 }
@@ -96,10 +108,172 @@ const averagePace = (phases, type) => {
   return `${Math.floor(average / 60)}:${String(average % 60).padStart(2, '0')}/km`
 }
 
+const numberOrNull = value => {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+const getLatitude = point =>
+  numberOrNull(
+    point?.latitude ??
+      point?.lat ??
+      point?.position?.latitude ??
+      point?.position?.lat
+  )
+
+const getLongitude = point =>
+  numberOrNull(
+    point?.longitude ??
+      point?.lon ??
+      point?.lng ??
+      point?.position?.longitude ??
+      point?.position?.lon ??
+      point?.position?.lng
+  )
+
+const getAltitude = point =>
+  numberOrNull(
+    point?.altitude ??
+      point?.altitudeMeters ??
+      point?.elevation ??
+      point?.elevationMeters
+  )
+
+const buildRouteOverlay = routeWaypoints => {
+  const points = (Array.isArray(routeWaypoints) ? routeWaypoints : [])
+    .map(point => ({
+      lat: getLatitude(point),
+      lon: getLongitude(point),
+    }))
+    .filter(point => point.lat !== null && point.lon !== null)
+
+  if (points.length < 2) return null
+
+  const minLat = Math.min(...points.map(point => point.lat))
+  const maxLat = Math.max(...points.map(point => point.lat))
+  const minLon = Math.min(...points.map(point => point.lon))
+  const maxLon = Math.max(...points.map(point => point.lon))
+  const latRange = Math.max(0.00001, maxLat - minLat)
+  const lonRange = Math.max(0.00001, maxLon - minLon)
+  const width = 1000
+  const height = 620
+  const padding = 70
+
+  const scaled = points.map(point => ({
+    x:
+      padding +
+      ((point.lon - minLon) / lonRange) *
+        (width - padding * 2),
+    y:
+      padding +
+      (1 - (point.lat - minLat) / latRange) *
+        (height - padding * 2),
+  }))
+
+  return {
+    width,
+    height,
+    path: scaled
+      .map(
+        (point, index) =>
+          `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`
+      )
+      .join(' '),
+    start: scaled[0],
+    end: scaled[scaled.length - 1],
+  }
+}
+
+const buildElevationProfile = routeWaypoints => {
+  const values = (Array.isArray(routeWaypoints) ? routeWaypoints : [])
+    .map(getAltitude)
+    .filter(value => value !== null)
+
+  if (values.length < 3) return null
+
+  const sampled =
+    values.length <= 100
+      ? values
+      : Array.from({ length: 100 }, (_, index) =>
+          values[Math.round((index / 99) * (values.length - 1))]
+        )
+
+  const min = Math.min(...sampled)
+  const max = Math.max(...sampled)
+  const range = Math.max(1, max - min)
+  const width = 900
+  const height = 130
+  const padding = 8
+
+  const points = sampled.map((altitude, index) => ({
+    x:
+      padding +
+      (index / (sampled.length - 1)) *
+        (width - padding * 2),
+    y:
+      padding +
+      (1 - (altitude - min) / range) *
+        (height - padding * 2),
+  }))
+
+  const line = points
+    .map(
+      (point, index) =>
+        `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`
+    )
+    .join(' ')
+
+  return {
+    width,
+    height,
+    line,
+    area: `${line} L ${points[points.length - 1].x} ${
+      height - padding
+    } L ${points[0].x} ${height - padding} Z`,
+  }
+}
+
+const normalizeCalories = value => {
+  if (value == null || value === '') return null
+  const text = String(value)
+  return /kcal/i.test(text) ? text : `${text} kcal`
+}
+
+const normalizeElevation = value => {
+  if (value == null || value === '') return null
+  const text = String(value)
+  return /hm/i.test(text) ? text : `${text} hm`
+}
+
 const waitForPaint = () =>
   new Promise(resolve => {
     requestAnimationFrame(() => requestAnimationFrame(resolve))
   })
+
+function Toggle({ checked, onChange, label }) {
+  return (
+    <label
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 7,
+        background: '#FFF8F5',
+        border: '1px solid #F0E8E0',
+        borderRadius: 11,
+        padding: '8px 9px',
+        cursor: 'pointer',
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={event => onChange(event.target.checked)}
+        style={{ width: 17, height: 17 }}
+      />
+      <span>{label}</span>
+    </label>
+  )
+}
 
 function StoryTimeline({ phases }) {
   if (!Array.isArray(phases) || phases.length === 0) return null
@@ -174,23 +348,34 @@ export default function StoryShareModal({
   title,
   date,
   routeMapUrl,
+  routeWaypoints = [],
+  sportType = 'running',
   distance,
+  duration,
   pace,
+  speed,
   heartRate,
   calories,
   runningIndex,
   elevation,
+  elevationGain,
   phases = [],
   logoSrc = '/route-icon.png',
 }) {
   const cardRef = useRef(null)
+  const fileInputRef = useRef(null)
 
   const [creating, setCreating] = useState(false)
-  const [template, setTemplate] = useState('classic')
+  const [template, setTemplate] = useState('premium')
   const [showMap, setShowMap] = useState(true)
   const [showTimeline, setShowTimeline] = useState(true)
   const [showHeartRate, setShowHeartRate] = useState(true)
   const [showRunningIndex, setShowRunningIndex] = useState(true)
+  const [showCalories, setShowCalories] = useState(true)
+  const [showElevation, setShowElevation] = useState(true)
+  const [showElevationProfile, setShowElevationProfile] = useState(true)
+  const [showLogo, setShowLogo] = useState(true)
+  const [photoUrl, setPhotoUrl] = useState(null)
   const [exportWithoutMap, setExportWithoutMap] = useState(false)
   const [errorMessage, setErrorMessage] = useState(null)
   const [infoMessage, setInfoMessage] = useState(null)
@@ -205,16 +390,48 @@ export default function StoryShareModal({
     [phases]
   )
 
+  const sport = SPORT_META[sportType] || {
+    icon: '🏅',
+    label: 'Aktivität',
+  }
+
+  const routeOverlay = useMemo(
+    () => buildRouteOverlay(routeWaypoints),
+    [routeWaypoints]
+  )
+
+  const elevationProfile = useMemo(
+    () => buildElevationProfile(routeWaypoints),
+    [routeWaypoints]
+  )
+
+  const isRunning = sportType === 'running'
+  const isElevationSport = [
+    'hiking',
+    'walking',
+    'cycling',
+    'mountain_biking',
+  ].includes(sportType)
+
   useEffect(() => {
     if (!open) return undefined
 
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
 
+    setTemplate('premium')
+    setShowCalories(true)
+    setShowHeartRate(true)
+    setShowLogo(true)
+    setShowElevation(!isRunning || Number(elevationGain) >= 100)
+    setShowElevationProfile(
+      isElevationSport || (isRunning && Number(elevationGain) >= 100)
+    )
+
     return () => {
       document.body.style.overflow = previousOverflow
     }
-  }, [open])
+  }, [open, isRunning, isElevationSport, elevationGain])
 
   useEffect(() => {
     if (!open) {
@@ -224,12 +441,43 @@ export default function StoryShareModal({
     }
   }, [open])
 
+  useEffect(() => {
+    return () => {
+      if (photoUrl) URL.revokeObjectURL(photoUrl)
+    }
+  }, [photoUrl])
+
   if (!open) return null
+
+  const handlePhotoChange = event => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+      setErrorMessage('Bitte wähle eine Bilddatei aus.')
+      return
+    }
+
+    if (photoUrl) URL.revokeObjectURL(photoUrl)
+    setPhotoUrl(URL.createObjectURL(file))
+    setErrorMessage(null)
+  }
+
+  const removePhoto = () => {
+    if (photoUrl) URL.revokeObjectURL(photoUrl)
+    setPhotoUrl(null)
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
 
   const renderCanvas = async () => {
     if (!cardRef.current) {
       throw new Error('Die Aktivitätsvorschau ist noch nicht bereit.')
     }
+
+    await waitForPaint()
 
     const { default: html2canvas } = await import('html2canvas')
 
@@ -248,19 +496,19 @@ export default function StoryShareModal({
     })
   }
 
-  const createBlob = async (canvas) => {
+  const createBlob = async canvas => {
     const blob = await new Promise(resolve =>
       canvas.toBlob(resolve, 'image/png', 0.95)
     )
 
     if (!blob) {
-      throw new Error('Safari konnte die Bilddatei nicht erzeugen.')
+      throw new Error('Die Bilddatei konnte nicht erzeugt werden.')
     }
 
     return blob
   }
 
-  const shareOrDownload = async (blob) => {
+  const shareOrDownload = async blob => {
     const file = new File([blob], 'aktivitaet.png', {
       type: 'image/png',
     })
@@ -312,7 +560,9 @@ export default function StoryShareModal({
           showMap &&
           !exportWithoutMap &&
           Boolean(routeMapUrl) &&
-          template !== 'minimal'
+          template !== 'minimal' &&
+          template !== 'premium' &&
+          template !== 'route'
 
         if (!mapWasVisible) throw firstError
 
@@ -323,7 +573,7 @@ export default function StoryShareModal({
 
         setExportWithoutMap(true)
         setInfoMessage(
-          'Die Karte konnte technisch nicht exportiert werden. Das Bild wird ohne Karte erstellt.'
+          'Die Kartenansicht konnte nicht exportiert werden. Das Bild wird ohne Karte erstellt.'
         )
 
         await waitForPaint()
@@ -335,13 +585,10 @@ export default function StoryShareModal({
     } catch (error) {
       console.error('Aktivitätsbild konnte nicht erstellt werden:', error)
 
-      const detail =
-        error?.message ||
-        error?.name ||
-        'Unbekannter Fehler beim Erstellen des Bildes.'
-
       setErrorMessage(
-        `Das Bild konnte nicht erstellt werden: ${detail}`
+        `Das Bild konnte nicht erstellt werden: ${
+          error?.message || 'Unbekannter Fehler'
+        }`
       )
     } finally {
       setCreating(false)
@@ -357,14 +604,86 @@ export default function StoryShareModal({
     onClose()
   }
 
+  const isPremium = template === 'premium'
   const isMinimal = template === 'minimal'
   const isInterval = template === 'interval'
+  const isRouteOnly = template === 'route'
+  const isSquare = template === 'square'
+  const hasPhoto = Boolean(photoUrl)
 
   const mapVisibleInPreview =
     !isMinimal &&
+    !isPremium &&
+    !isRouteOnly &&
     showMap &&
     routeMapUrl &&
     !exportWithoutMap
+
+  const effectiveElevation =
+    normalizeElevation(elevationGain) ||
+    normalizeElevation(elevation)
+
+  const effectiveCalories = normalizeCalories(calories)
+
+  const metricItems = [
+    distance && ['📍', 'Distanz', distance],
+    duration && ['⏱', 'Dauer', duration],
+    (isRunning ? pace : speed || pace) && [
+      isRunning ? '🏃' : '⚡',
+      isRunning ? 'Pace' : 'Ø Tempo',
+      isRunning ? pace : speed || pace,
+    ],
+    showElevation &&
+      effectiveElevation && [
+        '⛰️',
+        'Aufstieg',
+        effectiveElevation,
+      ],
+    showCalories &&
+      effectiveCalories && [
+        '🔥',
+        'Kalorien',
+        effectiveCalories,
+      ],
+    showHeartRate &&
+      heartRate && ['❤️', 'Ø HF', heartRate],
+  ].filter(Boolean)
+
+  const classicMetrics = [
+    ['📍', 'Distanz', distance],
+    [
+      isRunning ? '⏱' : '⚡',
+      isRunning ? 'Pace' : 'Ø Tempo',
+      isRunning ? pace : speed || pace,
+    ],
+    ...(showHeartRate ? [['❤️', 'Ø HF', heartRate]] : []),
+    ...(showCalories && effectiveCalories
+      ? [['🔥', 'Kalorien', effectiveCalories]]
+      : []),
+  ]
+
+  const cardBackground = hasPhoto
+    ? `linear-gradient(
+        180deg,
+        rgba(20,18,16,0.10) 0%,
+        rgba(20,18,16,0.14) 42%,
+        rgba(20,18,16,0.78) 100%
+      ), url("${photoUrl}") center / cover no-repeat`
+    : isInterval
+      ? 'linear-gradient(165deg, #FFF8F0 0%, #FFF0F2 48%, #F0FAF4 100%)'
+      : 'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 52%, #FFF0F5 100%)'
+
+  const secondaryText = hasPhoto
+    ? 'rgba(255,255,255,0.84)'
+    : '#B08C72'
+
+  const glassBackground = hasPhoto
+    ? 'rgba(20,18,16,0.34)'
+    : 'rgba(255,255,255,0.84)'
+
+  const glassBorder = hasPhoto
+    ? '1px solid rgba(255,255,255,0.25)'
+    : '1px solid #EFE4DB'
 
   return (
     <div
@@ -385,13 +704,7 @@ export default function StoryShareModal({
         scrollPaddingBottom: 110,
       }}
     >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: 620,
-          margin: '0 auto',
-        }}
-      >
+      <div style={{ width: '100%', maxWidth: 620, margin: '0 auto' }}>
         <div
           style={{
             position: 'sticky',
@@ -432,16 +745,23 @@ export default function StoryShareModal({
             Vorlage auswählen
           </div>
 
-          <div style={{ display: 'flex', gap: 7, marginBottom: 11 }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: 7,
+              marginBottom: 11,
+              overflowX: 'auto',
+              scrollbarWidth: 'none',
+            }}
+          >
             {TEMPLATES.map(item => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => setTemplate(item.id)}
                 style={{
-                  flex: 1,
-                  minWidth: 0,
-                  padding: '10px 6px',
+                  flex: '0 0 auto',
+                  padding: '10px 11px',
                   borderRadius: 12,
                   border:
                     template === item.id
@@ -460,6 +780,53 @@ export default function StoryShareModal({
             ))}
           </div>
 
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handlePhotoChange}
+            style={{ display: 'none' }}
+          />
+
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                flex: 1,
+                padding: '10px 11px',
+                borderRadius: 12,
+                border: '1.5px solid #FFD4B0',
+                background: '#FFF5EE',
+                color: '#C17A3A',
+                fontSize: 11,
+                fontWeight: 'bold',
+                cursor: 'pointer',
+              }}
+            >
+              📷 {photoUrl ? 'Foto ändern' : 'Eigenes Foto hinzufügen'}
+            </button>
+
+            {photoUrl && (
+              <button
+                type="button"
+                onClick={removePhoto}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 12,
+                  border: '1px solid #E8D9CF',
+                  background: 'white',
+                  color: '#B8A090',
+                  fontSize: 11,
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                }}
+              >
+                Entfernen
+              </button>
+            )}
+          </div>
+
           <div
             style={{
               display: 'grid',
@@ -470,34 +837,24 @@ export default function StoryShareModal({
               color: '#8B6B5A',
             }}
           >
-            {[
-              ['Karte', showMap, setShowMap],
-              ['Phasen', showTimeline, setShowTimeline],
-              ['Herzfrequenz', showHeartRate, setShowHeartRate],
-              ['Running Index', showRunningIndex, setShowRunningIndex],
-            ].map(([label, checked, setter]) => (
-              <label
-                key={label}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 7,
-                  background: '#FFF8F5',
-                  border: '1px solid #F0E8E0',
-                  borderRadius: 11,
-                  padding: '8px 9px',
-                  cursor: 'pointer',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={event => setter(event.target.checked)}
-                  style={{ width: 17, height: 17 }}
-                />
-                <span>{label}</span>
-              </label>
-            ))}
+            <Toggle checked={showMap} onChange={setShowMap} label="Karte / Route" />
+            <Toggle checked={showTimeline} onChange={setShowTimeline} label="Phasen" />
+            <Toggle checked={showHeartRate} onChange={setShowHeartRate} label="Herzfrequenz" />
+            <Toggle checked={showCalories} onChange={setShowCalories} label="Kalorien" />
+            <Toggle checked={showRunningIndex} onChange={setShowRunningIndex} label="Running Index" />
+            <Toggle checked={showLogo} onChange={setShowLogo} label="Logo" />
+
+            {(effectiveElevation || isElevationSport) && (
+              <Toggle checked={showElevation} onChange={setShowElevation} label="Höhenmeter" />
+            )}
+
+            {elevationProfile && (
+              <Toggle
+                checked={showElevationProfile}
+                onChange={setShowElevationProfile}
+                label="Höhenprofil"
+              />
+            )}
           </div>
         </div>
 
@@ -543,76 +900,137 @@ export default function StoryShareModal({
           style={{
             width: 540,
             maxWidth: '100%',
-            aspectRatio: '9 / 16',
+            aspectRatio: isSquare ? '1 / 1' : '9 / 16',
             margin: '0 auto',
             boxSizing: 'border-box',
-            background: isInterval
-              ? 'linear-gradient(165deg, #FFF8F0 0%, #FFF0F2 48%, #F0FAF4 100%)'
-              : 'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 52%, #FFF0F5 100%)',
-            padding: isMinimal ? '38px 34px 96px' : isInterval ? '30px 28px 104px' : '30px 28px 96px',
-            color: '#3D2B1F',
+            background: cardBackground,
+            padding: isSquare
+              ? '28px'
+              : isMinimal
+                ? '38px 34px 96px'
+                : isInterval
+                  ? '30px 28px 104px'
+                  : '30px 28px 96px',
+            color: hasPhoto ? 'white' : '#3D2B1F',
             fontFamily: "'Georgia', 'Times New Roman', serif",
             overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column',
             minHeight: 0,
+            position: 'relative',
           }}
         >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              marginBottom: isMinimal ? 34 : 16,
-            }}
-          >
-            <img
-              src={logoSrc}
-              alt=""
+          {showLogo && !isRouteOnly && (
+            <div
               style={{
-                width: 58,
-                height: 58,
-                borderRadius: '50%',
-                objectFit: 'cover',
-                boxShadow: '0 8px 20px rgba(255,140,105,0.18)',
-                border: '1px solid rgba(255,255,255,0.9)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                marginBottom: isMinimal ? 34 : 16,
+                position: 'relative',
+                zIndex: 3,
               }}
-            />
-
-            <div>
-              <div
+            >
+              <img
+                src={logoSrc}
+                alt=""
                 style={{
-                  fontSize: 12,
-                  fontFamily: 'sans-serif',
-                  color: '#B08C72',
-                  letterSpacing: 1,
+                  width: 58,
+                  height: 58,
+                  borderRadius: '50%',
+                  objectFit: 'cover',
+                  boxShadow: '0 8px 20px rgba(0,0,0,0.16)',
+                  border: '1px solid rgba(255,255,255,0.9)',
                 }}
-              >
-                DEIN TRAININGSWEG
-              </div>
+              />
 
-              <div
-                style={{
-                  fontSize: 11,
-                  fontFamily: 'sans-serif',
-                  color: '#C4A882',
-                  marginTop: 2,
-                }}
-              >
-                {date || 'Aktivität'}
+              <div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontFamily: 'sans-serif',
+                    color: secondaryText,
+                    letterSpacing: 1,
+                  }}
+                >
+                  DEIN TRAININGSWEG
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontFamily: 'sans-serif',
+                    color: secondaryText,
+                    marginTop: 2,
+                  }}
+                >
+                  {date || 'Aktivität'}
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          <div
-            style={{
-              fontSize: isMinimal ? 34 : 27,
-              fontWeight: 'bold',
-              marginBottom: isMinimal ? 30 : 16,
-            }}
-          >
-            {title || 'Meine Aktivität'}
-          </div>
+          {!isRouteOnly && (
+            <div
+              style={{
+                fontSize: isMinimal ? 34 : 27,
+                fontWeight: 'bold',
+                marginBottom: isMinimal ? 30 : 16,
+                position: 'relative',
+                zIndex: 3,
+                textShadow: hasPhoto
+                  ? '0 2px 12px rgba(0,0,0,0.30)'
+                  : 'none',
+              }}
+            >
+              {sport.icon} {title || sport.label}
+            </div>
+          )}
+
+          {showMap && routeOverlay && (isPremium || isRouteOnly) && (
+            <svg
+              viewBox={`0 0 ${routeOverlay.width} ${routeOverlay.height}`}
+              style={{
+                width: isRouteOnly ? '92%' : '84%',
+                height: isRouteOnly ? '72%' : 300,
+                position: isRouteOnly ? 'absolute' : 'relative',
+                left: isRouteOnly ? '4%' : '8%',
+                top: isRouteOnly ? '12%' : 'auto',
+                marginTop: isRouteOnly ? 0 : 8,
+                zIndex: 2,
+                overflow: 'visible',
+                filter: hasPhoto
+                  ? 'drop-shadow(0 3px 8px rgba(0,0,0,0.45))'
+                  : 'drop-shadow(0 3px 8px rgba(255,123,90,0.18))',
+              }}
+            >
+              <path
+                d={routeOverlay.path}
+                fill="none"
+                stroke={hasPhoto ? '#FFFFFF' : '#FF7B5A'}
+                strokeWidth={isRouteOnly ? 13 : 10}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity={hasPhoto ? 0.94 : 0.9}
+              />
+              <circle
+                cx={routeOverlay.start.x}
+                cy={routeOverlay.start.y}
+                r="14"
+                fill="#5BA88A"
+                stroke="white"
+                strokeWidth="7"
+              />
+              <circle
+                cx={routeOverlay.end.x}
+                cy={routeOverlay.end.y}
+                r="14"
+                fill="#E56B6F"
+                stroke="white"
+                strokeWidth="7"
+              />
+            </svg>
+          )}
 
           {mapVisibleInPreview && (
             <img
@@ -632,203 +1050,314 @@ export default function StoryShareModal({
             />
           )}
 
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: isMinimal
-                ? '1fr'
-                : 'repeat(3, 1fr)',
-              gap: 10,
-              marginBottom: 18,
-            }}
-          >
-            {[
-              ['📍', 'Distanz', distance],
-              ['⏱', 'Pace', pace],
-              ...(showHeartRate
-                ? [['❤️', 'Ø HF', heartRate]]
-                : []),
-              ...(isMinimal && calories
-                ? [['🔥', 'Kalorien', calories]]
-                : []),
-            ].map(([icon, label, value]) => (
-              <div
-                key={label}
-                style={{
-                  background: 'rgba(255,255,255,0.84)',
-                  border: '1px solid #EFE4DB',
-                  borderRadius: 16,
-                  padding: isMinimal ? '19px 14px' : '13px 10px',
-                  textAlign: 'center',
-                  fontFamily: 'sans-serif',
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: isMinimal ? 12 : 10,
-                    color: '#B8A090',
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.7,
-                  }}
-                >
-                  {icon} {label}
-                </div>
-
-                <div
-                  style={{
-                    marginTop: 5,
-                    fontSize: isMinimal ? 30 : 18,
-                    fontWeight: 'bold',
-                  }}
-                >
-                  {value || '–'}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {!isMinimal &&
-            showTimeline &&
-            Array.isArray(phases) &&
-            phases.length > 0 && (
+          {!isRouteOnly && (
+            <>
               <div
                 style={{
-                  background: 'rgba(255,255,255,0.86)',
-                  border: '1px solid #EFE4DB',
-                  borderRadius: 20,
-                  padding: isInterval ? 18 : 15,
+                  display: 'grid',
+                  gridTemplateColumns: isMinimal
+                    ? '1fr'
+                    : 'repeat(2, minmax(0, 1fr))',
+                  gap: 10,
+                  marginTop: isPremium ? 'auto' : 0,
+                  marginBottom: 18,
+                  position: 'relative',
+                  zIndex: 3,
                 }}
               >
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontFamily: 'sans-serif',
-                    fontWeight: 'bold',
-                    color: '#B8A090',
-                    textTransform: 'uppercase',
-                    letterSpacing: 0.8,
-                    marginBottom: 11,
-                  }}
-                >
-                  Phasenübersicht
-                </div>
-
-                <StoryTimeline phases={phases} />
-
-                {isInterval &&
-                  (intervalAverage || recoveryAverage) && (
+                {(isPremium || isSquare || isMinimal
+                  ? metricItems
+                  : classicMetrics
+                )
+                  .filter(([, , value]) => value)
+                  .slice(0, isSquare ? 4 : 6)
+                  .map(([icon, label, value]) => (
                     <div
+                      key={label}
                       style={{
-                        display: 'flex',
-                        gap: 8,
-                        marginTop: 12,
+                        background: glassBackground,
+                        border: glassBorder,
+                        borderRadius: 16,
+                        padding: isMinimal ? '19px 14px' : '13px 10px',
+                        textAlign: 'center',
                         fontFamily: 'sans-serif',
+                        backdropFilter: 'blur(7px)',
+                        WebkitBackdropFilter: 'blur(7px)',
                       }}
                     >
-                      {intervalAverage && (
-                        <div
-                          style={{
-                            flex: 1,
-                            background: '#FFF3F2',
-                            color: '#B85464',
-                            borderRadius: 12,
-                            padding: 9,
-                            textAlign: 'center',
-                            fontSize: 11,
-                            fontWeight: 'bold',
-                          }}
-                        >
-                          🔥 Ø {intervalAverage}
-                        </div>
-                      )}
+                      <div
+                        style={{
+                          fontSize: isMinimal ? 12 : 10,
+                          color: secondaryText,
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.7,
+                        }}
+                      >
+                        {icon} {label}
+                      </div>
 
-                      {recoveryAverage && (
-                        <div
-                          style={{
-                            flex: 1,
-                            background: '#FFF9E8',
-                            color: '#A07830',
-                            borderRadius: 12,
-                            padding: 9,
-                            textAlign: 'center',
-                            fontSize: 11,
-                            fontWeight: 'bold',
-                          }}
-                        >
-                          🌿 Ø {recoveryAverage}
-                        </div>
-                      )}
+                      <div
+                        style={{
+                          marginTop: 5,
+                          fontSize: isMinimal ? 30 : 18,
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        {value || '–'}
+                      </div>
                     </div>
-                  )}
+                  ))}
               </div>
-            )}
 
-          {!isMinimal && (showRunningIndex || elevation) && (
+              {!isMinimal &&
+                !isPremium &&
+                showTimeline &&
+                Array.isArray(phases) &&
+                phases.length > 0 && (
+                  <div
+                    style={{
+                      background: glassBackground,
+                      border: glassBorder,
+                      borderRadius: 20,
+                      padding: isInterval ? 18 : 15,
+                      position: 'relative',
+                      zIndex: 3,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 11,
+                        fontFamily: 'sans-serif',
+                        fontWeight: 'bold',
+                        color: secondaryText,
+                        textTransform: 'uppercase',
+                        letterSpacing: 0.8,
+                        marginBottom: 11,
+                      }}
+                    >
+                      Phasenübersicht
+                    </div>
+
+                    <StoryTimeline phases={phases} />
+
+                    {isInterval &&
+                      (intervalAverage || recoveryAverage) && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            gap: 8,
+                            marginTop: 12,
+                            fontFamily: 'sans-serif',
+                          }}
+                        >
+                          {intervalAverage && (
+                            <div
+                              style={{
+                                flex: 1,
+                                background: '#FFF3F2',
+                                color: '#B85464',
+                                borderRadius: 12,
+                                padding: 9,
+                                textAlign: 'center',
+                                fontSize: 11,
+                                fontWeight: 'bold',
+                              }}
+                            >
+                              🔥 Ø {intervalAverage}
+                            </div>
+                          )}
+
+                          {recoveryAverage && (
+                            <div
+                              style={{
+                                flex: 1,
+                                background: '#FFF9E8',
+                                color: '#A07830',
+                                borderRadius: 12,
+                                padding: 9,
+                                textAlign: 'center',
+                                fontSize: 11,
+                                fontWeight: 'bold',
+                              }}
+                            >
+                              🌿 Ø {recoveryAverage}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                  </div>
+                )}
+
+              {!isMinimal &&
+                !isPremium &&
+                (showRunningIndex || showElevation) && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 8,
+                      marginTop: 12,
+                      fontFamily: 'sans-serif',
+                      position: 'relative',
+                      zIndex: 3,
+                    }}
+                  >
+                    {showRunningIndex && runningIndex && (
+                      <div
+                        style={{
+                          flex: 1,
+                          background: glassBackground,
+                          border: glassBorder,
+                          borderRadius: 12,
+                          padding: 9,
+                          fontSize: 11,
+                          textAlign: 'center',
+                        }}
+                      >
+                        🏃 RI <strong>{runningIndex}</strong>
+                      </div>
+                    )}
+
+                    {showElevation && effectiveElevation && (
+                      <div
+                        style={{
+                          flex: 1,
+                          background: glassBackground,
+                          border: glassBorder,
+                          borderRadius: 12,
+                          padding: 9,
+                          fontSize: 11,
+                          textAlign: 'center',
+                        }}
+                      >
+                        ⛰️ <strong>{effectiveElevation}</strong>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+              {showElevationProfile &&
+                elevationProfile &&
+                !isSquare && (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      padding: '10px 12px 8px',
+                      borderRadius: 15,
+                      background: glassBackground,
+                      border: glassBorder,
+                      position: 'relative',
+                      zIndex: 3,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 9,
+                        fontFamily: 'sans-serif',
+                        color: secondaryText,
+                        textTransform: 'uppercase',
+                        letterSpacing: 0.7,
+                        marginBottom: 4,
+                      }}
+                    >
+                      Höhenprofil
+                    </div>
+
+                    <svg
+                      viewBox={`0 0 ${elevationProfile.width} ${elevationProfile.height}`}
+                      style={{
+                        width: '100%',
+                        height: 72,
+                        display: 'block',
+                      }}
+                    >
+                      <path
+                        d={elevationProfile.area}
+                        fill={
+                          hasPhoto
+                            ? 'rgba(255,255,255,0.16)'
+                            : 'rgba(91,168,138,0.18)'
+                        }
+                      />
+                      <path
+                        d={elevationProfile.line}
+                        fill="none"
+                        stroke={hasPhoto ? '#FFFFFF' : '#5BA88A'}
+                        strokeWidth="8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </div>
+                )}
+            </>
+          )}
+
+          {isRouteOnly && (
             <div
               style={{
+                position: 'absolute',
+                left: 34,
+                right: 34,
+                bottom: 34,
                 display: 'flex',
-                gap: 8,
-                marginTop: 12,
+                justifyContent: 'space-between',
+                alignItems: 'flex-end',
+                zIndex: 3,
                 fontFamily: 'sans-serif',
               }}
             >
-              {showRunningIndex && runningIndex && (
-                <div
-                  style={{
-                    flex: 1,
-                    background: 'rgba(255,255,255,0.76)',
-                    borderRadius: 12,
-                    padding: 9,
-                    fontSize: 11,
-                    textAlign: 'center',
-                  }}
-                >
-                  🏃 RI <strong>{runningIndex}</strong>
+              <div>
+                <div style={{ fontSize: 13, color: secondaryText }}>
+                  {date}
                 </div>
-              )}
-
-              {elevation && (
                 <div
                   style={{
-                    flex: 1,
-                    background: 'rgba(255,255,255,0.76)',
-                    borderRadius: 12,
-                    padding: 9,
-                    fontSize: 11,
-                    textAlign: 'center',
+                    fontSize: 25,
+                    fontWeight: 'bold',
+                    marginTop: 4,
                   }}
                 >
-                  ⛰️ <strong>{elevation}</strong>
+                  {sport.icon} {title || sport.label}
+                </div>
+              </div>
+
+              {distance && (
+                <div style={{ fontSize: 28, fontWeight: 'bold' }}>
+                  {distance}
                 </div>
               )}
             </div>
           )}
 
-          <div
-            style={{
-              marginTop: 'auto',
-              paddingTop: 26,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 7,
-              fontFamily: 'sans-serif',
-              fontSize: 11,
-              color: '#B08C72',
-              letterSpacing: 0.8,
-            }}
-          >
-            <img
-              src={logoSrc}
-              alt=""
+          {showLogo && !isRouteOnly && (
+            <div
               style={{
-                width: 28,
-                height: 28,
-                borderRadius: '50%',
+                marginTop: 'auto',
+                paddingTop: 20,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 7,
+                fontFamily: 'sans-serif',
+                fontSize: 11,
+                color: secondaryText,
+                letterSpacing: 0.8,
+                position: 'relative',
+                zIndex: 3,
               }}
-            />
-            DEIN WEG. DEIN FORTSCHRITT.
-          </div>
+            >
+              <img
+                src={logoSrc}
+                alt=""
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: '50%',
+                }}
+              />
+              DEIN WEG. DEIN FORTSCHRITT.
+            </div>
+          )}
         </div>
 
         <div
@@ -840,7 +1369,8 @@ export default function StoryShareModal({
             gap: 10,
             marginTop: 12,
             paddingTop: 14,
-            paddingBottom: 'max(14px, calc(env(safe-area-inset-bottom) + 8px))',
+            paddingBottom:
+              'max(14px, calc(env(safe-area-inset-bottom) + 8px))',
             background:
               'linear-gradient(to bottom, rgba(50,30,20,0), rgba(50,30,20,0.94) 22%)',
             backdropFilter: 'blur(4px)',

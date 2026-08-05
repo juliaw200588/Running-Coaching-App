@@ -1135,19 +1135,28 @@ if (run.status === 'pending') {
         }
         date={detailRun?.date ? formatDate(detailRun.date) : null}
         routeMapUrl={routeMapUrl}
+        routeWaypoints={detailRun?.routeWaypoints || []}
+        sportType={detailRun?.sportType || 'running'}
         distance={detailRun?.km}
-        pace={
-          isRunningActivity(detailRun)
-            ? detailRun?.pace
-            : detailRun?.averageSpeedKmh != null
-              ? `${Number(detailRun.averageSpeedKmh).toFixed(1)} km/h`
-              : null
+        duration={formatDuration(
+          detailRun?.durationSeconds,
+          detailRun?.duration
+        )}
+        pace={isRunningActivity(detailRun) ? detailRun?.pace : null}
+        speed={
+          !isRunningActivity(detailRun) &&
+          detailRun?.averageSpeedKmh != null
+            ? `${Number(detailRun.averageSpeedKmh).toFixed(1)} km/h`
+            : null
         }
         heartRate={detailRun?.bpm}
         calories={detailRun?.kalorien ? `${detailRun.kalorien} kcal` : null}
         phases={detailRun?.runSegments || []}
         runningIndex={detailRun?.runningIndex}
-        elevation={detailRun?.hoehenmeter ? `${detailRun.hoehenmeter} m` : null}
+        elevation={detailRun?.hoehenmeter ? `${detailRun.hoehenmeter} hm` : null}
+        elevationGain={
+          detailRun?.elevationGain ?? detailRun?.hoehenmeter ?? null
+        }
         logoSrc="/route-icon.png"
       />
       </div>
