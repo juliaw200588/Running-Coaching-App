@@ -1450,59 +1450,74 @@ export default function StoryShareModal({
           )}
 
           {showMap && routeOverlay && (isPremium || isRouteOnly) && (
-            <svg
-              viewBox={`0 0 ${routeOverlay.width} ${routeOverlay.height}`}
-              preserveAspectRatio="xMidYMid meet"
+            <div
               style={{
                 width: routeDisplayWidth,
                 height: routeDisplayHeight,
                 position: onlyRoute ? 'absolute' : 'relative',
-                left: routeDisplayLeft,
+                left: onlyRoute ? routeDisplayLeft : 'auto',
+                right: onlyRoute ? routeDisplayLeft : 'auto',
                 top: onlyRoute ? '12%' : routeVerticalShift,
-                marginTop: 0,
-                marginBottom: onlyRoute ? 0 : layout.blockGap,
+                margin:
+                  onlyRoute
+                    ? 0
+                    : `0 auto ${layout.blockGap}px`,
                 zIndex: 2,
                 overflow: 'visible',
                 contain: 'none',
-                filter: hasPhoto
-                  ? 'drop-shadow(0 4px 10px rgba(0,0,0,0.34))'
-                  : 'drop-shadow(0 4px 10px rgba(255,123,90,0.20))',
+                boxSizing: 'border-box',
               }}
             >
-              <g
-                transform={`translate(${routeOverlay.width * 0.03} ${
-                  routeOverlay.height * 0.03
-                }) scale(0.94)`}
+              <svg
+                viewBox={`-60 -60 ${routeOverlay.width + 120} ${
+                  routeOverlay.height + 120
+                }`}
+                preserveAspectRatio="xMidYMid meet"
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  height: '100%',
+                  overflow: 'visible',
+                  contain: 'none',
+                }}
               >
-                <path
-                  d={routeOverlay.path}
-                  fill="none"
-                  stroke={hasPhoto ? '#FFFFFF' : '#FF7B5A'}
-                  strokeWidth={routeStrokeWidth}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  opacity={hasPhoto ? 0.94 : 0.9}
-                />
+                <g
+                  style={{
+                    filter: hasPhoto
+                      ? 'drop-shadow(0 4px 10px rgba(0,0,0,0.34))'
+                      : 'drop-shadow(0 4px 10px rgba(255,123,90,0.20))',
+                  }}
+                >
+                  <path
+                    d={routeOverlay.path}
+                    fill="none"
+                    stroke={hasPhoto ? '#FFFFFF' : '#FF7B5A'}
+                    strokeWidth={routeStrokeWidth}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    opacity={hasPhoto ? 0.94 : 0.9}
+                  />
 
-                <circle
-                  cx={routeOverlay.start.x}
-                  cy={routeOverlay.start.y}
-                  r={routeMarkerRadius}
-                  fill="#5BA88A"
-                  stroke="white"
-                  strokeWidth={onlyRoute ? 7 : 5}
-                />
+                  <circle
+                    cx={routeOverlay.start.x}
+                    cy={routeOverlay.start.y}
+                    r={routeMarkerRadius}
+                    fill="#5BA88A"
+                    stroke="white"
+                    strokeWidth={onlyRoute ? 7 : 5}
+                  />
 
-                <circle
-                  cx={routeOverlay.end.x}
-                  cy={routeOverlay.end.y}
-                  r={routeMarkerRadius}
-                  fill="#E56B6F"
-                  stroke="white"
-                  strokeWidth={onlyRoute ? 7 : 5}
-                />
-              </g>
-            </svg>
+                  <circle
+                    cx={routeOverlay.end.x}
+                    cy={routeOverlay.end.y}
+                    r={routeMarkerRadius}
+                    fill="#E56B6F"
+                    stroke="white"
+                    strokeWidth={onlyRoute ? 7 : 5}
+                  />
+                </g>
+              </svg>
+            </div>
           )}
 
           {mapVisibleInPreview && (
