@@ -146,26 +146,52 @@ const buildRouteOverlay = routeWaypoints => {
   const maxLat = Math.max(...points.map(point => point.lat))
   const minLon = Math.min(...points.map(point => point.lon))
   const maxLon = Math.max(...points.map(point => point.lon))
-  const latRange = Math.max(0.00001, maxLat - minLat)
-  const lonRange = Math.max(0.00001, maxLon - minLon)
+
+  const middleLatitude = (minLat + maxLat) / 2
+  const longitudeCorrection = Math.max(
+    0.2,
+    Math.cos((middleLatitude * Math.PI) / 180)
+  )
+
+  // Approximate geographical proportions instead of stretching every
+  // route to the same rectangle.
+  const geographicWidth = Math.max(
+    0.00001,
+    (maxLon - minLon) * longitudeCorrection
+  )
+  const geographicHeight = Math.max(0.00001, maxLat - minLat)
+  const aspectRatio = geographicWidth / geographicHeight
+
   const width = 1000
   const height = 620
   const padding = 70
+  const innerWidth = width - padding * 2
+  const innerHeight = height - padding * 2
+  const scale = Math.min(
+    innerWidth / geographicWidth,
+    innerHeight / geographicHeight
+  )
+
+  const renderedWidth = geographicWidth * scale
+  const renderedHeight = geographicHeight * scale
+  const offsetX = (width - renderedWidth) / 2
+  const offsetY = (height - renderedHeight) / 2
 
   const scaled = points.map(point => ({
     x:
-      padding +
-      ((point.lon - minLon) / lonRange) *
-        (width - padding * 2),
+      offsetX +
+      (point.lon - minLon) *
+        longitudeCorrection *
+        scale,
     y:
-      padding +
-      (1 - (point.lat - minLat) / latRange) *
-        (height - padding * 2),
+      offsetY +
+      (maxLat - point.lat) * scale,
   }))
 
   return {
     width,
     height,
+    aspectRatio,
     path: scaled
       .map(
         (point, index) =>
@@ -438,7 +464,6 @@ export default function StoryShareModal({
   const [showMap, setShowMap] = useState(true)
   const [showTimeline, setShowTimeline] = useState(true)
   const [showHeartRate, setShowHeartRate] = useState(true)
-  const [showRunningIndex, setShowRunningIndex] = useState(true)
   const [showCalories, setShowCalories] = useState(true)
   const [showElevation, setShowElevation] = useState(true)
   const [showElevationProfile, setShowElevationProfile] = useState(true)
@@ -496,7 +521,6 @@ export default function StoryShareModal({
     )
     setShowCalories(true)
     setShowHeartRate(true)
-    setShowRunningIndex(isRunning && Boolean(runningIndex))
     setShowLogo(true)
     setShowHighlight(true)
     setShowElevation(!isRunning || Number(elevationGain) >= 100)
@@ -876,6 +900,22 @@ export default function StoryShareModal({
         ? 1
         : 2
 
+  const onlyRoute =
+    showMap &&
+    Boolean(routeOverlay) &&
+    visibleMetrics.length === 0 &&
+    !timelineVisible &&
+    !elevationProfileVisible &&
+    !highlightVisible
+
+  const routeAspectRatio = routeOverlay?.aspectRatio || 1
+  const routeShape =
+    routeAspectRatio >= 1.6
+      ? 'wide'
+      : routeAspectRatio <= 0.72
+        ? 'tall'
+        : 'balanced'
+
   const layout = {
     comfortable: {
       cardPadding: '30px 28px 42px',
@@ -884,9 +924,9 @@ export default function StoryShareModal({
       headerBottom: 16,
       titleSize: 27,
       titleBottom: 16,
-      routeHeight: 280,
-      routeWidth: '84%',
-      routeLeft: '8%',
+      routeHeight: 228,
+      routeWidth: '72%',
+      routeLeft: '14%',
       metricGap: 10,
       metricBottom: 16,
       metricPadding: '13px 10px',
@@ -909,9 +949,9 @@ export default function StoryShareModal({
       headerBottom: 11,
       titleSize: 24,
       titleBottom: 10,
-      routeHeight: 225,
-      routeWidth: '80%',
-      routeLeft: '10%',
+      routeHeight: 188,
+      routeWidth: '68%',
+      routeLeft: '16%',
       metricGap: 8,
       metricBottom: 11,
       metricPadding: '10px 7px',
@@ -934,9 +974,9 @@ export default function StoryShareModal({
       headerBottom: 8,
       titleSize: 21,
       titleBottom: 7,
-      routeHeight: 180,
-      routeWidth: '76%',
-      routeLeft: '12%',
+      routeHeight: 154,
+      routeWidth: '64%',
+      routeLeft: '18%',
       metricGap: 6,
       metricBottom: 8,
       metricPadding: '8px 5px',
@@ -959,9 +999,9 @@ export default function StoryShareModal({
       headerBottom: 6,
       titleSize: 19,
       titleBottom: 5,
-      routeHeight: 145,
-      routeWidth: '72%',
-      routeLeft: '14%',
+      routeHeight: 126,
+      routeWidth: '60%',
+      routeLeft: '20%',
       metricGap: 5,
       metricBottom: 6,
       metricPadding: '6px 4px',
@@ -978,6 +1018,38 @@ export default function StoryShareModal({
       highlightSize: 9,
     },
   }[density]
+
+  const routeShapeHeightFactor =
+    routeShape === 'wide'
+      ? 0.78
+      : routeShape === 'tall'
+        ? 1.08
+        : 0.92
+
+  const routeDisplayWidth = onlyRoute
+    ? '92%'
+    : layout.routeWidth
+
+  const routeDisplayLeft = onlyRoute
+    ? '4%'
+    : layout.routeLeft
+
+  const routeDisplayHeight = onlyRoute
+    ? '70%'
+    : Math.round(
+        layout.routeHeight * routeShapeHeightFactor
+      )
+
+  const routeVerticalShift = onlyRoute
+    ? 0
+    : density === 'comfortable'
+      ? -14
+      : density === 'balanced'
+        ? -11
+        : -8
+
+  const routeStrokeWidth = onlyRoute ? 14 : 11.5
+  const routeMarkerRadius = onlyRoute ? 14 : 10
 
   const cardBackground = hasPhoto
     ? `linear-gradient(
@@ -1150,7 +1222,6 @@ export default function StoryShareModal({
             <Toggle checked={showTimeline} onChange={setShowTimeline} label="Phasen" />
             <Toggle checked={showHeartRate} onChange={setShowHeartRate} label="Herzfrequenz" />
             <Toggle checked={showCalories} onChange={setShowCalories} label="Kalorien" />
-            <Toggle checked={showRunningIndex} onChange={setShowRunningIndex} label="Running Index" />
             <Toggle checked={showLogo} onChange={setShowLogo} label="Logo" />
 
             {(effectiveElevation || isElevationSport) && (
@@ -1313,24 +1384,25 @@ export default function StoryShareModal({
             <svg
               viewBox={`0 0 ${routeOverlay.width} ${routeOverlay.height}`}
               style={{
-                width: isRouteOnly ? '92%' : layout.routeWidth,
-                height: isRouteOnly ? '72%' : layout.routeHeight,
-                position: isRouteOnly ? 'absolute' : 'relative',
-                left: isRouteOnly ? '4%' : layout.routeLeft,
-                top: isRouteOnly ? '12%' : 'auto',
-                marginTop: isRouteOnly ? 0 : 8,
+                width: routeDisplayWidth,
+                height: routeDisplayHeight,
+                position: onlyRoute ? 'absolute' : 'relative',
+                left: routeDisplayLeft,
+                top: onlyRoute ? '12%' : routeVerticalShift,
+                marginTop: onlyRoute ? 0 : 0,
+                marginBottom: onlyRoute ? 0 : layout.blockGap,
                 zIndex: 2,
                 overflow: 'visible',
                 filter: hasPhoto
-                  ? 'drop-shadow(0 3px 8px rgba(0,0,0,0.45))'
-                  : 'drop-shadow(0 3px 8px rgba(255,123,90,0.18))',
+                  ? 'drop-shadow(0 4px 10px rgba(0,0,0,0.34))'
+                  : 'drop-shadow(0 4px 10px rgba(255,123,90,0.20))',
               }}
             >
               <path
                 d={routeOverlay.path}
                 fill="none"
                 stroke={hasPhoto ? '#FFFFFF' : '#FF7B5A'}
-                strokeWidth={isRouteOnly ? 13 : 10}
+                strokeWidth={routeStrokeWidth}
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 opacity={hasPhoto ? 0.94 : 0.9}
@@ -1338,18 +1410,18 @@ export default function StoryShareModal({
               <circle
                 cx={routeOverlay.start.x}
                 cy={routeOverlay.start.y}
-                r="14"
+                r={routeMarkerRadius}
                 fill="#5BA88A"
                 stroke="white"
-                strokeWidth="7"
+                strokeWidth={onlyRoute ? 7 : 5}
               />
               <circle
                 cx={routeOverlay.end.x}
                 cy={routeOverlay.end.y}
-                r="14"
+                r={routeMarkerRadius}
                 fill="#E56B6F"
                 stroke="white"
-                strokeWidth="7"
+                strokeWidth={onlyRoute ? 7 : 5}
               />
             </svg>
           )}
@@ -1387,7 +1459,9 @@ export default function StoryShareModal({
                     !elevationProfileVisible &&
                     !highlightVisible
                       ? 'auto'
-                      : layout.blockGap,
+                      : showMap && routeOverlay
+                        ? Math.max(3, layout.blockGap - 2)
+                        : layout.blockGap,
                   marginBottom: layout.metricBottom,
                   position: 'relative',
                   zIndex: 3,
@@ -1526,34 +1600,6 @@ export default function StoryShareModal({
                   </div>
                 )}
 
-              {!isMinimal &&
-                !isPremium &&
-                (showRunningIndex || showElevation) && (
-                  <div
-                    style={{
-                      display: 'flex',
-                      gap: 8,
-                      marginTop: 12,
-                      fontFamily: 'sans-serif',
-                      position: 'relative',
-                      zIndex: 3,
-                    }}
-                  >
-                    {showRunningIndex && runningIndex && (
-                      <div
-                        style={{
-                          flex: 1,
-                          background: glassBackground,
-                          border: glassBorder,
-                          borderRadius: 12,
-                          padding: 9,
-                          fontSize: 11,
-                          textAlign: 'center',
-                        }}
-                      >
-                        🏃 RI <strong>{runningIndex}</strong>
-                      </div>
-                    )}
 
                     {showElevation && effectiveElevation && (
                       <div
@@ -1635,7 +1681,7 @@ export default function StoryShareModal({
             </>
           )}
 
-          {isRouteOnly && (
+          {onlyRoute && (
             <div
               style={{
                 position: 'absolute',
