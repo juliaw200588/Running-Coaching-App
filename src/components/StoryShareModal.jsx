@@ -509,8 +509,6 @@ export default function StoryShareModal({
     }
   }, [photoUrl])
 
-  if (!open) return null
-
   const handlePhotoChange = event => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -780,6 +778,8 @@ export default function StoryShareModal({
     currentHighlightActivity,
     displayTrainingLabel,
   ])
+
+  if (!open) return null
 
   const metricItems = [
     distance && ['📍', 'Distanz', distance],
