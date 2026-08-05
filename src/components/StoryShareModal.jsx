@@ -1601,24 +1601,6 @@ export default function StoryShareModal({
                 )}
 
 
-                    {showElevation && effectiveElevation && (
-                      <div
-                        style={{
-                          flex: 1,
-                          background: glassBackground,
-                          border: glassBorder,
-                          borderRadius: 12,
-                          padding: 9,
-                          fontSize: 11,
-                          textAlign: 'center',
-                        }}
-                      >
-                        ⛰️ <strong>{effectiveElevation}</strong>
-                      </div>
-                    )}
-                  </div>
-                )}
-
               {showElevationProfile &&
                 elevationProfile &&
                 !isSquare && (
