@@ -1263,11 +1263,6 @@ const discardActivity = async (activity) => {
           })}
         </div>
       )}
-
-      {connected && (
-        
-      )}
-
       {false && connected && (
         <div style={{ marginBottom: 16 }}>
           {ignoredCount > 0 && (
