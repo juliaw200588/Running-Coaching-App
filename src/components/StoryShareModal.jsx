@@ -326,10 +326,13 @@ function Toggle({ checked, onChange, label }) {
   )
 }
 
-function StoryTimeline({ phases }) {
+function StoryTimeline({ phases, density = 'comfortable' }) {
   if (!Array.isArray(phases) || phases.length === 0) return null
 
-  const compact = phases.length > 9
+  const compact =
+    phases.length > 9 || density === 'compact' || density === 'dense'
+  const veryCompact =
+    phases.length > 11 || density === 'compact'
 
   return (
     <div style={{ display: 'flex', gap: 4, width: '100%' }}>
@@ -354,14 +357,25 @@ function StoryTimeline({ phases }) {
               background: meta.background,
               border: `1px solid ${meta.color}55`,
               borderTop: `5px solid ${meta.color}`,
-              borderRadius: 9,
-              padding: compact ? '7px 1px' : '8px 3px',
+              borderRadius: veryCompact ? 7 : 9,
+              padding: veryCompact
+                ? '5px 1px'
+                : compact
+                  ? '6px 1px'
+                  : '8px 3px',
               textAlign: 'center',
               fontFamily: 'sans-serif',
               overflow: 'hidden',
             }}
           >
-            <div style={{ fontSize: compact ? 11 : 15 }}>{meta.icon}</div>
+            <div
+              style={{
+                fontSize: veryCompact ? 9 : compact ? 11 : 15,
+                lineHeight: 1,
+              }}
+            >
+              {meta.icon}
+            </div>
 
             <div
               style={{
@@ -818,6 +832,153 @@ export default function StoryShareModal({
       : []),
   ]
 
+  const visibleMetrics = (
+    isPremium || isSquare || isMinimal
+      ? metricItems
+      : classicMetrics
+  ).filter(([, , value]) => value)
+
+  const timelineVisible =
+    showTimeline &&
+    Array.isArray(phases) &&
+    phases.length > 0
+
+  const elevationProfileVisible =
+    showElevationProfile &&
+    Boolean(elevationProfile) &&
+    !isSquare
+
+  const highlightVisible =
+    showHighlight && Boolean(highlightData)
+
+  // Each visible block contributes to the space pressure inside the fixed
+  // 9:16 story. The layout gets progressively more compact as content grows.
+  const contentScore =
+    visibleMetrics.length +
+    (timelineVisible ? 3 : 0) +
+    (elevationProfileVisible ? 2 : 0) +
+    (highlightVisible ? 1 : 0) +
+    (showMap && routeOverlay ? 2 : 0)
+
+  const density =
+    contentScore >= 11
+      ? 'compact'
+      : contentScore >= 8
+        ? 'dense'
+        : contentScore >= 6
+          ? 'balanced'
+          : 'comfortable'
+
+  const metricColumns =
+    visibleMetrics.length >= 5
+      ? 3
+      : visibleMetrics.length === 1
+        ? 1
+        : 2
+
+  const layout = {
+    comfortable: {
+      cardPadding: '30px 28px 42px',
+      logoSize: 58,
+      logoGap: 10,
+      headerBottom: 16,
+      titleSize: 27,
+      titleBottom: 16,
+      routeHeight: 280,
+      routeWidth: '84%',
+      routeLeft: '8%',
+      metricGap: 10,
+      metricBottom: 16,
+      metricPadding: '13px 10px',
+      metricRadius: 16,
+      metricLabelSize: 10,
+      metricValueSize: 18,
+      timelinePadding: 15,
+      timelineRadius: 20,
+      timelineTitleSize: 11,
+      timelineTitleBottom: 11,
+      profileHeight: 72,
+      blockGap: 12,
+      highlightPadding: '11px 13px',
+      highlightSize: 12,
+    },
+    balanced: {
+      cardPadding: '25px 24px 34px',
+      logoSize: 52,
+      logoGap: 9,
+      headerBottom: 11,
+      titleSize: 24,
+      titleBottom: 10,
+      routeHeight: 225,
+      routeWidth: '80%',
+      routeLeft: '10%',
+      metricGap: 8,
+      metricBottom: 11,
+      metricPadding: '10px 7px',
+      metricRadius: 14,
+      metricLabelSize: 8.5,
+      metricValueSize: 16,
+      timelinePadding: 12,
+      timelineRadius: 17,
+      timelineTitleSize: 10,
+      timelineTitleBottom: 8,
+      profileHeight: 60,
+      blockGap: 9,
+      highlightPadding: '9px 11px',
+      highlightSize: 11,
+    },
+    dense: {
+      cardPadding: '21px 20px 28px',
+      logoSize: 46,
+      logoGap: 8,
+      headerBottom: 8,
+      titleSize: 21,
+      titleBottom: 7,
+      routeHeight: 180,
+      routeWidth: '76%',
+      routeLeft: '12%',
+      metricGap: 6,
+      metricBottom: 8,
+      metricPadding: '8px 5px',
+      metricRadius: 12,
+      metricLabelSize: 7.5,
+      metricValueSize: 14,
+      timelinePadding: 9,
+      timelineRadius: 14,
+      timelineTitleSize: 9,
+      timelineTitleBottom: 6,
+      profileHeight: 48,
+      blockGap: 7,
+      highlightPadding: '8px 9px',
+      highlightSize: 10,
+    },
+    compact: {
+      cardPadding: '18px 17px 22px',
+      logoSize: 40,
+      logoGap: 7,
+      headerBottom: 6,
+      titleSize: 19,
+      titleBottom: 5,
+      routeHeight: 145,
+      routeWidth: '72%',
+      routeLeft: '14%',
+      metricGap: 5,
+      metricBottom: 6,
+      metricPadding: '6px 4px',
+      metricRadius: 10,
+      metricLabelSize: 6.8,
+      metricValueSize: 12.5,
+      timelinePadding: 7,
+      timelineRadius: 12,
+      timelineTitleSize: 8,
+      timelineTitleBottom: 5,
+      profileHeight: 40,
+      blockGap: 5,
+      highlightPadding: '7px 8px',
+      highlightSize: 9,
+    },
+  }[density]
+
   const cardBackground = hasPhoto
     ? `linear-gradient(
         180deg,
@@ -1055,10 +1216,8 @@ export default function StoryShareModal({
             padding: isSquare
               ? '28px'
               : isMinimal
-                ? '38px 34px 96px'
-                : isInterval
-                  ? '30px 28px 104px'
-                  : '30px 28px 96px',
+                ? '38px 34px 72px'
+                : layout.cardPadding,
             color: hasPhoto ? 'white' : '#3D2B1F',
             fontFamily: "'Georgia', 'Times New Roman', serif",
             overflow: 'hidden',
@@ -1073,8 +1232,8 @@ export default function StoryShareModal({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 10,
-                marginBottom: isMinimal ? 34 : 16,
+                gap: layout.logoGap,
+                marginBottom: isMinimal ? 24 : layout.headerBottom,
                 position: 'relative',
                 zIndex: 3,
               }}
@@ -1083,8 +1242,8 @@ export default function StoryShareModal({
                 src={logoSrc}
                 alt=""
                 style={{
-                  width: 58,
-                  height: 58,
+                  width: layout.logoSize,
+                  height: layout.logoSize,
                   borderRadius: '50%',
                   objectFit: 'cover',
                   boxShadow: '0 8px 20px rgba(0,0,0,0.16)',
@@ -1095,7 +1254,7 @@ export default function StoryShareModal({
               <div>
                 <div
                   style={{
-                    fontSize: 12,
+                    fontSize: layout.highlightSize,
                     fontFamily: 'sans-serif',
                     color: secondaryText,
                     letterSpacing: 1,
@@ -1135,9 +1294,10 @@ export default function StoryShareModal({
           {!isRouteOnly && (
             <div
               style={{
-                fontSize: isMinimal ? 34 : 27,
+                fontSize: isMinimal ? 34 : layout.titleSize,
                 fontWeight: 'bold',
-                marginBottom: isMinimal ? 30 : 16,
+                lineHeight: 1.08,
+                marginBottom: isMinimal ? 24 : layout.titleBottom,
                 position: 'relative',
                 zIndex: 3,
                 textShadow: hasPhoto
@@ -1153,10 +1313,10 @@ export default function StoryShareModal({
             <svg
               viewBox={`0 0 ${routeOverlay.width} ${routeOverlay.height}`}
               style={{
-                width: isRouteOnly ? '92%' : '84%',
-                height: isRouteOnly ? '72%' : 300,
+                width: isRouteOnly ? '92%' : layout.routeWidth,
+                height: isRouteOnly ? '72%' : layout.routeHeight,
                 position: isRouteOnly ? 'absolute' : 'relative',
-                left: isRouteOnly ? '4%' : '8%',
+                left: isRouteOnly ? '4%' : layout.routeLeft,
                 top: isRouteOnly ? '12%' : 'auto',
                 marginTop: isRouteOnly ? 0 : 8,
                 zIndex: 2,
@@ -1219,19 +1379,21 @@ export default function StoryShareModal({
                   display: 'grid',
                   gridTemplateColumns: isMinimal
                     ? '1fr'
-                    : 'repeat(2, minmax(0, 1fr))',
-                  gap: 10,
-                  marginTop: isPremium ? 'auto' : 0,
-                  marginBottom: 18,
+                    : `repeat(${metricColumns}, minmax(0, 1fr))`,
+                  gap: layout.metricGap,
+                  marginTop:
+                    isPremium &&
+                    !timelineVisible &&
+                    !elevationProfileVisible &&
+                    !highlightVisible
+                      ? 'auto'
+                      : layout.blockGap,
+                  marginBottom: layout.metricBottom,
                   position: 'relative',
                   zIndex: 3,
                 }}
               >
-                {(isPremium || isSquare || isMinimal
-                  ? metricItems
-                  : classicMetrics
-                )
-                  .filter(([, , value]) => value)
+                {visibleMetrics
                   .slice(0, isSquare ? 4 : 6)
                   .map(([icon, label, value]) => (
                     <div
@@ -1239,8 +1401,12 @@ export default function StoryShareModal({
                       style={{
                         background: glassBackground,
                         border: glassBorder,
-                        borderRadius: 16,
-                        padding: isMinimal ? '19px 14px' : '13px 10px',
+                        borderRadius: isMinimal
+                          ? 16
+                          : layout.metricRadius,
+                        padding: isMinimal
+                          ? '19px 14px'
+                          : layout.metricPadding,
                         textAlign: 'center',
                         fontFamily: 'sans-serif',
                         backdropFilter: 'blur(7px)',
@@ -1249,7 +1415,9 @@ export default function StoryShareModal({
                     >
                       <div
                         style={{
-                          fontSize: isMinimal ? 12 : 10,
+                          fontSize: isMinimal
+                            ? 12
+                            : layout.metricLabelSize,
                           color: secondaryText,
                           textTransform: 'uppercase',
                           letterSpacing: 0.7,
@@ -1260,8 +1428,12 @@ export default function StoryShareModal({
 
                       <div
                         style={{
-                          marginTop: 5,
-                          fontSize: isMinimal ? 30 : 18,
+                          marginTop:
+                            density === 'compact' ? 2 : 4,
+                          fontSize: isMinimal
+                            ? 30
+                            : layout.metricValueSize,
+                          lineHeight: 1.08,
                           fontWeight: 'bold',
                         }}
                       >
@@ -1279,27 +1451,32 @@ export default function StoryShareModal({
                     style={{
                       background: glassBackground,
                       border: glassBorder,
-                      borderRadius: 20,
-                      padding: isInterval ? 18 : 15,
+                      borderRadius: layout.timelineRadius,
+                      padding: isInterval
+                        ? 18
+                        : layout.timelinePadding,
                       position: 'relative',
                       zIndex: 3,
                     }}
                   >
                     <div
                       style={{
-                        fontSize: 11,
+                        fontSize: layout.timelineTitleSize,
                         fontFamily: 'sans-serif',
                         fontWeight: 'bold',
                         color: secondaryText,
                         textTransform: 'uppercase',
                         letterSpacing: 0.8,
-                        marginBottom: 11,
+                        marginBottom: layout.timelineTitleBottom,
                       }}
                     >
                       Phasenübersicht
                     </div>
 
-                    <StoryTimeline phases={phases} />
+                    <StoryTimeline
+                      phases={phases}
+                      density={density}
+                    />
 
                     {isInterval &&
                       (intervalAverage || recoveryAverage) && (
@@ -1401,8 +1578,13 @@ export default function StoryShareModal({
                 !isSquare && (
                   <div
                     style={{
-                      marginTop: 12,
-                      padding: '10px 12px 8px',
+                      marginTop: layout.blockGap,
+                      padding:
+                        density === 'compact'
+                          ? '6px 8px 5px'
+                          : density === 'dense'
+                            ? '7px 9px 6px'
+                            : '10px 12px 8px',
                       borderRadius: 15,
                       background: glassBackground,
                       border: glassBorder,
@@ -1427,7 +1609,7 @@ export default function StoryShareModal({
                       viewBox={`0 0 ${elevationProfile.width} ${elevationProfile.height}`}
                       style={{
                         width: '100%',
-                        height: 72,
+                        height: layout.profileHeight,
                         display: 'block',
                       }}
                     >
@@ -1493,8 +1675,8 @@ export default function StoryShareModal({
           {showHighlight && highlightData && (
             <div
               style={{
-                marginTop: 12,
-                padding: '11px 13px',
+                marginTop: layout.blockGap,
+                padding: layout.highlightPadding,
                 borderRadius: 14,
                 background: glassBackground,
                 border: glassBorder,
