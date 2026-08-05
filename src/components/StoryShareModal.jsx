@@ -1,13 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-
-const TEMPLATES = [
-  { id: 'premium', label: 'Premium Story' },
-  { id: 'classic', label: 'Classic' },
-  { id: 'interval', label: 'Intervall' },
-  { id: 'minimal', label: 'Minimal' },
-  { id: 'route', label: 'Nur Route' },
-  { id: 'square', label: 'Quadrat' },
-]
+import { supabase } from '../lib/supabase.js'
+import { selectActivityHighlight } from '../lib/activityHighlights.js'
 
 const SPORT_META = {
   running: { icon: '🏃', label: 'Laufen' },
@@ -245,6 +238,64 @@ const normalizeElevation = value => {
   return /hm/i.test(text) ? text : `${text} hm`
 }
 
+const parseTrainingPlanTitle = value => {
+  const raw = String(value || '').trim()
+
+  if (!raw) {
+    return {
+      weekLabel: null,
+      trainingLabel: null,
+    }
+  }
+
+  const weekMatch = raw.match(/\b(?:Wo\.?|Woche)\s*(\d+)\b/i)
+  const weekLabel = weekMatch ? `Woche ${weekMatch[1]}` : null
+
+  let trainingLabel = raw
+    .replace(/\b(?:Wo\.?|Woche)\s*\d+\b/gi, '')
+    .replace(
+      /\b(?:Mo|Di|Mi|Do|Fr|Sa|So|Montag|Dienstag|Mittwoch|Donnerstag|Freitag|Samstag|Sonntag)\b/gi,
+      ''
+    )
+    .replace(/[·|–—-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  const normalized = trainingLabel.toLowerCase()
+
+  if (normalized.includes('intervall')) {
+    trainingLabel = 'Intervalltraining'
+  } else if (
+    normalized.includes('long run') ||
+    normalized.includes('langer lauf') ||
+    normalized.includes('lang')
+  ) {
+    trainingLabel = 'Long Run'
+  } else if (
+    normalized.includes('tempo') ||
+    normalized.includes('schwelle')
+  ) {
+    trainingLabel = 'Tempolauf'
+  } else if (
+    normalized.includes('regeneration') ||
+    normalized.includes('recovery')
+  ) {
+    trainingLabel = 'Regenerationslauf'
+  } else if (
+    normalized.includes('locker') ||
+    normalized.includes('easy')
+  ) {
+    trainingLabel = 'Lockerer Lauf'
+  } else if (!trainingLabel) {
+    trainingLabel = null
+  }
+
+  return {
+    weekLabel,
+    trainingLabel,
+  }
+}
+
 const waitForPaint = () =>
   new Promise(resolve => {
     requestAnimationFrame(() => requestAnimationFrame(resolve))
@@ -359,6 +410,10 @@ export default function StoryShareModal({
   runningIndex,
   elevation,
   elevationGain,
+  userId,
+  activityId,
+  polarExerciseId,
+  actualDate,
   phases = [],
   logoSrc = '/route-icon.png',
 }) {
@@ -366,7 +421,6 @@ export default function StoryShareModal({
   const fileInputRef = useRef(null)
 
   const [creating, setCreating] = useState(false)
-  const [template, setTemplate] = useState('premium')
   const [showMap, setShowMap] = useState(true)
   const [showTimeline, setShowTimeline] = useState(true)
   const [showHeartRate, setShowHeartRate] = useState(true)
@@ -375,6 +429,9 @@ export default function StoryShareModal({
   const [showElevation, setShowElevation] = useState(true)
   const [showElevationProfile, setShowElevationProfile] = useState(true)
   const [showLogo, setShowLogo] = useState(true)
+  const [showHighlight, setShowHighlight] = useState(true)
+  const [highlightData, setHighlightData] = useState(null)
+  const [highlightLoading, setHighlightLoading] = useState(false)
   const [photoUrl, setPhotoUrl] = useState(null)
   const [exportWithoutMap, setExportWithoutMap] = useState(false)
   const [errorMessage, setErrorMessage] = useState(null)
@@ -419,10 +476,15 @@ export default function StoryShareModal({
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
 
-    setTemplate('premium')
+    setShowMap(true)
+    setShowTimeline(
+      isRunning && Array.isArray(phases) && phases.length > 0
+    )
     setShowCalories(true)
     setShowHeartRate(true)
+    setShowRunningIndex(isRunning && Boolean(runningIndex))
     setShowLogo(true)
+    setShowHighlight(true)
     setShowElevation(!isRunning || Number(elevationGain) >= 100)
     setShowElevationProfile(
       isElevationSport || (isRunning && Number(elevationGain) >= 100)
@@ -560,9 +622,7 @@ export default function StoryShareModal({
           showMap &&
           !exportWithoutMap &&
           Boolean(routeMapUrl) &&
-          template !== 'minimal' &&
-          template !== 'premium' &&
-          template !== 'route'
+          !routeOverlay
 
         if (!mapWasVisible) throw firstError
 
@@ -604,18 +664,16 @@ export default function StoryShareModal({
     onClose()
   }
 
-  const isPremium = template === 'premium'
-  const isMinimal = template === 'minimal'
-  const isInterval = template === 'interval'
-  const isRouteOnly = template === 'route'
-  const isSquare = template === 'square'
+  const isPremium = true
+  const isMinimal = false
+  const isInterval = false
+  const isRouteOnly = false
+  const isSquare = false
   const hasPhoto = Boolean(photoUrl)
 
   const mapVisibleInPreview =
-    !isMinimal &&
-    !isPremium &&
-    !isRouteOnly &&
     showMap &&
+    !routeOverlay &&
     routeMapUrl &&
     !exportWithoutMap
 
@@ -624,6 +682,104 @@ export default function StoryShareModal({
     normalizeElevation(elevation)
 
   const effectiveCalories = normalizeCalories(calories)
+  const {
+    weekLabel,
+    trainingLabel,
+  } = parseTrainingPlanTitle(title)
+
+  const displayTrainingLabel =
+    trainingLabel || (isRunning ? 'Lauf' : sport.label)
+
+  const currentHighlightActivity = useMemo(
+    () => ({
+      id: activityId,
+      polarExerciseId,
+      sportType,
+      distance,
+      pace,
+      speed,
+      heartRate,
+      elevationGain,
+      actualDate,
+    }),
+    [
+      activityId,
+      polarExerciseId,
+      sportType,
+      distance,
+      pace,
+      speed,
+      heartRate,
+      elevationGain,
+      actualDate,
+    ]
+  )
+
+  useEffect(() => {
+    if (!open) return undefined
+
+    let cancelled = false
+
+    const loadHighlight = async () => {
+      setHighlightLoading(true)
+
+      try {
+        let history = []
+
+        if (userId) {
+          const { data, error } = await supabase
+            .from('logs')
+            .select(
+              'id, polar_exercise_id, actual_date, sport_type, km, distance_meters, pace, bpm, average_speed_kmh, elevation_gain, hoehenmeter'
+            )
+            .eq('user_id', userId)
+
+          if (error) throw error
+          history = data || []
+        }
+
+        const selected = selectActivityHighlight({
+          current: currentHighlightActivity,
+          history,
+          trainingType: displayTrainingLabel,
+        })
+
+        if (!cancelled) {
+          setHighlightData(selected)
+        }
+      } catch (error) {
+        console.error(
+          'Story-Highlight konnte nicht ermittelt werden:',
+          error
+        )
+
+        if (!cancelled) {
+          setHighlightData(
+            selectActivityHighlight({
+              current: currentHighlightActivity,
+              history: [],
+              trainingType: displayTrainingLabel,
+            })
+          )
+        }
+      } finally {
+        if (!cancelled) {
+          setHighlightLoading(false)
+        }
+      }
+    }
+
+    loadHighlight()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    open,
+    userId,
+    currentHighlightActivity,
+    displayTrainingLabel,
+  ])
 
   const metricItems = [
     distance && ['📍', 'Distanz', distance],
@@ -731,54 +887,6 @@ export default function StoryShareModal({
             Aktivität teilen
           </div>
 
-          <div
-            style={{
-              fontFamily: 'sans-serif',
-              fontSize: 11,
-              color: '#B8A090',
-              fontWeight: 'bold',
-              textTransform: 'uppercase',
-              letterSpacing: 0.8,
-              marginBottom: 8,
-            }}
-          >
-            Vorlage auswählen
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              gap: 7,
-              marginBottom: 11,
-              overflowX: 'auto',
-              scrollbarWidth: 'none',
-            }}
-          >
-            {TEMPLATES.map(item => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setTemplate(item.id)}
-                style={{
-                  flex: '0 0 auto',
-                  padding: '10px 11px',
-                  borderRadius: 12,
-                  border:
-                    template === item.id
-                      ? '2px solid #FF8C69'
-                      : '1px solid #F0E8E0',
-                  background:
-                    template === item.id ? '#FFF5EE' : 'white',
-                  color:
-                    template === item.id ? '#C16045' : '#8B6B5A',
-                  fontWeight: 'bold',
-                  cursor: 'pointer',
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
 
           <input
             ref={fileInputRef}
@@ -824,6 +932,46 @@ export default function StoryShareModal({
               >
                 Entfernen
               </button>
+            )}
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr',
+              gap: 8,
+              marginBottom: 10,
+              fontFamily: 'sans-serif',
+            }}
+          >
+            <Toggle
+              checked={showHighlight}
+              onChange={setShowHighlight}
+              label="Highlight"
+            />
+
+            {showHighlight && (
+              <div
+                style={{
+                  padding: '9px 10px',
+                  borderRadius: 11,
+                  border: '1px solid #F0E8E0',
+                  background: 'white',
+                  color: '#8B6B5A',
+                  fontSize: 11,
+                  lineHeight: 1.4,
+                }}
+              >
+                {highlightLoading
+                  ? 'Highlight wird ermittelt…'
+                  : highlightData
+                    ? `${highlightData.icon} ${highlightData.text}${
+                        highlightData.detail
+                          ? ` · ${highlightData.detail}`
+                          : ''
+                      }`
+                    : 'Für diese Aktivität ist noch kein Highlight verfügbar.'}
+              </div>
             )}
           </div>
 
@@ -966,6 +1114,20 @@ export default function StoryShareModal({
                 >
                   {date || 'Aktivität'}
                 </div>
+
+                {weekLabel && (
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontFamily: 'sans-serif',
+                      color: secondaryText,
+                      marginTop: 3,
+                      fontWeight: 'bold',
+                    }}
+                  >
+                    {weekLabel}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -983,7 +1145,7 @@ export default function StoryShareModal({
                   : 'none',
               }}
             >
-              {sport.icon} {title || sport.label}
+              {sport.icon} {displayTrainingLabel}
             </div>
           )}
 
@@ -1110,7 +1272,6 @@ export default function StoryShareModal({
               </div>
 
               {!isMinimal &&
-                !isPremium &&
                 showTimeline &&
                 Array.isArray(phases) &&
                 phases.length > 0 && (
@@ -1329,33 +1490,30 @@ export default function StoryShareModal({
             </div>
           )}
 
-          {showLogo && !isRouteOnly && (
+          {showHighlight && highlightData && (
             <div
               style={{
-                marginTop: 'auto',
-                paddingTop: 20,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 7,
-                fontFamily: 'sans-serif',
-                fontSize: 11,
-                color: secondaryText,
-                letterSpacing: 0.8,
+                marginTop: 12,
+                padding: '11px 13px',
+                borderRadius: 14,
+                background: glassBackground,
+                border: glassBorder,
                 position: 'relative',
                 zIndex: 3,
+                fontFamily: 'sans-serif',
+                fontSize: 12,
+                fontWeight: 'bold',
+                textAlign: 'center',
+                backdropFilter: 'blur(7px)',
+                WebkitBackdropFilter: 'blur(7px)',
               }}
             >
-              <img
-                src={logoSrc}
-                alt=""
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: '50%',
-                }}
-              />
-              DEIN WEG. DEIN FORTSCHRITT.
+              {highlightData.icon} {highlightData.text}
+              {highlightData.detail && (
+                <span style={{ opacity: 0.86 }}>
+                  {' '}· {highlightData.detail}
+                </span>
+              )}
             </div>
           )}
         </div>

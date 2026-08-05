@@ -1157,6 +1157,10 @@ if (run.status === 'pending') {
         elevationGain={
           detailRun?.elevationGain ?? detailRun?.hoehenmeter ?? null
         }
+        userId={user?.id}
+        activityId={detailRun?.logId}
+        polarExerciseId={detailRun?.polarExerciseId}
+        actualDate={detailRun?.date}
         logoSrc="/route-icon.png"
       />
       </div>
