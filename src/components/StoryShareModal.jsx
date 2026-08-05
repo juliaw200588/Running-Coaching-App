@@ -474,6 +474,7 @@ export default function StoryShareModal({
   const [exportWithoutMap, setExportWithoutMap] = useState(false)
   const [errorMessage, setErrorMessage] = useState(null)
   const [infoMessage, setInfoMessage] = useState(null)
+  const [successMessage, setSuccessMessage] = useState(null)
 
   const intervalAverage = useMemo(
     () => averagePace(phases, 'interval'),
@@ -535,6 +536,7 @@ export default function StoryShareModal({
     if (!open) {
       setErrorMessage(null)
       setInfoMessage(null)
+      setSuccessMessage(null)
       setExportWithoutMap(false)
     }
   }, [open])
@@ -604,8 +606,45 @@ export default function StoryShareModal({
     return blob
   }
 
-  const shareOrDownload = async blob => {
-    const file = new File([blob], 'aktivitaet.png', {
+  const buildFileName = () => {
+    const sportSlug =
+      sportType === 'mountain_biking'
+        ? 'mountainbike'
+        : sportType === 'cycling'
+          ? 'radfahren'
+          : sportType === 'hiking'
+            ? 'wandern'
+            : sportType === 'walking'
+              ? 'walking'
+              : sportType === 'swimming'
+                ? 'schwimmen'
+                : 'laufen'
+
+    const dateSlug = actualDate
+      ? String(actualDate).slice(0, 10)
+      : new Date().toISOString().slice(0, 10)
+
+    return `${sportSlug}-${dateSlug}.png`
+  }
+
+  const saveBlob = blob => {
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = buildFileName()
+    link.target = '_blank'
+    link.rel = 'noopener'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+
+    setSuccessMessage('Bild wurde gespeichert.')
+    setTimeout(() => setSuccessMessage(null), 2200)
+    setTimeout(() => URL.revokeObjectURL(url), 5000)
+  }
+
+  const shareBlob = async blob => {
+    const file = new File([blob], buildFileName(), {
       type: 'image/png',
     })
 
@@ -622,65 +661,88 @@ export default function StoryShareModal({
         return
       } catch (error) {
         if (error?.name === 'AbortError') return
-        console.warn('Teilen nicht möglich, Download wird verwendet:', error)
+        console.warn(
+          'Teilen nicht möglich, Datei wird stattdessen gespeichert:',
+          error
+        )
       }
     }
 
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = 'aktivitaet.png'
-    link.target = '_blank'
-    link.rel = 'noopener'
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-
-    setTimeout(() => URL.revokeObjectURL(url), 5000)
+    saveBlob(blob)
   }
 
-  const createImage = async () => {
+  const createStoryBlob = async () => {
+    let canvas
+
+    try {
+      canvas = await renderCanvas()
+    } catch (firstError) {
+      const mapWasVisible =
+        showMap &&
+        !exportWithoutMap &&
+        Boolean(routeMapUrl) &&
+        !routeOverlay
+
+      if (!mapWasVisible) throw firstError
+
+      console.warn(
+        'Export mit Karte fehlgeschlagen. Zweiter Versuch ohne Karte:',
+        firstError
+      )
+
+      setExportWithoutMap(true)
+      setInfoMessage(
+        'Die Kartenansicht konnte nicht exportiert werden. Das Bild wird ohne Karte erstellt.'
+      )
+
+      await waitForPaint()
+      canvas = await renderCanvas()
+    }
+
+    return createBlob(canvas)
+  }
+
+  const createAndSave = async () => {
     if (creating) return
 
     setCreating(true)
     setErrorMessage(null)
     setInfoMessage(null)
+    setSuccessMessage(null)
 
     try {
-      let canvas
-
-      try {
-        canvas = await renderCanvas()
-      } catch (firstError) {
-        const mapWasVisible =
-          showMap &&
-          !exportWithoutMap &&
-          Boolean(routeMapUrl) &&
-          !routeOverlay
-
-        if (!mapWasVisible) throw firstError
-
-        console.warn(
-          'Export mit Karte fehlgeschlagen. Zweiter Versuch ohne Karte:',
-          firstError
-        )
-
-        setExportWithoutMap(true)
-        setInfoMessage(
-          'Die Kartenansicht konnte nicht exportiert werden. Das Bild wird ohne Karte erstellt.'
-        )
-
-        await waitForPaint()
-        canvas = await renderCanvas()
-      }
-
-      const blob = await createBlob(canvas)
-      await shareOrDownload(blob)
+      const blob = await createStoryBlob()
+      saveBlob(blob)
     } catch (error) {
-      console.error('Aktivitätsbild konnte nicht erstellt werden:', error)
+      console.error('Aktivitätsbild konnte nicht gespeichert werden:', error)
 
       setErrorMessage(
-        `Das Bild konnte nicht erstellt werden: ${
+        `Das Bild konnte nicht gespeichert werden: ${
+          error?.message || 'Unbekannter Fehler'
+        }`
+      )
+    } finally {
+      setCreating(false)
+      setExportWithoutMap(false)
+    }
+  }
+
+  const createAndShare = async () => {
+    if (creating) return
+
+    setCreating(true)
+    setErrorMessage(null)
+    setInfoMessage(null)
+    setSuccessMessage(null)
+
+    try {
+      const blob = await createStoryBlob()
+      await shareBlob(blob)
+    } catch (error) {
+      console.error('Aktivitätsbild konnte nicht geteilt werden:', error)
+
+      setErrorMessage(
+        `Das Bild konnte nicht geteilt werden: ${
           error?.message || 'Unbekannter Fehler'
         }`
       )
@@ -1253,6 +1315,29 @@ export default function StoryShareModal({
           </div>
         )}
 
+        {successMessage && (
+          <div
+            style={{
+              position: 'fixed',
+              left: '50%',
+              bottom: 'calc(env(safe-area-inset-bottom) + 92px)',
+              transform: 'translateX(-50%)',
+              zIndex: 20,
+              padding: '10px 14px',
+              borderRadius: 999,
+              background: 'rgba(45,112,82,0.96)',
+              color: 'white',
+              fontFamily: 'sans-serif',
+              fontSize: 12,
+              fontWeight: 'bold',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.22)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            ✅ {successMessage}
+          </div>
+        )}
+
         {errorMessage && (
           <div
             style={{
@@ -1719,8 +1804,9 @@ export default function StoryShareModal({
             position: 'sticky',
             bottom: 0,
             zIndex: 4,
-            display: 'flex',
-            gap: 10,
+            display: 'grid',
+            gridTemplateColumns: '0.9fr 1.1fr 1.35fr',
+            gap: 8,
             marginTop: 12,
             paddingTop: 14,
             paddingBottom:
@@ -1736,13 +1822,13 @@ export default function StoryShareModal({
             onClick={closeModal}
             disabled={creating}
             style={{
-              flex: 1,
-              padding: '15px 13px',
+              padding: '14px 9px',
               borderRadius: 15,
               border: '1px solid #E8D9CF',
               background: 'white',
               color: '#8B6B5A',
               fontWeight: 'bold',
+              fontSize: 12,
               cursor: creating ? 'default' : 'pointer',
               opacity: creating ? 0.7 : 1,
             }}
@@ -1752,24 +1838,41 @@ export default function StoryShareModal({
 
           <button
             type="button"
-            onClick={createImage}
+            onClick={createAndSave}
             disabled={creating}
             style={{
-              flex: 2,
-              padding: '15px 13px',
+              padding: '14px 9px',
+              borderRadius: 15,
+              border: '1px solid #FFD0B8',
+              background: '#FFF5EE',
+              color: '#C16045',
+              fontWeight: 'bold',
+              fontSize: 12,
+              cursor: creating ? 'default' : 'pointer',
+              opacity: creating ? 0.72 : 1,
+            }}
+          >
+            {creating ? '⏳' : '💾 Speichern'}
+          </button>
+
+          <button
+            type="button"
+            onClick={createAndShare}
+            disabled={creating}
+            style={{
+              padding: '14px 9px',
               borderRadius: 15,
               border: 'none',
               background:
                 'linear-gradient(135deg,#FF8C69,#FF6B9D)',
               color: 'white',
               fontWeight: 'bold',
+              fontSize: 12,
               cursor: creating ? 'default' : 'pointer',
               opacity: creating ? 0.72 : 1,
             }}
           >
-            {creating
-              ? '⏳ Bild wird erstellt…'
-              : '📤 Bild erstellen & teilen'}
+            {creating ? '⏳ Erstellen…' : '📤 Teilen'}
           </button>
         </div>
       </div>
