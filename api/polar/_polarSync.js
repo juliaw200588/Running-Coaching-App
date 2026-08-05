@@ -189,10 +189,12 @@ async function getValidAccessToken(userId) {
   return refreshAccessToken(userId, integration)
 }
 
-// Polar akzeptiert bei Training Sessions lokale ISO-Datumszeiten ohne
-// Millisekunden und ohne Zeitzonen-Suffix, z. B. 2026-08-02T10:30:00.
-function formatPolarLocalDateTime(date) {
-  return date.toISOString().slice(0, 19)
+// Polar interpretiert Datumszeiten ohne Zeitzonen-Suffix als lokale Zeit.
+// Deshalb verwenden wir für den allgemeinen Sync vollständige Kalendertage
+// statt der aktuellen UTC-Uhrzeit. So wird eine Aktivität vom heutigen Abend
+// nicht versehentlich durch eine frühere UTC-Uhrzeit abgeschnitten.
+function formatPolarDate(date) {
+  return date.toISOString().slice(0, 10)
 }
 
 function addUtcDays(dateString, days) {
@@ -789,21 +791,70 @@ function mapV4Exercise(
 
 async function loadTrainingSessions(token) {
   const now = new Date()
+
+  // Ein kleiner Sicherheitspuffer über die 30 Tage hinaus verhindert,
+  // dass Aktivitäten an der unteren Datumsgrenze durch Zeitverschiebungen
+  // verloren gehen.
   const past = new Date(
-    now.getTime() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000
+    now.getTime() - (LOOKBACK_DAYS + 1) * 24 * 60 * 60 * 1000
   )
 
-  const from = formatPolarLocalDateTime(past)
-  const to = formatPolarLocalDateTime(now)
+  // Bis zum Beginn des morgigen Tages laden. Polar wertet die Werte als
+  // lokale Datumszeiten aus; damit ist der komplette heutige Tag enthalten.
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+
+  const from = `${formatPolarDate(past)}T00:00:00`
+  const to = `${formatPolarDate(tomorrow)}T00:00:00`
+
+  console.log('[Polar V4] Synchronisationszeitraum:', {
+    from,
+    to,
+    serverTime: now.toISOString(),
+  })
 
   const data = await polarFetch('/training-sessions/list', token, {
     from,
     to,
   })
 
-  return Array.isArray(data?.trainingSessions)
+  const sessions = Array.isArray(data?.trainingSessions)
     ? data.trainingSessions
     : []
+
+  const newestExercise = collectExercises(sessions)
+    .map(({ session, exercise }) => {
+      const startTime = firstDefined(
+        exercise?.startTime,
+        exercise?.start_time,
+        session?.startTime,
+        session?.start_time
+      )
+
+      const exerciseId = firstDefined(
+        exercise?.identifier?.id,
+        exercise?.id,
+        session?.identifier?.id,
+        session?.id
+      )
+
+      return {
+        exerciseId: exerciseId != null ? String(exerciseId) : null,
+        startTime: startTime || null,
+      }
+    })
+    .filter(item => item.startTime)
+    .sort(
+      (a, b) =>
+        new Date(b.startTime).getTime() -
+        new Date(a.startTime).getTime()
+    )[0]
+
+  console.log(
+    '[Polar V4] Neueste Aktivität im Übersichtsabruf:',
+    newestExercise || null
+  )
+
+  return sessions
 }
 
 async function loadDetailedTrainingDay(token, dateString) {

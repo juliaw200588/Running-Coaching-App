@@ -1265,9 +1265,7 @@ const discardActivity = async (activity) => {
       )}
 
       {connected && (
-        <div style={{ marginBottom: 16, padding: '10px 14px', background: '#F5EDE8', border: '1px solid #E8DED4', borderRadius: 12, fontSize: 11, color: '#8B7355', fontFamily: 'sans-serif', lineHeight: 1.6 }}>
-          🕘 "Verlauf durchsuchen" ist im Zuge der Umstellung auf Polar AccessLink V4 vorübergehend deaktiviert. Der normale Sync-Button oben funktioniert weiterhin.
-        </div>
+        
       )}
 
       {false && connected && (
