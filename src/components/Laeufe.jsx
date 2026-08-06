@@ -7,6 +7,7 @@ import PhaseCards from './PhaseCards.jsx'
 import SplitAccordion from './SplitAccordion.jsx'
 import ElevationPerformanceChart from './ElevationPerformanceChart.jsx'
 import StoryShareModal from './StoryShareModal.jsx'
+import Achievements from './Achievements.jsx'
 
 const TAG_OFFSET = { Mo: 0, Di: 1, Mi: 2, Do: 3, Fr: 4, Sa: 5, So: 6 }
 const WEEKDAY_NAMES = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
@@ -794,19 +795,49 @@ if (run.status === 'pending') {
       <h2 style={{ fontSize: 22, fontWeight: 'bold', color: '#3D2B1F', margin: '0 0 16px' }}>Aktivitäten</h2>
       {message && <div style={msgStyle(message.type)}>{message.text}</div>}
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <button onClick={() => setView('list')}
-          style={{ flex: 1, padding: '10px', borderRadius: 12, border: `2px solid ${view === 'list' ? '#FF8C69' : '#F0E0D0'}`, background: view === 'list' ? '#FF8C69' : 'white', color: view === 'list' ? 'white' : '#C4A882', fontSize: 13, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
-          Liste
-        </button>
-        <button onClick={() => setView('cal')}
-          style={{ flex: 1, padding: '10px', borderRadius: 12, border: `2px solid ${view === 'cal' ? '#FF8C69' : '#F0E0D0'}`, background: view === 'cal' ? '#FF8C69' : 'white', color: view === 'cal' ? 'white' : '#C4A882', fontSize: 13, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
-          Kalender
-        </button>
-        <button onClick={() => setView('stats')}
-          style={{ flex: 1, padding: '10px', borderRadius: 12, border: `2px solid ${view === 'stats' ? '#FF8C69' : '#F0E0D0'}`, background: view === 'stats' ? '#FF8C69' : 'white', color: view === 'stats' ? 'white' : '#C4A882', fontSize: 13, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
-          Statistik
-        </button>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+          gap: 7,
+          marginBottom: 16,
+        }}
+      >
+        {[
+          { key: 'list', label: 'Liste', icon: '📋' },
+          { key: 'cal', label: 'Kalender', icon: '📅' },
+          { key: 'stats', label: 'Entwicklung', icon: '📈' },
+          { key: 'achievements', label: 'Erfolge', icon: '🏆' },
+        ].map(tab => {
+          const active = view === tab.key
+
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setView(tab.key)}
+              style={{
+                minWidth: 0,
+                padding: '9px 5px',
+                borderRadius: 12,
+                border: `2px solid ${active ? '#FF8C69' : '#F0E0D0'}`,
+                background: active ? '#FF8C69' : 'white',
+                color: active ? 'white' : '#C4A882',
+                fontSize: 10.5,
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                fontFamily: 'sans-serif',
+                lineHeight: 1.15,
+                whiteSpace: 'normal',
+              }}
+            >
+              <span style={{ display: 'block', fontSize: 14, marginBottom: 3 }}>
+                {tab.icon}
+              </span>
+              {tab.label}
+            </button>
+          )
+        })}
       </div>
 
       {(view === 'list' || view === 'cal') && (
@@ -855,6 +886,8 @@ if (run.status === 'pending') {
       )}
 
       {view === 'stats' && <Statistics user={user} plan={plan} />}
+
+      {view === 'achievements' && <Achievements user={user} />}
 
       {view === 'list' && (
         filteredRuns.length === 0 ? (
