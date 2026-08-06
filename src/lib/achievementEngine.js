@@ -133,6 +133,88 @@ const longestSequence = (dates, stepDays) => {
   return { value: best, unlockDate }
 }
 
+const monthKey = date =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+
+const monthlyCrossing = ({ activities, selector, threshold }) => {
+  const totals = new Map()
+
+  for (const activity of activities) {
+    const key = monthKey(activity.date)
+    const next = (totals.get(key) || 0) + selector(activity)
+    totals.set(key, next)
+
+    if (next >= threshold) {
+      return {
+        unlocked: true,
+        value: next,
+        unlockDate: activity.date,
+        activityId: activity.id,
+      }
+    }
+  }
+
+  return {
+    unlocked: false,
+    value: Math.max(0, ...totals.values()),
+    unlockDate: null,
+    activityId: null,
+  }
+}
+
+const monthlyDistinctSportCrossing = (activities, threshold) => {
+  const sportsByMonth = new Map()
+
+  for (const activity of activities) {
+    const key = monthKey(activity.date)
+    const sports = sportsByMonth.get(key) || new Set()
+    sports.add(activity.sport)
+    sportsByMonth.set(key, sports)
+
+    if (sports.size >= threshold) {
+      return {
+        unlocked: true,
+        value: sports.size,
+        unlockDate: activity.date,
+        activityId: activity.id,
+      }
+    }
+  }
+
+  return {
+    unlocked: false,
+    value: Math.max(
+      0,
+      ...[...sportsByMonth.values()].map(sports => sports.size)
+    ),
+    unlockDate: null,
+    activityId: null,
+  }
+}
+
+const weekendKey = date => {
+  const saturday = new Date(date)
+  const day = saturday.getDay()
+  const shift = day === 0 ? -1 : 6 - day
+  saturday.setDate(saturday.getDate() + shift)
+  saturday.setHours(12, 0, 0, 0)
+  return dateKey(saturday)
+}
+
+const longestActiveWeekendSequence = activities => {
+  const weekends = [
+    ...new Set(
+      activities
+        .filter(activity => [0, 6].includes(activity.date.getDay()))
+        .map(activity => weekendKey(activity.date))
+    ),
+  ]
+    .sort()
+    .map(key => new Date(`${key}T12:00:00`))
+
+  return longestSequence(weekends, 7)
+}
+
 const evaluateDefinition = (definition, allActivities, sportActivities) => {
   let relevant = definition.sport === 'all' ? allActivities : sportActivities
   if (definition.excludeIndoor) relevant = relevant.filter(activity => !activity.indoor)
@@ -148,6 +230,52 @@ const evaluateDefinition = (definition, allActivities, sportActivities) => {
     case 'pace_under_seconds': return firstMatching(relevant, a => a.distanceKm >= (definition.minDistanceKm || 0) && a.paceSeconds != null && a.paceSeconds < definition.threshold)
     case 'average_speed_over': return firstMatching(relevant, a => a.distanceKm >= (definition.minDistanceKm || 0) && a.averageSpeedKmh >= definition.threshold && a.averageSpeedKmh <= (definition.maxPlausibleSpeedKmh || 100))
     case 'vertical_ratio_over': return firstMatching(relevant, a => a.distanceKm >= (definition.minDistanceKm || 0) && a.distanceKm > 0 && a.elevationMeters / a.distanceKm >= definition.threshold)
+    case 'weekday_in':
+      return firstMatching(
+        relevant,
+        a => Array.isArray(definition.threshold) && definition.threshold.includes(a.date.getDay())
+      )
+    case 'weekday_count':
+      return cumulativeCrossing({
+        activities: relevant.filter(a => a.date.getDay() === definition.weekday),
+        selector: () => 1,
+        threshold: definition.threshold,
+      })
+    case 'count_start_before_hour':
+      return cumulativeCrossing({
+        activities: relevant.filter(a => a.startHour != null && a.startHour < definition.hour),
+        selector: () => 1,
+        threshold: definition.threshold,
+      })
+    case 'count_start_after_hour':
+      return cumulativeCrossing({
+        activities: relevant.filter(a => a.startHour != null && a.startHour >= definition.hour),
+        selector: () => 1,
+        threshold: definition.threshold,
+      })
+    case 'monthly_activity_count':
+      return monthlyCrossing({
+        activities: relevant,
+        selector: () => 1,
+        threshold: definition.threshold,
+      })
+    case 'monthly_distance_km':
+      return monthlyCrossing({
+        activities: relevant,
+        selector: a => a.distanceKm,
+        threshold: definition.threshold,
+      })
+    case 'monthly_sport_count':
+      return monthlyDistinctSportCrossing(relevant, definition.threshold)
+    case 'active_weekend_streak': {
+      const result = longestActiveWeekendSequence(relevant)
+      return {
+        unlocked: result.value >= definition.threshold,
+        value: result.value,
+        unlockDate: result.value >= definition.threshold ? result.unlockDate : null,
+        activityId: null,
+      }
+    }
     case 'active_day_streak': {
       const result = longestSequence(relevant.map(a => a.date), 1)
       return { unlocked: result.value >= definition.threshold, value: result.value, unlockDate: result.value >= definition.threshold ? result.unlockDate : null, activityId: null }
