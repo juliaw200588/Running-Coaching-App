@@ -29,6 +29,14 @@ const series = ({ prefix, sport = 'all', category = 'milestones', metric, thresh
     description: description(threshold),
     visibility,
     tier: index + 1,
+    rarity: options.rarity || rarityFromTier(index + 1),
+    story:
+      options.story ||
+      storyFromDefinition({
+        sport,
+        metric,
+        threshold,
+      }),
     ...options,
   }))
 
@@ -458,7 +466,23 @@ const MOMENTS = [
   },
 ]
 
+
+export const normalizeAchievementDefinition = definition => ({
+  ...definition,
+  rarity:
+    definition.rarity ||
+    rarityFromTier(definition.tier || 1),
+  story:
+    definition.story ||
+    storyFromDefinition({
+      sport: definition.sport,
+      metric: definition.metric,
+      threshold: definition.threshold,
+    }),
+})
+
 export const ACHIEVEMENT_DEFINITIONS = [
+
   ...GENERAL,
   ...RUNNING,
   ...CYCLING,
@@ -467,7 +491,7 @@ export const ACHIEVEMENT_DEFINITIONS = [
   ...SWIMMING,
   ...CONSISTENCY,
   ...MOMENTS,
-]
+].map(normalizeAchievementDefinition)
 
 export const getDefinitionsForActiveSports = activeSports =>
   ACHIEVEMENT_DEFINITIONS.filter(

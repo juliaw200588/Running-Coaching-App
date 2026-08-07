@@ -42,3 +42,21 @@ export const loadAndEvaluateAchievements = async ({ supabase, userId }) => {
 
   return evaluation
 }
+
+export const markAchievementUnlocksShown = async ({
+  supabase,
+  userId,
+  achievementIds = [],
+}) => {
+  if (!achievementIds.length) return
+
+  const { error } = await supabase
+    .from('achievement_unlocks')
+    .update({
+      seen_at: new Date().toISOString(),
+    })
+    .eq('user_id', userId)
+    .in('achievement_id', achievementIds)
+
+  if (error) throw error
+}

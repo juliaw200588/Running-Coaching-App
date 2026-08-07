@@ -6,6 +6,22 @@ import {
   SPORT_META,
 } from '../lib/achievementDefinitions.js'
 
+
+const RARITY_META = {
+  common: { label: 'Gewöhnlich', accent: '#B7AAA1' },
+  special: { label: 'Besonders', accent: '#6FAF86' },
+  rare: { label: 'Selten', accent: '#6B94D6' },
+  epic: { label: 'Außergewöhnlich', accent: '#9B73C4' },
+  legendary: { label: 'Legendär', accent: '#D89A42' },
+}
+
+const isNewAchievement = unlockedAt => {
+  if (!unlockedAt) return false
+  const unlocked = new Date(unlockedAt)
+  if (Number.isNaN(unlocked.getTime())) return false
+  return Date.now() - unlocked.getTime() <= 7 * 24 * 60 * 60 * 1000
+}
+
 const CATEGORY_ORDER = [
   'all',
   'milestones',
@@ -108,6 +124,10 @@ function ProgressBar({ percent = 0, unlocked = false }) {
 function AchievementCard({ achievement }) {
   const state = getCardState(achievement)
   const unlockedDate = formatDate(achievement.unlockedAt)
+  const rarity =
+    RARITY_META[achievement.rarity] || RARITY_META.common
+  const isNew =
+    achievement.unlocked && isNewAchievement(achievement.unlockedAt)
 
   if (state === 'secret') {
     return (
@@ -215,6 +235,22 @@ function AchievementCard({ achievement }) {
           {isHinted && !isUnlocked ? '✨' : achievement.icon}
         </div>
 
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {isNew && (
+            <div
+              style={{
+                padding: '4px 7px',
+                borderRadius: 999,
+                background: '#FFF0D9',
+                color: '#C17A3A',
+                fontSize: 9,
+                fontWeight: 'bold',
+              }}
+            >
+              ✨ NEU
+            </div>
+          )}
+
         <div
           style={{
             padding: '4px 7px',
@@ -226,7 +262,8 @@ function AchievementCard({ achievement }) {
             whiteSpace: 'nowrap',
           }}
         >
-          {isUnlocked ? '✓ FREIGESCHALTET' : 'NOCH OFFEN'}
+          {isUnlocked ? '✓ ERREICHT' : 'NOCH OFFEN'}
+        </div>
         </div>
       </div>
 
@@ -253,7 +290,25 @@ function AchievementCard({ achievement }) {
       >
         {isHinted && !isUnlocked
           ? 'Die genaue Bedingung bleibt noch verborgen.'
-          : achievement.description}
+          : isUnlocked
+            ? achievement.story || achievement.description
+            : achievement.description}
+      </div>
+
+      <div
+        style={{
+          marginTop: 8,
+          display: 'inline-flex',
+          alignSelf: 'flex-start',
+          padding: '4px 7px',
+          borderRadius: 999,
+          background: `${rarity.accent}14`,
+          color: rarity.accent,
+          fontSize: 8.5,
+          fontWeight: 'bold',
+        }}
+      >
+        {rarity.label}
       </div>
 
       <div style={{ marginTop: 'auto', paddingTop: 10 }}>
@@ -292,8 +347,8 @@ function AchievementCard({ achievement }) {
             }}
           >
             {unlockedDate
-              ? `Freigeschaltet am ${unlockedDate}`
-              : 'Freigeschaltet'}
+              ? `Erreicht am ${unlockedDate}`
+              : 'Erreicht'}
           </div>
         )}
       </div>
