@@ -7,6 +7,8 @@ import {
 } from '../lib/achievementDefinitions.js'
 
 
+const ACHIEVEMENTS_UI_VERSION = '2.2'
+
 const RARITY_META = {
   common: { label: 'Gewöhnlich', accent: '#B7AAA1' },
   special: { label: 'Besonders', accent: '#6FAF86' },
@@ -81,40 +83,129 @@ const formatProgressValue = (value, unit) => {
 }
 
 
-const getProgressText = achievement => {
-  if (!achievement?.progress) return null
 
-  const { current, target, remaining } = achievement.progress
+const plural = (value, singular, pluralForm = null) =>
+  Number(value) === 1 ? singular : pluralForm || `${singular}e`
+
+const getRemainingText = achievement => {
+  const progress = achievement?.progress
+  if (!progress || achievement.unlocked) return null
+
+  const { current, target, remaining, percent = 0 } = progress
+  const amount = Number(remaining)
 
   if (achievement.metric === 'pace_under_seconds') {
-    const targetPace = formatPaceSeconds(target)
-
-    if (achievement.unlocked) {
-      return `${targetPace} erreicht`
-    }
-
     if (current == null) {
-      return `Noch kein Lauf über mindestens ${achievement.minDistanceKm || 3} km mit verwertbarer Pace.`
+      return `Noch kein Lauf über mindestens ${achievement.minDistanceKm || 3} km mit verwertbarer Pace`
     }
 
-    const currentPace = formatPaceSeconds(current)
-    const secondsRemaining = Math.max(
-      0,
-      Math.ceil(remaining || 0)
-    )
+    const seconds = Math.max(0, Math.ceil(amount || 0))
+    if (seconds <= 1) return 'Nur noch 1 Sek./km – fast geschafft!'
 
-    return `Beste Pace bisher: ${currentPace} · Noch ${secondsRemaining} Sek./km bis unter ${targetPace.replace(' min/km', '')}`
+    return `${percent >= 85 ? 'Fast geschafft · ' : ''}Noch ${seconds} Sek./km`
+  }
+
+  if (!Number.isFinite(amount)) return null
+
+  const rounded =
+    Number.isInteger(amount)
+      ? amount
+      : Math.round(amount * 10) / 10
+
+  let label = achievement.unit || ''
+
+  switch (achievement.metric) {
+    case 'activity_count':
+      if (achievement.sport === 'running') {
+        label = plural(rounded, 'Lauf', 'Läufe')
+      } else if (achievement.sport === 'mountain_biking') {
+        label = plural(rounded, 'MTB-Tour', 'MTB-Touren')
+      } else if (achievement.sport === 'hiking') {
+        label = plural(rounded, 'Wanderung', 'Wanderungen')
+      } else if (achievement.sport === 'cycling') {
+        label = plural(rounded, 'Radtour', 'Radtouren')
+      } else if (achievement.sport === 'swimming') {
+        label = plural(rounded, 'Schwimmeinheit', 'Schwimmeinheiten')
+      } else {
+        label = plural(rounded, 'Aktivität', 'Aktivitäten')
+      }
+      break
+
+    case 'total_hours':
+    case 'single_duration_hours':
+      label = plural(rounded, 'Stunde', 'Stunden')
+      break
+
+    case 'total_elevation_m':
+    case 'single_elevation_m':
+      label = 'Höhenmeter'
+      break
+
+    case 'active_day_streak':
+      label = plural(rounded, 'aktiver Tag', 'aktive Tage')
+      break
+
+    case 'active_week_streak':
+      label = plural(rounded, 'aktive Woche', 'aktive Wochen')
+      break
+
+    case 'active_weekend_streak':
+      label = plural(rounded, 'Wochenende', 'Wochenenden')
+      break
+
+    case 'monthly_activity_count':
+      label = plural(rounded, 'Aktivität', 'Aktivitäten')
+      break
+
+    case 'monthly_sport_count':
+      label = plural(rounded, 'Sportart', 'Sportarten')
+      break
+
+    case 'weekday_count':
+      label = plural(rounded, 'Termin', 'Termine')
+      break
+
+    default:
+      break
+  }
+
+  const formatted = formatNumber(rounded)
+  const prefix =
+    percent >= 90
+      ? 'Fast geschafft · '
+      : percent >= 75
+        ? 'Nicht mehr weit · '
+        : ''
+
+  if (rounded === 1) {
+    return `${prefix}Nur noch ${formatted}${label ? ` ${label}` : ''}!`
+  }
+
+  return `${prefix}Noch ${formatted}${label ? ` ${label}` : ''}`
+}
+
+const getCompactProgressText = achievement => {
+  const progress = achievement?.progress
+  if (!progress || achievement.unlocked) return null
+
+  const { current, target } = progress
+
+  if (achievement.metric === 'pace_under_seconds') {
+    if (current == null) return null
+
+    return `Beste Pace: ${formatPaceSeconds(current)} · Ziel: unter ${formatPaceSeconds(target)}`
+  }
+
+  if (
+    typeof current !== 'number' ||
+    typeof target !== 'number'
+  ) {
+    return null
   }
 
   const unit = achievement.unit || ''
 
-  if (achievement.unlocked) {
-    return `${formatProgressValue(target, unit)} erreicht`
-  }
-
-  if (typeof target !== 'number') return null
-
-  return `${formatProgressValue(current, unit)} von ${formatProgressValue(
+  return `${formatProgressValue(current, unit)} / ${formatProgressValue(
     target,
     unit
   )}`
@@ -224,6 +315,7 @@ function AchievementCard({ achievement }) {
 
   return (
     <div
+      data-achievements-ui-version={ACHIEVEMENTS_UI_VERSION}
       style={{
         minHeight: 170,
         borderRadius: 18,
@@ -311,45 +403,48 @@ function AchievementCard({ achievement }) {
         {isHinted && !isUnlocked ? achievement.title : achievement.title}
       </div>
 
-      <div
-        style={{
-          marginTop: 5,
-          minHeight: 30,
-          fontSize: 10.5,
-          lineHeight: 1.45,
-          color: '#947F71',
-        }}
-      >
-        {isHinted && !isUnlocked ? (
-          'Die genaue Bedingung bleibt noch verborgen.'
-        ) : (
-          <>
+
+{(isUnlocked || isHinted) && (
+  <div
+    style={{
+      marginTop: 5,
+      minHeight: 30,
+      fontSize: 10.5,
+      lineHeight: 1.45,
+      color: '#947F71',
+    }}
+  >
+    {isHinted && !isUnlocked ? (
+      'Die genaue Bedingung bleibt noch verborgen.'
+    ) : (
+      <>
+        <div
+          style={{
+            color: '#8E6F5F',
+            lineHeight: 1.48,
+          }}
+        >
+          {achievement.story || achievement.description}
+        </div>
+
+        {achievement.story &&
+          achievement.description &&
+          achievement.story !== achievement.description && (
             <div
               style={{
-                color: '#8E6F5F',
-                lineHeight: 1.48,
+                marginTop: 6,
+                color: '#B09A8C',
+                fontSize: 9.4,
+                lineHeight: 1.4,
               }}
             >
-              {achievement.story || achievement.description}
+              {achievement.description}
             </div>
-
-            {achievement.story &&
-              achievement.description &&
-              achievement.story !== achievement.description && (
-                <div
-                  style={{
-                    marginTop: 6,
-                    color: '#B09A8C',
-                    fontSize: 9.4,
-                    lineHeight: 1.4,
-                  }}
-                >
-                  {achievement.description}
-                </div>
-              )}
-          </>
-        )}
-      </div>
+          )}
+      </>
+    )}
+  </div>
+)}
 
       <div
         style={{
@@ -370,16 +465,31 @@ function AchievementCard({ achievement }) {
       <div style={{ marginTop: 'auto', paddingTop: 10 }}>
         {!isUnlocked && !isHinted && (
           <>
-            <ProgressBar percent={achievement.progress?.percent || 0} />
             <div
               style={{
-                marginTop: 6,
-                fontSize: 9.5,
-                color: '#A59184',
+                marginBottom: 7,
+                fontSize: 11,
+                color: '#765E50',
+                fontWeight: 'bold',
+                lineHeight: 1.35,
               }}
             >
-              {getProgressText(achievement)}
+              {getRemainingText(achievement)}
             </div>
+
+            <ProgressBar percent={achievement.progress?.percent || 0} />
+
+            {getCompactProgressText(achievement) && (
+              <div
+                style={{
+                  marginTop: 6,
+                  fontSize: 9.2,
+                  color: '#AA9587',
+                }}
+              >
+                {getCompactProgressText(achievement)}
+              </div>
+            )}
           </>
         )}
 
@@ -414,9 +524,6 @@ function AchievementCard({ achievement }) {
 
 function NextAchievement({ achievement }) {
   if (!achievement) return null
-
-  const remaining = achievement.progress?.remaining
-  const unit = achievement.unit || ''
 
   return (
     <div
@@ -482,9 +589,8 @@ function NextAchievement({ achievement }) {
               color: '#967F70',
             }}
           >
-            {remaining != null
-              ? `Noch ${formatProgressValue(remaining, unit)}`
-              : achievement.story || achievement.description}
+            {getRemainingText(achievement) ||
+              achievement.description}
           </div>
         </div>
       </div>
