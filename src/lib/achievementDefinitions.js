@@ -1,3 +1,5 @@
+import { getAchievementStory } from './achievementCopy.js'
+
 export const ACHIEVEMENT_CATEGORIES = {
   milestones: { id: 'milestones', label: 'Meilensteine', icon: '⭐' },
   performance: { id: 'performance', label: 'Bestleistungen', icon: '🏅' },
@@ -389,6 +391,11 @@ const series = ({ prefix, sport = 'all', category = 'milestones', metric, thresh
       typeof options.story === 'function'
         ? options.story(threshold, index)
         : options.story ||
+          getAchievementStory({
+            sport,
+            metric,
+            threshold,
+          }) ||
           storyFromDefinition({
             sport,
             metric,
@@ -532,11 +539,17 @@ const CYCLING = [
       metric: 'average_speed_over',
       threshold,
     }),
-    story: storyFromDefinition({
-      sport: 'cycling',
-      metric: 'average_speed_over',
-      threshold,
-    }),
+    story:
+      getAchievementStory({
+        sport: 'cycling',
+        metric: 'average_speed_over',
+        threshold,
+      }) ||
+      storyFromDefinition({
+        sport: 'cycling',
+        metric: 'average_speed_over',
+        threshold,
+      }),
     title: `Ø ${String(threshold).replace('.', ',')} km/h`,
     description: `Du bist über mindestens 20 km im Durchschnitt ${String(threshold).replace('.', ',')} km/h gefahren.`,
   })),
@@ -864,6 +877,11 @@ export const normalizeAchievementDefinition = definition => ({
     rarityFromTier(definition.tier || 1),
   story:
     definition.story ||
+    getAchievementStory({
+      sport: definition.sport,
+      metric: definition.metric,
+      threshold: definition.threshold,
+    }) ||
     storyFromDefinition({
       sport: definition.sport,
       metric: definition.metric,
