@@ -8,6 +8,7 @@ import SplitAccordion from './SplitAccordion.jsx'
 import ElevationPerformanceChart from './ElevationPerformanceChart.jsx'
 import StoryShareModal from './StoryShareModal.jsx'
 import Achievements from './Achievements.jsx'
+import ActivityContextEditor from './ActivityContextEditor.jsx'
 
 const TAG_OFFSET = { Mo: 0, Di: 1, Mi: 2, Do: 3, Fr: 4, Sa: 5, So: 6 }
 const WEEKDAY_NAMES = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
@@ -388,6 +389,7 @@ export default function Laeufe({ user, plan }) {
           maxSpeedKmh: l.max_speed_kmh,
           elevationGain: l.elevation_gain,
           elevationLoss: l.elevation_loss,
+          activityContext: l.activity_context || null,
           duration: l.duration_seconds ? formatDuration(l.duration_seconds) : null,
           status: isExtra ? 'extra' : 'assigned',
           source: l.source || (isPolar ? 'polar' : 'manual'),
@@ -1095,6 +1097,34 @@ if (run.status === 'pending') {
                   💬 {d.note}
                 </div>
               )}
+
+
+<ActivityContextEditor
+  user={user}
+  logId={d.logId}
+  activityContext={d.activityContext}
+  onSaved={nextContext => {
+    setDetailRun(previous =>
+      previous
+        ? {
+            ...previous,
+            activityContext: nextContext,
+          }
+        : previous
+    )
+
+    setRuns(previous =>
+      previous.map(run =>
+        run.logId === d.logId
+          ? {
+              ...run,
+              activityContext: nextContext,
+            }
+          : run
+      )
+    )
+  }}
+/>
 
 
 

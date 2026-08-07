@@ -6,6 +6,9 @@ import {
   loadAndEvaluateAchievements,
   markAchievementUnlocksShown,
 } from '../lib/achievementService.js'
+import {
+  enrichActivityContext,
+} from '../lib/activityContext.js'
 
 const TAG_OFFSET = { Mo: 0, Di: 1, Mi: 2, Do: 3, Fr: 4, Sa: 5, So: 6 }
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
@@ -520,6 +523,51 @@ export default function PolarConnect({ user, plan, onOpenActivities }) {
     }
   }
 
+
+const enrichImportedActivity = async activity => {
+  if (!activity?.polar_exercise_id) return
+
+  await enrichActivityContext({
+    userId: user.id,
+    polarExerciseId: activity.polar_exercise_id,
+  })
+}
+
+const enrichOldActivities = async () => {
+  setContextBackfillRunning(true)
+  setContextBackfillMessage(null)
+
+  try {
+    const result = await enrichExistingActivities({
+      userId: user.id,
+      limit: 8,
+    })
+
+    if (result?.error) {
+      setContextBackfillMessage(
+        'Aktivitäten konnten gerade nicht ergänzt werden.'
+      )
+      return
+    }
+
+    if (result.remaining > 0) {
+      setContextBackfillMessage(
+        `${result.succeeded} Aktivitäten ergänzt · noch ${result.remaining} offen`
+      )
+    } else if (result.processed > 0) {
+      setContextBackfillMessage(
+        'Bestehende Aktivitäten wurden ergänzt.'
+      )
+    } else {
+      setContextBackfillMessage(
+        'Alle Aktivitäten sind bereits ergänzt.'
+      )
+    }
+  } finally {
+    setContextBackfillRunning(false)
+  }
+}
+
   const assignActivity = async (activity, chosenKey) => {
     setAssigning(activity.id)
 
@@ -622,6 +670,8 @@ export default function PolarConnect({ user, plan, onOpenActivities }) {
 
       const remaining = pending.filter(a => a.id !== activity.id)
       setPending(remaining)
+
+      await enrichImportedActivity(activity)
 
       // Erst jetzt ist die Aktivität endgültig in `logs` übernommen.
       // Deshalb erfolgt die Erfolgsauswertung genau an dieser Stelle
@@ -819,6 +869,8 @@ const discardActivity = async (activity) => {
       }
 
       setHistoryAssignedIds(prev => new Set([...prev, historyId]))
+
+      await enrichImportedActivity(activity)
 
       const newAchievements = await checkForNewAchievements()
 
@@ -1093,6 +1145,46 @@ const discardActivity = async (activity) => {
             {syncing ? '⏳ Synchronisiere…' : '🔄 Aktivitäten synchronisieren'}
           </button>
         )}
+
+{connected && (
+  <div style={{ marginTop: 8 }}>
+    <button
+      type="button"
+      onClick={enrichOldActivities}
+      disabled={contextBackfillRunning}
+      style={{
+        width: '100%',
+        padding: '10px 12px',
+        borderRadius: 11,
+        border: '1.5px solid #DDEBE3',
+        background: '#F6FBF8',
+        color: '#5B9273',
+        fontSize: 11,
+        fontWeight: 'bold',
+        cursor: contextBackfillRunning ? 'default' : 'pointer',
+        fontFamily: 'sans-serif',
+      }}
+    >
+      {contextBackfillRunning
+        ? '⏳ Aktivitäten werden ergänzt…'
+        : '🌦️ Bestehende Aktivitäten ergänzen'}
+    </button>
+
+    {contextBackfillMessage && (
+      <div
+        style={{
+          marginTop: 6,
+          fontSize: 9.5,
+          color: '#9A877A',
+          textAlign: 'center',
+          lineHeight: 1.4,
+        }}
+      >
+        {contextBackfillMessage}
+      </div>
+    )}
+  </div>
+)}
       </div>
 
       {pending.length > 0 && (

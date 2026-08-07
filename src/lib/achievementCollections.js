@@ -7,8 +7,30 @@ const normalizeSport = value => {
   return raw
 }
 
+
+const parseContext = value => {
+  if (!value) return {}
+
+  if (typeof value === 'object') return value
+
+  try {
+    return JSON.parse(value)
+  } catch {
+    return {}
+  }
+}
+
 const getActivityTags = activity => {
-  const values = [
+  const context = parseContext(activity?.activity_context)
+
+  const contextValues = [
+    context?.weather?.tags,
+    context?.sun?.tags,
+    context?.environment?.auto_tags,
+    context?.environment?.manual_tags,
+  ]
+
+  const legacyValues = [
     activity?.environment_tags,
     activity?.location_tags,
     activity?.route_tags,
@@ -20,7 +42,7 @@ const getActivityTags = activity => {
     activity?.location_type,
   ]
 
-  return values
+  return [...contextValues, ...legacyValues]
     .flatMap(value => {
       if (Array.isArray(value)) return value
       if (!value) return []
