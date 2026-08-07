@@ -1,16 +1,10 @@
 const normalizeSport = value => {
   const raw = String(value || '').toLowerCase()
+
   if (raw === 'walking') return 'hiking'
   if (raw === 'indoor_cycling' || raw === 'indoor cycling') return 'cycling'
-  return raw
-}
 
-const SPORT_LABELS = {
-  running: { label: 'Laufen', icon: '🏃' },
-  cycling: { label: 'Radfahren', icon: '🚴' },
-  mountain_biking: { label: 'Mountainbike', icon: '🚵' },
-  hiking: { label: 'Wandern', icon: '🥾' },
-  swimming: { label: 'Schwimmen', icon: '🏊' },
+  return raw
 }
 
 const getActivityTags = activity => {
@@ -30,6 +24,7 @@ const getActivityTags = activity => {
     .flatMap(value => {
       if (Array.isArray(value)) return value
       if (!value) return []
+
       if (typeof value === 'string') {
         try {
           const parsed = JSON.parse(value)
@@ -37,24 +32,27 @@ const getActivityTags = activity => {
         } catch {
           // normale Zeichenkette
         }
+
         return value.split(/[;,|]/g)
       }
+
       return []
     })
     .map(value => String(value).trim().toLowerCase())
     .filter(Boolean)
 }
 
+const hasAnyTagData = activities =>
+  activities.some(activity => getActivityTags(activity).length > 0)
+
 const hasTag = (activities, aliases) =>
   activities.some(activity => {
     const tags = getActivityTags(activity)
+
     return aliases.some(alias =>
       tags.some(tag => tag.includes(alias))
     )
   })
-
-const hasAnyTagData = activities =>
-  activities.some(activity => getActivityTags(activity).length > 0)
 
 const achievementItem = (id, label, icon) => ({
   type: 'achievement',
@@ -78,97 +76,23 @@ const tagItem = (key, label, icon, aliases) => ({
   aliases,
 })
 
+const fixedItem = (key, label, icon, unlocked = false) => ({
+  type: 'fixed',
+  key,
+  label,
+  icon,
+  unlocked,
+})
+
 export const COLLECTION_DEFINITIONS = [
-  {
-    id: 'tageszeiten',
-    title: 'Tageszeiten',
-    icon: '🌅',
-    description: 'Von frühen Starts bis zu späten Einheiten.',
-    completeText: 'Du hast Bewegung zu ganz unterschiedlichen Tageszeiten erlebt.',
-    items: [
-      achievementItem('moment_early_bird', 'Früh unterwegs', '🌅'),
-      achievementItem('moment_morning_routine_5', 'Morgenroutine', '☀️'),
-      achievementItem('moment_evening_routine_10', 'Feierabendroutine', '🌇'),
-      achievementItem('moment_night_owl', 'Nachts unterwegs', '🌙'),
-    ],
-  },
-  {
-    id: 'entdecker',
-    title: 'Entdecker',
-    icon: '🧭',
-    description: 'Dein sportlicher Weg kennt mehr als nur eine Richtung.',
-    completeText: 'Du bist in allen verfügbaren Sportwelten unterwegs gewesen.',
-    items: [
-      firstSportItem('running', 'Laufen entdeckt', '🏃'),
-      firstSportItem('cycling', 'Radfahren entdeckt', '🚴'),
-      firstSportItem('mountain_biking', 'MTB entdeckt', '🚵'),
-      firstSportItem('hiking', 'Wandern entdeckt', '🥾'),
-      firstSportItem('swimming', 'Schwimmen entdeckt', '🏊'),
-      achievementItem('moment_multisport_month_3', 'Vielseitiger Monat', '✨'),
-    ],
-  },
-  {
-    id: 'dranbleiben',
-    title: 'Dranbleiben',
-    icon: '🔥',
-    description: 'Nicht ein einzelner Tag zählt, sondern dass du wiederkommst.',
-    completeText: 'Beständigkeit ist längst ein Teil deines sportlichen Weges.',
-    items: [
-      achievementItem('all_active_day_streak_7', '7 Tage aktiv', '🔥'),
-      achievementItem('all_active_day_streak_14', '14 Tage aktiv', '🔥'),
-      achievementItem('all_active_week_streak_5', '5 aktive Wochen', '📅'),
-      achievementItem('all_active_week_streak_10', '10 aktive Wochen', '📅'),
-    ],
-  },
-  {
-    id: 'weite',
-    title: 'Weite',
-    icon: '🗺️',
-    description: 'Viele einzelne Strecken ergeben irgendwann eine große Reise.',
-    completeText: 'Dein sportlicher Weg reicht inzwischen sehr weit.',
-    items: [
-      achievementItem('all_total_distance_500', '500 km', '🗺️'),
-      achievementItem('all_total_distance_1000', '1.000 km', '🗺️'),
-      achievementItem('all_total_distance_2500', '2.500 km', '🗺️'),
-      achievementItem('all_total_distance_5000', '5.000 km', '🗺️'),
-      achievementItem('all_total_distance_10000', '10.000 km', '🗺️'),
-    ],
-  },
-  {
-    id: 'hoehe',
-    title: 'Höhenjäger',
-    icon: '⛰️',
-    description: 'Jeder Anstieg zählt.',
-    completeText: 'Aus vielen Anstiegen ist ein ganzes Gebirge geworden.',
-    items: [
-      achievementItem('all_total_elevation_5000', '5.000 hm', '⛰️'),
-      achievementItem('all_total_elevation_10000', '10.000 hm', '⛰️'),
-      achievementItem('all_total_elevation_25000', '25.000 hm', '🏔️'),
-      achievementItem('all_total_elevation_50000', '50.000 hm', '🏔️'),
-      achievementItem('all_total_elevation_100000', '100.000 hm', '🏔️'),
-    ],
-  },
-  {
-    id: 'besondere_tage',
-    title: 'Besondere Tage',
-    icon: '✨',
-    description: 'Manche Aktivitäten bleiben wegen ihres Moments in Erinnerung.',
-    completeText: 'Du hast Bewegung mit ganz besonderen Tagen verbunden.',
-    items: [
-      achievementItem('moment_weekend_start', 'Wochenende', '🗓️'),
-      achievementItem('moment_sunday_7', 'Sonntagsritual', '☕'),
-      achievementItem('moment_new_year', 'Neujahr', '🎆'),
-      achievementItem('moment_christmas', 'Weihnachten', '🎄'),
-      achievementItem('moment_new_year_eve', 'Jahresausklang', '✨'),
-      achievementItem('moment_four_seasons', 'Vier Jahreszeiten', '🍂'),
-    ],
-  },
   {
     id: 'natur',
     title: 'Natur',
-    icon: '🌿',
-    description: 'Orte und Landschaften, die deine Aktivitäten besonders machen.',
-    completeText: 'Dein Weg führt durch ganz unterschiedliche Landschaften.',
+    icon: '🌲',
+    description: 'Die schönsten Orte, an denen dich dein Weg geführt hat.',
+    completeTitle: 'Naturforscher',
+    completeIcon: '🏆',
+    completeText: 'Wald, Küste, Berge und mehr – du hast viele Landschaften entdeckt.',
     dataDependent: true,
     items: [
       tagItem('forest', 'Wald', '🌲', ['wald', 'forest']),
@@ -176,31 +100,114 @@ export const COLLECTION_DEFINITIONS = [
       tagItem('mountain', 'Berge', '🏔️', ['berg', 'mountain', 'alpine']),
       tagItem('field', 'Feld & Wiese', '🌾', ['feld', 'field', 'wiese', 'meadow']),
       tagItem('beach', 'Strand', '🏖️', ['strand', 'beach', 'sand']),
+      tagItem('sunrise', 'Sonnenaufgang', '🌅', ['sunrise', 'sonnenaufgang']),
+      tagItem('sunset', 'Sonnenuntergang', '🌄', ['sunset', 'sonnenuntergang']),
     ],
   },
+
   {
     id: 'wetter',
     title: 'Wetter',
     icon: '🌦️',
-    description: 'Bewegung fühlt sich bei jedem Wetter anders an.',
-    completeText: 'Sonne, Regen, Schnee – du warst bei allem unterwegs.',
+    description: 'Du warst bei ganz unterschiedlichen Bedingungen unterwegs.',
+    completeTitle: 'Wetterfest',
+    completeIcon: '🏆',
+    completeText: 'Sonne, Regen, Schnee und mehr – das Wetter hält dich nicht auf.',
     dataDependent: true,
     items: [
       tagItem('sun', 'Sonne', '☀️', ['sonne', 'sun', 'sunny', 'clear']),
+      tagItem('clouds', 'Bewölkt', '☁️', ['cloud', 'cloudy', 'bewölkt']),
       tagItem('rain', 'Regen', '🌧️', ['regen', 'rain', 'rainy']),
       tagItem('snow', 'Schnee', '❄️', ['schnee', 'snow', 'snowy']),
       tagItem('fog', 'Nebel', '🌫️', ['nebel', 'fog', 'foggy', 'mist']),
       tagItem('wind', 'Wind', '💨', ['wind', 'windy', 'sturm', 'storm']),
     ],
   },
+
+  {
+    id: 'entdecker',
+    title: 'Entdecker',
+    icon: '🌍',
+    description: 'Neue Sportarten erweitern deinen Horizont.',
+    completeTitle: 'Allrounder',
+    completeIcon: '🏆',
+    completeText: 'Du bist in allen aktuell unterstützten Sportwelten unterwegs gewesen.',
+    items: [
+      firstSportItem('running', 'Laufen', '🏃'),
+      firstSportItem('cycling', 'Radfahren', '🚴'),
+      firstSportItem('mountain_biking', 'Mountainbike', '🚵'),
+      firstSportItem('hiking', 'Wandern', '🥾'),
+      firstSportItem('swimming', 'Schwimmen', '🏊'),
+      achievementItem('moment_multisport_month_3', 'Vielseitiger Monat', '✨'),
+    ],
+  },
+
+  {
+    id: 'tageszeiten',
+    title: 'Tageszeiten',
+    icon: '🌅',
+    description: 'Jede Tageszeit hat ihren eigenen Charakter.',
+    completeTitle: 'Rund um die Uhr',
+    completeIcon: '🏆',
+    completeText: 'Früh, spät und dazwischen – Bewegung kennt für dich keine feste Uhrzeit.',
+    items: [
+      achievementItem('moment_early_bird', 'Frühaufsteher', '🌅'),
+      achievementItem('moment_morning_routine_5', 'Morgenroutine', '☀️'),
+      achievementItem('moment_evening_routine_10', 'Feierabendroutine', '🌇'),
+      achievementItem('moment_night_owl', 'Nachteule', '🌙'),
+    ],
+  },
+
+  {
+    id: 'besondere_tage',
+    title: 'Besondere Tage',
+    icon: '🎉',
+    description: 'Manche Tage bekommen durch Bewegung ihre eigene Erinnerung.',
+    completeTitle: 'Unvergessliche Momente',
+    completeIcon: '🏆',
+    completeText: 'Du hast aus besonderen Tagen auch sportliche Erinnerungen gemacht.',
+    items: [
+      achievementItem('moment_new_year', 'Neujahr', '🎆'),
+      achievementItem('moment_christmas', 'Weihnachten', '🎄'),
+      achievementItem('moment_new_year_eve', 'Silvester', '🎉'),
+      achievementItem('moment_four_seasons', 'Vier Jahreszeiten', '🍂'),
+      achievementItem('moment_weekend_start', 'Wochenende', '🗓️'),
+      fixedItem('holiday', 'Urlaub', '🏖️', false),
+    ],
+  },
+
+  {
+    id: 'lifestyle',
+    title: 'Lifestyle',
+    icon: '❤️',
+    description: 'Bewegung wird Teil deines Alltags.',
+    completeTitle: 'Bewegung ist dein Alltag',
+    completeIcon: '🏆',
+    completeText: 'Aus einzelnen Aktivitäten ist ein fester Bestandteil deines Lebens geworden.',
+    items: [
+      achievementItem('all_active_day_streak_7', '7-Tage-Serie', '🔥'),
+      achievementItem('all_active_week_streak_10', '10 aktive Wochen', '📅'),
+      achievementItem('moment_sunday_7', 'Sonntagsritual', '☕'),
+      achievementItem('moment_early_bird', 'Frühaufsteher', '🌅'),
+      achievementItem('moment_night_owl', 'Nachteule', '🌙'),
+      achievementItem('moment_weekend_streak_3', 'Wochenendserie', '⭐'),
+    ],
+  },
 ]
 
-const evaluateItem = (item, achievementMap, activities) => {
+const evaluateItem = (
+  item,
+  achievementMap,
+  activities,
+  tagDataAvailable
+) => {
   if (item.type === 'achievement') {
     const achievement = achievementMap.get(item.id)
+
     return {
       ...item,
       unlocked: Boolean(achievement?.unlocked),
+      available: true,
       unlockedAt: achievement?.unlockedAt || null,
     }
   }
@@ -222,22 +229,33 @@ const evaluateItem = (item, achievementMap, activities) => {
     return {
       ...item,
       unlocked: Boolean(first),
+      available: true,
       unlockedAt: first?.actual_date || first?.date || null,
-      sportMeta: SPORT_LABELS[item.sport],
     }
   }
 
   if (item.type === 'tag') {
-    const unlocked = hasTag(activities, item.aliases)
     return {
       ...item,
-      unlocked,
+      unlocked:
+        tagDataAvailable && hasTag(activities, item.aliases),
+      available: tagDataAvailable,
+      unlockedAt: null,
+    }
+  }
+
+  if (item.type === 'fixed') {
+    return {
+      ...item,
+      available: false,
+      unlocked: Boolean(item.unlocked),
       unlockedAt: null,
     }
   }
 
   return {
     ...item,
+    available: true,
     unlocked: false,
     unlockedAt: null,
   }
@@ -254,43 +272,55 @@ export const buildCollections = ({
     ])
   )
 
-  return COLLECTION_DEFINITIONS
-    .filter(definition =>
-      !definition.dataDependent || hasAnyTagData(activities)
-    )
-    .map(definition => {
-      const items = definition.items.map(item =>
-        evaluateItem(item, achievementMap, activities)
+  const tagDataAvailable = hasAnyTagData(activities)
+
+  return COLLECTION_DEFINITIONS.map(definition => {
+    const items = definition.items.map(item =>
+      evaluateItem(
+        item,
+        achievementMap,
+        activities,
+        tagDataAvailable
       )
+    )
 
-      const unlockedCount = items.filter(item => item.unlocked).length
-      const totalCount = items.length
-      const percent =
-        totalCount > 0
-          ? Math.round((unlockedCount / totalCount) * 100)
-          : 0
+    const availableItems = items.filter(item => item.available)
+    const unlockedCount = items.filter(item => item.unlocked).length
+    const availableUnlockedCount =
+      availableItems.filter(item => item.unlocked).length
 
-      return {
-        ...definition,
-        items,
-        unlockedCount,
-        totalCount,
-        percent,
-        complete: totalCount > 0 && unlockedCount === totalCount,
-      }
-    })
+    const totalCount = items.length
+    const availableCount = availableItems.length
+
+    const percent =
+      availableCount > 0
+        ? Math.round(
+            (availableUnlockedCount / availableCount) * 100
+          )
+        : 0
+
+    const complete =
+      availableCount === totalCount &&
+      totalCount > 0 &&
+      unlockedCount === totalCount
+
+    return {
+      ...definition,
+      items,
+      unlockedCount,
+      totalCount,
+      availableCount,
+      unavailableCount: totalCount - availableCount,
+      percent,
+      complete,
+      waitingForData:
+        Boolean(definition.dataDependent) &&
+        availableCount === 0,
+    }
+  })
 }
 
-export const getCollectionSummary = collections => {
-  const total = collections.length
-  const complete = collections.filter(collection => collection.complete).length
-
-  return {
-    total,
-    complete,
-    percent:
-      total > 0
-        ? Math.round((complete / total) * 100)
-        : 0,
-  }
-}
+export const getCollectionSummary = collections => ({
+  total: collections.length,
+  complete: collections.filter(collection => collection.complete).length,
+})

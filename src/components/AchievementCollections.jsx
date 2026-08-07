@@ -9,20 +9,24 @@ import {
 function CollectionCard({ collection }) {
   const [open, setOpen] = useState(false)
 
+  const countLabel = collection.waitingForData
+    ? 'vorbereitet'
+    : `${collection.unlockedCount}/${collection.totalCount}`
+
   return (
     <div
       style={{
         borderRadius: 20,
         border: collection.complete
-          ? '1px solid #EBCF9C'
+          ? '1px solid #E7C875'
           : '1px solid #EAE1DA',
         background: collection.complete
-          ? 'linear-gradient(145deg,#FFFDF6,#FFF7EA)'
+          ? 'linear-gradient(145deg,#FFFDF5,#FFF5DE)'
           : '#FFFFFF',
         padding: 16,
         fontFamily: 'sans-serif',
         boxShadow: collection.complete
-          ? '0 8px 24px rgba(166,122,63,0.10)'
+          ? '0 9px 26px rgba(176,128,49,0.12)'
           : 'none',
       }}
     >
@@ -48,19 +52,21 @@ function CollectionCard({ collection }) {
         >
           <div
             style={{
-              width: 48,
-              height: 48,
+              width: 50,
+              height: 50,
               borderRadius: 15,
               flexShrink: 0,
               display: 'grid',
               placeItems: 'center',
-              fontSize: 24,
+              fontSize: 25,
               background: collection.complete
-                ? '#FFF0CE'
+                ? '#FFEFC5'
                 : '#F7F1ED',
             }}
           >
-            {collection.icon}
+            {collection.complete
+              ? collection.completeIcon
+              : collection.icon}
           </div>
 
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -69,16 +75,32 @@ function CollectionCard({ collection }) {
                 display: 'flex',
                 justifyContent: 'space-between',
                 gap: 10,
+                alignItems: 'flex-start',
               }}
             >
-              <div
-                style={{
-                  fontSize: 15,
-                  fontWeight: 'bold',
-                  color: '#3D2B1F',
-                }}
-              >
-                {collection.title}
+              <div>
+                <div
+                  style={{
+                    fontSize: 15,
+                    fontWeight: 'bold',
+                    color: '#3D2B1F',
+                  }}
+                >
+                  {collection.title}
+                </div>
+
+                {collection.complete && (
+                  <div
+                    style={{
+                      marginTop: 3,
+                      fontSize: 9.5,
+                      color: '#B17725',
+                      fontWeight: 'bold',
+                    }}
+                  >
+                    🏆 {collection.completeTitle}
+                  </div>
+                )}
               </div>
 
               <div
@@ -87,7 +109,7 @@ function CollectionCard({ collection }) {
                   padding: '4px 7px',
                   borderRadius: 999,
                   background: collection.complete
-                    ? '#FFF1D3'
+                    ? '#FFF0C9'
                     : '#F5F0EC',
                   color: collection.complete
                     ? '#B47723'
@@ -98,13 +120,13 @@ function CollectionCard({ collection }) {
               >
                 {collection.complete
                   ? '✓ VOLLSTÄNDIG'
-                  : `${collection.unlockedCount}/${collection.totalCount}`}
+                  : countLabel}
               </div>
             </div>
 
             <div
               style={{
-                marginTop: 5,
+                marginTop: 6,
                 fontSize: 10.5,
                 color: '#987F70',
                 lineHeight: 1.45,
@@ -117,39 +139,71 @@ function CollectionCard({ collection }) {
           </div>
         </div>
 
-        <div
-          style={{
-            marginTop: 13,
-            height: 7,
-            borderRadius: 999,
-            overflow: 'hidden',
-            background: '#F1E7E0',
-          }}
-        >
+        {collection.waitingForData ? (
           <div
             style={{
-              width: `${collection.percent}%`,
-              height: '100%',
-              borderRadius: 999,
-              background: collection.complete
-                ? 'linear-gradient(90deg,#EAB65F,#D99739)'
-                : 'linear-gradient(90deg,#FFB47A,#FF7D74)',
+              marginTop: 13,
+              padding: '8px 10px',
+              borderRadius: 11,
+              background: '#F7F3F0',
+              color: '#A18B7E',
+              fontSize: 9.5,
+              lineHeight: 1.4,
             }}
-          />
-        </div>
+          >
+            Wird automatisch gefüllt, sobald deine Aktivitäten
+            passende Umgebungs- oder Wetterdaten enthalten.
+          </div>
+        ) : (
+          <>
+            <div
+              style={{
+                marginTop: 13,
+                height: 7,
+                borderRadius: 999,
+                overflow: 'hidden',
+                background: '#F1E7E0',
+              }}
+            >
+              <div
+                style={{
+                  width: `${collection.percent}%`,
+                  height: '100%',
+                  borderRadius: 999,
+                  background: collection.complete
+                    ? 'linear-gradient(90deg,#EAB65F,#D99739)'
+                    : 'linear-gradient(90deg,#FFB47A,#FF7D74)',
+                }}
+              />
+            </div>
 
-        <div
-          style={{
-            marginTop: 7,
-            display: 'flex',
-            justifyContent: 'space-between',
-            fontSize: 9.5,
-            color: '#A89284',
-          }}
-        >
-          <span>{collection.percent} % gesammelt</span>
-          <span>{open ? 'Weniger ↑' : 'Ansehen ↓'}</span>
-        </div>
+            <div
+              style={{
+                marginTop: 7,
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontSize: 9.5,
+                color: '#A89284',
+              }}
+            >
+              <span>{collection.percent} % gesammelt</span>
+              <span>{open ? 'Weniger ↑' : 'Ansehen ↓'}</span>
+            </div>
+          </>
+        )}
+
+        {collection.waitingForData && (
+          <div
+            style={{
+              marginTop: 7,
+              textAlign: 'right',
+              fontSize: 9.5,
+              color: '#A89284',
+            }}
+          >
+            {open ? 'Weniger ↑' : 'Ansehen ↓'}
+          </div>
+        )}
       </button>
 
       {open && (
@@ -163,60 +217,76 @@ function CollectionCard({ collection }) {
             borderTop: '1px solid #EFE6DF',
           }}
         >
-          {collection.items.map(item => (
-            <div
-              key={item.id || item.key || item.sport}
-              style={{
-                minHeight: 68,
-                borderRadius: 13,
-                padding: '10px 9px',
-                background: item.unlocked
-                  ? '#F2FAF5'
-                  : '#F7F3F0',
-                border: item.unlocked
-                  ? '1px solid #CCE9D8'
-                  : '1px solid #ECE3DD',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-              }}
-            >
+          {collection.items.map(item => {
+            const muted = !item.available
+            const collected = item.unlocked
+
+            return (
               <div
+                key={item.id || item.key || item.sport}
                 style={{
-                  fontSize: 20,
-                  filter: item.unlocked ? 'none' : 'grayscale(1)',
-                  opacity: item.unlocked ? 1 : 0.45,
+                  minHeight: 70,
+                  borderRadius: 13,
+                  padding: '10px 9px',
+                  background: collected
+                    ? '#F2FAF5'
+                    : muted
+                      ? '#FAF7F5'
+                      : '#F7F3F0',
+                  border: collected
+                    ? '1px solid #CCE9D8'
+                    : '1px solid #ECE3DD',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  opacity: muted ? 0.72 : 1,
                 }}
               >
-                {item.unlocked ? item.icon : '○'}
-              </div>
-
-              <div style={{ minWidth: 0 }}>
                 <div
                   style={{
-                    fontSize: 10,
-                    fontWeight: 'bold',
-                    color: item.unlocked
-                      ? '#4B8C68'
-                      : '#9A897E',
-                    lineHeight: 1.3,
+                    fontSize: 20,
+                    filter: collected ? 'none' : 'grayscale(1)',
+                    opacity: collected ? 1 : 0.45,
                   }}
                 >
-                  {item.label}
+                  {collected
+                    ? item.icon
+                    : muted
+                      ? '◌'
+                      : '○'}
                 </div>
 
-                <div
-                  style={{
-                    marginTop: 3,
-                    fontSize: 8.5,
-                    color: '#B09E93',
-                  }}
-                >
-                  {item.unlocked ? 'Gesammelt' : 'Noch offen'}
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 'bold',
+                      color: collected
+                        ? '#4B8C68'
+                        : '#9A897E',
+                      lineHeight: 1.3,
+                    }}
+                  >
+                    {item.label}
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: 3,
+                      fontSize: 8.5,
+                      color: '#B09E93',
+                    }}
+                  >
+                    {collected
+                      ? 'Gesammelt'
+                      : muted
+                        ? 'Noch nicht auswertbar'
+                        : 'Noch offen'}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
@@ -244,7 +314,11 @@ export default function AchievementCollections({ user }) {
 
         if (!cancelled) setEvaluation(result)
       } catch (error) {
-        console.error('Sammlungen konnten nicht geladen werden:', error)
+        console.error(
+          'Sammlungen konnten nicht geladen werden:',
+          error
+        )
+
         if (!cancelled) {
           setErrorMessage(
             'Die Sammlungen konnten gerade nicht geladen werden.'
@@ -336,8 +410,8 @@ export default function AchievementCollections({ user }) {
             color: '#947F71',
           }}
         >
-          Nicht nur Meilensteine zählen. Auch die besonderen Arten,
-          wie du unterwegs bist.
+          Erfolge zeigen, was du erreicht hast. Sammlungen zeigen,
+          was du auf deinem Weg erlebt hast.
         </div>
 
         <div
@@ -357,6 +431,7 @@ export default function AchievementCollections({ user }) {
           >
             {summary.complete}
           </span>
+
           <span style={{ fontSize: 10, color: '#9E897C' }}>
             von {summary.total} Sammlungen vollständig
           </span>
