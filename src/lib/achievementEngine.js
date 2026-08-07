@@ -227,7 +227,38 @@ const evaluateDefinition = (definition, allActivities, sportActivities) => {
     case 'single_distance_km': return firstMatching(relevant, a => a.distanceKm >= definition.threshold)
     case 'single_duration_hours': return firstMatching(relevant, a => a.durationSeconds / 3600 >= definition.threshold)
     case 'single_elevation_m': return firstMatching(relevant, a => a.elevationMeters >= definition.threshold)
-    case 'pace_under_seconds': return firstMatching(relevant, a => a.distanceKm >= (definition.minDistanceKm || 0) && a.paceSeconds != null && a.paceSeconds < definition.threshold)
+
+case 'pace_under_seconds': {
+  const eligible = relevant.filter(
+    a =>
+      a.distanceKm >= (definition.minDistanceKm || 0) &&
+      a.paceSeconds != null
+  )
+
+  if (!eligible.length) {
+    return {
+      unlocked: false,
+      value: null,
+      unlockDate: null,
+      activityId: null,
+    }
+  }
+
+  const firstMatch = eligible.find(
+    a => a.paceSeconds < definition.threshold
+  )
+
+  const bestPaceSeconds = Math.min(
+    ...eligible.map(a => a.paceSeconds)
+  )
+
+  return {
+    unlocked: Boolean(firstMatch),
+    value: bestPaceSeconds,
+    unlockDate: firstMatch?.date || null,
+    activityId: firstMatch?.id || null,
+  }
+}
     case 'average_speed_over': return firstMatching(relevant, a => a.distanceKm >= (definition.minDistanceKm || 0) && a.averageSpeedKmh >= definition.threshold && a.averageSpeedKmh <= (definition.maxPlausibleSpeedKmh || 100))
     case 'vertical_ratio_over': return firstMatching(relevant, a => a.distanceKm >= (definition.minDistanceKm || 0) && a.distanceKm > 0 && a.elevationMeters / a.distanceKm >= definition.threshold)
     case 'weekday_in':
@@ -297,11 +328,81 @@ const evaluateDefinition = (definition, allActivities, sportActivities) => {
   }
 }
 
+
 const progressFor = (definition, result) => {
   const target = Number(definition.threshold)
-  const current = typeof result.value === 'number' ? result.value : result.unlocked ? target : 0
-  if (!Number.isFinite(target)) return { current, target: definition.threshold, percent: result.unlocked ? 100 : 0, remaining: null }
-  return { current, target, percent: Math.max(0, Math.min(100, Math.round((current / target) * 100))), remaining: Math.max(0, target - current) }
+
+  if (definition.metric === 'pace_under_seconds') {
+    const current =
+      typeof result.value === 'number'
+        ? result.value
+        : null
+
+    const start = Number(
+      definition.progressStartSeconds ||
+      target + 60
+    )
+
+    if (result.unlocked) {
+      return {
+        current: current ?? target,
+        target,
+        percent: 100,
+        remaining: 0,
+        direction: 'lower_is_better',
+      }
+    }
+
+    if (current == null || !Number.isFinite(current)) {
+      return {
+        current: null,
+        target,
+        percent: 0,
+        remaining: null,
+        direction: 'lower_is_better',
+      }
+    }
+
+    const range = Math.max(1, start - target)
+    const completed = start - current
+
+    return {
+      current,
+      target,
+      percent: Math.max(
+        0,
+        Math.min(99, Math.round((completed / range) * 100))
+      ),
+      remaining: Math.max(0, current - target),
+      direction: 'lower_is_better',
+    }
+  }
+
+  const current =
+    typeof result.value === 'number'
+      ? result.value
+      : result.unlocked
+        ? target
+        : 0
+
+  if (!Number.isFinite(target)) {
+    return {
+      current,
+      target: definition.threshold,
+      percent: result.unlocked ? 100 : 0,
+      remaining: null,
+    }
+  }
+
+  return {
+    current,
+    target,
+    percent: Math.max(
+      0,
+      Math.min(100, Math.round((current / target) * 100))
+    ),
+    remaining: Math.max(0, target - current),
+  }
 }
 
 export const evaluateAchievements = ({ activities = [], existingUnlocks = [] }) => {
@@ -320,6 +421,7 @@ export const evaluateAchievements = ({ activities = [], existingUnlocks = [] }) 
       newlyUnlocked: !existing && result.unlocked,
       unlockedAt: existing?.unlocked_at ?? existing?.unlockedAt ?? (result.unlockDate ? result.unlockDate.toISOString() : null),
       activityId: existing?.activity_id ?? existing?.activityId ?? result.activityId ?? null,
+      seenAt: existing?.seen_at ?? existing?.seenAt ?? null,
       progress: progressFor(definition, result),
     }
   })

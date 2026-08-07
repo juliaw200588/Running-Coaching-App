@@ -63,6 +63,16 @@ const formatNumber = value =>
     maximumFractionDigits: 1,
   })
 
+
+const formatPaceSeconds = value => {
+  const total = Number(value)
+  if (!Number.isFinite(total)) return null
+
+  const minutes = Math.floor(total / 60)
+  const seconds = String(Math.round(total % 60)).padStart(2, '0')
+  return `${minutes}:${seconds} min/km`
+}
+
 const formatProgressValue = (value, unit) => {
   if (value == null) return '0'
 
@@ -70,10 +80,32 @@ const formatProgressValue = (value, unit) => {
   return unit ? `${formatted} ${unit}` : formatted
 }
 
+
 const getProgressText = achievement => {
   if (!achievement?.progress) return null
 
   const { current, target, remaining } = achievement.progress
+
+  if (achievement.metric === 'pace_under_seconds') {
+    const targetPace = formatPaceSeconds(target)
+
+    if (achievement.unlocked) {
+      return `${targetPace} erreicht`
+    }
+
+    if (current == null) {
+      return `Noch kein Lauf über mindestens ${achievement.minDistanceKm || 3} km mit verwertbarer Pace.`
+    }
+
+    const currentPace = formatPaceSeconds(current)
+    const secondsRemaining = Math.max(
+      0,
+      Math.ceil(remaining || 0)
+    )
+
+    return `Beste Pace bisher: ${currentPace} · Noch ${secondsRemaining} Sek./km bis unter ${targetPace.replace(' min/km', '')}`
+  }
+
   const unit = achievement.unit || ''
 
   if (achievement.unlocked) {
@@ -288,11 +320,37 @@ function AchievementCard({ achievement }) {
           color: '#947F71',
         }}
       >
-        {isHinted && !isUnlocked
-          ? 'Die genaue Bedingung bleibt noch verborgen.'
-          : isUnlocked
-            ? achievement.story || achievement.description
-            : achievement.description}
+        {isHinted && !isUnlocked ? (
+          'Die genaue Bedingung bleibt noch verborgen.'
+        ) : isUnlocked ? (
+          <>
+            <div
+              style={{
+                color: '#8E6F5F',
+                lineHeight: 1.48,
+              }}
+            >
+              {achievement.story || achievement.description}
+            </div>
+
+            {achievement.story &&
+              achievement.description &&
+              achievement.story !== achievement.description && (
+                <div
+                  style={{
+                    marginTop: 6,
+                    color: '#B09A8C',
+                    fontSize: 9.4,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {achievement.description}
+                </div>
+              )}
+          </>
+        ) : (
+          achievement.description
+        )}
       </div>
 
       <div

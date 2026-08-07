@@ -16,60 +16,350 @@ export const SPORT_META = {
 }
 
 
-const rarityFromTier = (tier = 1) => {
-  if (tier >= 8) return 'legendary'
-  if (tier >= 6) return 'epic'
-  if (tier >= 4) return 'rare'
-  if (tier >= 2) return 'special'
-  return 'common'
-}
 
-const storyFromDefinition = ({ sport, metric, threshold }) => {
-  if (sport === 'running' && metric === 'total_distance_km') {
-    return 'Aus kleinen Schritten werden große Wege.'
-  }
+const rarityForDefinition = ({ sport, metric, threshold }) => {
+  const value = Number(threshold)
 
-  if (sport === 'running' && metric === 'single_distance_km') {
-    return threshold >= 21
-      ? 'Ein Meilenstein, den du dir Schritt für Schritt erarbeitet hast.'
-      : 'Jeder Kilometer erzählt ein Stück deiner Geschichte.'
-  }
+  if (metric === 'calendar_date') return 'special'
+  if (metric === 'four_seasons') return 'rare'
+  if (metric === 'vertical_ratio_over') return 'rare'
+  if (metric === 'monthly_sport_count') return 'rare'
+  if (metric === 'active_weekend_streak') return value >= 4 ? 'rare' : 'special'
 
-  if (metric === 'total_elevation_m' || metric === 'single_elevation_m') {
-    return 'Jeder Höhenmeter bringt dich weiter.'
-  }
-
-  if (sport === 'cycling') {
-    return 'Kilometer sammeln. Erinnerungen auch.'
+  if (sport === 'running') {
+    if (metric === 'single_distance_km') {
+      if (value >= 42.195) return 'legendary'
+      if (value >= 21.0975) return 'epic'
+      if (value >= 10) return 'rare'
+      if (value >= 5) return 'special'
+      return 'common'
+    }
+    if (metric === 'total_distance_km') {
+      if (value >= 10000) return 'legendary'
+      if (value >= 2500) return 'epic'
+      if (value >= 500) return 'rare'
+      if (value >= 100) return 'special'
+      return 'common'
+    }
+    if (metric === 'activity_count') {
+      if (value >= 1000) return 'legendary'
+      if (value >= 250) return 'epic'
+      if (value >= 50) return 'rare'
+      if (value >= 5) return 'special'
+      return 'common'
+    }
+    if (metric === 'pace_under_seconds') {
+      if (value <= 240) return 'legendary'
+      if (value <= 300) return 'epic'
+      if (value <= 420) return 'rare'
+      if (value <= 480) return 'special'
+      return 'common'
+    }
+    if (metric === 'single_elevation_m') {
+      if (value >= 2000) return 'legendary'
+      if (value >= 1000) return 'epic'
+      if (value >= 500) return 'rare'
+      if (value >= 250) return 'special'
+      return 'common'
+    }
   }
 
   if (sport === 'mountain_biking') {
-    return 'Mehr Höhenmeter, mehr Abenteuer.'
+    if (metric === 'single_distance_km') {
+      if (value >= 150) return 'legendary'
+      if (value >= 100) return 'epic'
+      if (value >= 50) return 'rare'
+      if (value >= 25) return 'special'
+      return 'common'
+    }
+    if (metric === 'single_elevation_m') {
+      if (value >= 3000) return 'legendary'
+      if (value >= 1500) return 'epic'
+      if (value >= 750) return 'rare'
+      if (value >= 500) return 'special'
+      return 'common'
+    }
+    if (metric === 'total_elevation_m') {
+      if (value >= 500000) return 'legendary'
+      if (value >= 100000) return 'epic'
+      if (value >= 25000) return 'rare'
+      if (value >= 5000) return 'special'
+      return 'common'
+    }
+  }
+
+  if (sport === 'cycling') {
+    if (metric === 'single_distance_km') {
+      if (value >= 250) return 'legendary'
+      if (value >= 150) return 'epic'
+      if (value >= 100) return 'rare'
+      if (value >= 50) return 'special'
+      return 'common'
+    }
+    if (metric === 'average_speed_over') {
+      if (value >= 35) return 'legendary'
+      if (value >= 32.5) return 'epic'
+      if (value >= 27.5) return 'rare'
+      if (value >= 22.5) return 'special'
+      return 'common'
+    }
   }
 
   if (sport === 'hiking') {
-    return 'Manchmal liegt der Fortschritt einfach auf dem Weg.'
+    if (metric === 'single_distance_km') {
+      if (value >= 100) return 'legendary'
+      if (value >= 50) return 'epic'
+      if (value >= 25) return 'rare'
+      if (value >= 10) return 'special'
+      return 'common'
+    }
+    if (metric === 'single_elevation_m') {
+      if (value >= 3000) return 'legendary'
+      if (value >= 1500) return 'epic'
+      if (value >= 750) return 'rare'
+      if (value >= 250) return 'special'
+      return 'common'
+    }
+  }
+
+  if (sport === 'swimming' && metric === 'single_distance_km') {
+    if (value >= 5) return 'legendary'
+    if (value >= 3) return 'epic'
+    if (value >= 2) return 'rare'
+    if (value >= 1) return 'special'
+    return 'common'
+  }
+
+  if (metric === 'activity_count') {
+    if (value >= 1000) return 'legendary'
+    if (value >= 250) return 'epic'
+    if (value >= 50) return 'rare'
+    if (value >= 10) return 'special'
+    return 'common'
+  }
+
+  if (metric === 'total_hours') {
+    if (value >= 1000) return 'legendary'
+    if (value >= 500) return 'epic'
+    if (value >= 100) return 'rare'
+    if (value >= 25) return 'special'
+    return 'common'
+  }
+
+  if (metric === 'total_distance_km') {
+    if (value >= 10000) return 'legendary'
+    if (value >= 5000) return 'epic'
+    if (value >= 1000) return 'rare'
+    if (value >= 250) return 'special'
+    return 'common'
+  }
+
+  if (metric === 'total_elevation_m') {
+    if (value >= 500000) return 'legendary'
+    if (value >= 100000) return 'epic'
+    if (value >= 25000) return 'rare'
+    if (value >= 5000) return 'special'
+    return 'common'
+  }
+
+  if (metric === 'active_day_streak') {
+    if (value >= 100) return 'legendary'
+    if (value >= 30) return 'epic'
+    if (value >= 14) return 'rare'
+    if (value >= 7) return 'special'
+    return 'common'
+  }
+
+  if (metric === 'active_week_streak') {
+    if (value >= 52) return 'legendary'
+    if (value >= 25) return 'epic'
+    if (value >= 10) return 'rare'
+    if (value >= 5) return 'special'
+    return 'common'
+  }
+
+  return 'special'
+}
+
+const RUNNING_DISTANCE_STORIES = new Map([
+  [3, 'Der Anfang ist gemacht. Drei Kilometer nur für dich.'],
+  [5, 'Fünf Kilometer am Stück – aus Laufen wird Ausdauer.'],
+  [7.5, 'Du lässt die ersten fünf Kilometer längst hinter dir.'],
+  [10, 'Zweistellig. Ein Lauf, der sich nach einem echten Meilenstein anfühlt.'],
+  [15, 'Aus einer Laufrunde wird langsam eine lange Strecke.'],
+  [21.0975, '21,1 Kilometer – ein Meilenstein, den du dir Schritt für Schritt erarbeitet hast.'],
+  [25, 'Weiter als ein Halbmarathon – und noch immer unterwegs.'],
+  [30, 'Dreißig Kilometer verlangen mehr als nur schnelle Beine.'],
+  [42.195, '42,195 Kilometer. Eine Distanz, die bleibt.'],
+  [50, 'Fünfzig Kilometer. Ab hier beginnt ein ganz anderes Kapitel.'],
+])
+
+const RUNNING_COUNT_STORIES = new Map([
+  [1, 'Alles beginnt mit diesem einen Lauf.'],
+  [5, 'Du bist wieder losgelaufen. Und wieder.'],
+  [10, 'Aus einzelnen Läufen entsteht langsam eine Gewohnheit.'],
+  [25, '25-mal Schuhe an und los. Dranbleiben zahlt sich aus.'],
+  [50, 'Fünfzig Läufe – Bewegung gehört längst zu deinem Alltag.'],
+  [100, 'Hundert Läufe. Das ist keine Phase mehr.'],
+  [250, '250 Läufe erzählen von echter Beständigkeit.'],
+  [500, 'Fünfhundert Läufe – aus Routine ist ein Teil deines Lebens geworden.'],
+  [1000, 'Tausend Läufe. Ein sportlicher Weg mit unzähligen Geschichten.'],
+])
+
+const RUNNING_PACE_STORIES = new Map([
+  [510, 'Du wirst sicherer – und ganz nebenbei schneller.'],
+  [480, 'Die Acht vor dem Doppelpunkt ist Geschichte.'],
+  [450, 'Dein Rhythmus verändert sich. Das Tempo kommt mit.'],
+  [420, 'Unter sieben. Ein echter Tempo-Meilenstein.'],
+  [390, 'Du näherst dich einer Pace, die früher vielleicht weit weg wirkte.'],
+  [360, 'Die Fünf steht vorne. Das ist schnell.'],
+  [330, 'Tempo ist längst mehr als nur ein Nebeneffekt.'],
+  [300, 'Unter fünf Minuten pro Kilometer – ein außergewöhnlicher Schritt.'],
+  [270, 'Jetzt wird aus schnell wirklich sehr schnell.'],
+  [240, 'Vier Minuten pro Kilometer. Eine Marke für die ganz besonderen Tage.'],
+])
+
+const storyFromDefinition = ({ sport, metric, threshold }) => {
+  const value = Number(threshold)
+
+  if (sport === 'running' && metric === 'single_distance_km') {
+    return RUNNING_DISTANCE_STORIES.get(value) ||
+      'Jeder neue Distanzrekord erweitert deinen Horizont.'
+  }
+
+  if (sport === 'running' && metric === 'activity_count') {
+    return RUNNING_COUNT_STORIES.get(value) ||
+      'Lauf für Lauf wächst aus Motivation Beständigkeit.'
+  }
+
+  if (sport === 'running' && metric === 'pace_under_seconds') {
+    return RUNNING_PACE_STORIES.get(value) ||
+      'Dein Tempo zeigt, wie weit du gekommen bist.'
+  }
+
+  if (sport === 'running' && metric === 'total_distance_km') {
+    if (value <= 50) return 'Die ersten Laufkilometer sammeln sich schneller, als man denkt.'
+    if (value <= 250) return 'Aus einzelnen Läufen wird langsam eine große Strecke.'
+    if (value <= 1000) return 'Kilometer für Kilometer wächst deine Laufgeschichte.'
+    if (value <= 5000) return 'Was einmal mit wenigen Kilometern begann, ist längst eine beeindruckende Summe.'
+    return 'Zehntausende Schritte, unzählige Läufe – und jeder davon gehört zu deinem Weg.'
+  }
+
+  if (sport === 'running' && metric === 'single_elevation_m') {
+    if (value <= 100) return 'Heute ging es nicht nur vorwärts, sondern auch bergauf.'
+    if (value <= 500) return 'Mehr Höhenmeter machen aus einem Lauf ein kleines Abenteuer.'
+    if (value <= 1000) return 'Vierstellige Höhenmeter verlangen Kraft, Ausdauer und Geduld.'
+    return 'Das ist längst mehr als ein Lauf – das ist ein echtes Bergabenteuer.'
+  }
+
+  if (sport === 'mountain_biking') {
+    if (metric === 'single_distance_km') {
+      if (value <= 25) return 'Die ersten längeren Trails liegen hinter dir.'
+      if (value <= 50) return 'Fünfzig Kilometer auf dem Bike – genug Strecke für echte Abenteuer.'
+      if (value <= 100) return 'Eine Tour, die Ausdauer und Abenteuer verbindet.'
+      return 'So eine Distanz auf dem Mountainbike bleibt im Kopf.'
+    }
+    if (metric === 'single_elevation_m') {
+      if (value <= 500) return 'Die Berge werden langsam Teil deiner Touren.'
+      if (value <= 1000) return 'Vierstellige Höhenmeter – bergauf wird zum festen Bestandteil.'
+      return 'Viele Höhenmeter, viele Anstiege, ein großes Abenteuer.'
+    }
+    if (metric === 'total_elevation_m') {
+      return value < 25000
+        ? 'Höhenmeter sammeln sich Kurve für Kurve.'
+        : 'Aus einzelnen Anstiegen ist inzwischen ein ganzes Gebirge geworden.'
+    }
+    if (metric === 'total_distance_km') return 'Trail für Trail wächst deine Mountainbike-Geschichte.'
+    if (metric === 'single_duration_hours') return 'Manche Touren misst man irgendwann besser in Stunden als in Kilometern.'
+  }
+
+  if (sport === 'cycling') {
+    if (metric === 'single_distance_km') {
+      if (value < 100) return 'Mit jeder längeren Tour wächst dein Radius.'
+      if (value === 100) return 'Hundert Kilometer am Stück – ein Klassiker, den man nicht vergisst.'
+      return 'Eine lange Radtour, bei der der Weg selbst zum Ziel wird.'
+    }
+    if (metric === 'average_speed_over') return `Ø ${String(threshold).replace('.', ',')} km/h – dein Tempo wird sichtbar.`
+    if (metric === 'single_elevation_m') return 'Auch auf dem Rad zählen nicht nur Kilometer, sondern die Wege nach oben.'
+    if (metric === 'total_elevation_m') return 'Viele kleine Anstiege ergeben irgendwann große Höhen.'
+    if (metric === 'total_distance_km') return 'Kilometer sammeln. Erinnerungen auch.'
+    if (metric === 'single_duration_hours') return 'Zeit im Sattel wird zur Ausdauer.'
+  }
+
+  if (sport === 'hiking') {
+    if (metric === 'single_distance_km') {
+      if (value <= 10) return 'Ein Weg, ein Ziel und die ersten längeren Kilometer zu Fuß.'
+      if (value <= 25) return 'Aus einem Spaziergang wird eine echte Wanderung.'
+      if (value <= 50) return 'Eine Strecke, die Geduld und Ausdauer verlangt.'
+      return 'So weit zu Fuß – das ist ein Erlebnis, das bleibt.'
+    }
+    if (metric === 'single_elevation_m') return 'Jeder Anstieg verändert den Blick auf den Weg.'
+    if (metric === 'single_duration_hours') return 'Manche Tage verbringt man am besten draußen auf dem Weg.'
+    if (metric === 'total_distance_km') return 'Schritt für Schritt wächst deine persönliche Wanderkarte.'
+    if (metric === 'total_elevation_m') return 'Viele Wege nach oben ergeben irgendwann große Höhen.'
+    if (metric === 'activity_count') return 'Aus einzelnen Wanderungen wird eine echte Gewohnheit draußen.'
   }
 
   if (sport === 'swimming') {
-    return 'Bahn für Bahn wächst deine Ausdauer.'
+    if (metric === 'single_distance_km') {
+      if (value < 1) return 'Die ersten längeren Bahnen sind geschafft.'
+      if (value === 1) return 'Ein Kilometer im Wasser – Bahn für Bahn erarbeitet.'
+      if (value <= 3) return 'Aus Technik und Ausdauer wird echte Strecke.'
+      return 'Fünf Kilometer im Wasser – eine außergewöhnliche Ausdauerleistung.'
+    }
+    if (metric === 'total_distance_km') return 'Bahn für Bahn wächst deine Ausdauer.'
   }
 
-  if (metric === 'active_day_streak' || metric === 'active_week_streak') {
-    return 'Dranbleiben wird irgendwann zu Stärke.'
+  if (metric === 'activity_count') {
+    if (value === 1) return 'Alles beginnt mit einer einzigen Aktivität.'
+    if (value <= 25) return 'Du kommst wieder. Genau daraus entsteht Gewohnheit.'
+    if (value <= 100) return 'Bewegung wird immer mehr zu einem festen Teil deines Alltags.'
+    return 'So viele Aktivitäten entstehen nur, wenn man wirklich dranbleibt.'
   }
 
-  if (metric === 'start_before_hour') {
-    return 'Die Welt schläft noch – du bist schon unterwegs.'
+  if (metric === 'total_hours') {
+    if (value <= 25) return 'Zeit für Bewegung ist Zeit für dich.'
+    if (value <= 100) return 'Viele einzelne Trainingsstunden ergeben echte Erfahrung.'
+    return 'So viel aktive Zeit erzählt mehr als jede einzelne Zahl.'
   }
 
-  if (metric === 'start_after_hour') {
-    return 'Wenn der Tag endet, beginnt manchmal dein Moment.'
+  if (metric === 'total_distance_km') {
+    if (value <= 500) return 'Viele kleine Strecken ergeben einen großen Weg.'
+    if (value <= 2500) return 'Deine Aktivitäten verbinden sich zu einer beeindruckenden Gesamtdistanz.'
+    return 'Was einmal mit einer einzelnen Aktivität begann, reicht inzwischen sehr weit.'
   }
 
-  if (metric === 'four_seasons') {
-    return 'Dein Weg kennt jede Jahreszeit.'
+  if (metric === 'total_elevation_m') {
+    if (value <= 5000) return 'Jeder Höhenmeter bringt dich ein Stück weiter nach oben.'
+    if (value <= 50000) return 'Aus kleinen Anstiegen entsteht langsam ein Gebirge.'
+    return 'So viele Höhenmeter muss man sich Schritt für Schritt erarbeiten.'
   }
+
+  if (metric === 'active_day_streak') {
+    if (value <= 7) return 'Dranbleiben beginnt mit ein paar Tagen hintereinander.'
+    if (value <= 30) return 'Aus Motivation wird langsam Routine.'
+    return 'Beständigkeit ist längst eine deiner Stärken.'
+  }
+
+  if (metric === 'active_week_streak') {
+    if (value <= 5) return 'Eine aktive Woche folgt auf die nächste.'
+    if (value <= 25) return 'Deine Bewegung hat einen festen Platz in deinem Alltag.'
+    return 'Ein ganzes Jahr konsequent aktiv – das ist echte Beständigkeit.'
+  }
+
+  if (metric === 'start_before_hour') return 'Die Welt schläft noch – du bist schon unterwegs.'
+  if (metric === 'start_after_hour') return 'Wenn der Tag endet, beginnt manchmal dein Moment.'
+  if (metric === 'count_start_before_hour') return 'Aus frühem Start wird langsam eine Morgenroutine.'
+  if (metric === 'count_start_after_hour') return 'Auch nach langen Tagen findest du noch Zeit für Bewegung.'
+  if (metric === 'weekday_in') return 'Wochenenden sind auch dafür da, draußen unterwegs zu sein.'
+  if (metric === 'weekday_count') return 'Ein bestimmter Wochentag wird langsam zu deinem Ritual.'
+  if (metric === 'monthly_activity_count') return 'Viele kleine Einheiten machen einen starken Monat.'
+  if (metric === 'monthly_distance_km') return 'Dieser Monat hat Strecke gemacht.'
+  if (metric === 'monthly_sport_count') return 'Abwechslung bringt neue Perspektiven in deinen sportlichen Weg.'
+  if (metric === 'active_weekend_streak') return 'Wochenende für Wochenende bleibst du dran.'
+  if (metric === 'calendar_date') return 'Ein besonderer Tag bekommt seine eigene sportliche Erinnerung.'
+  if (metric === 'four_seasons') return 'Dein Weg kennt Frühling, Sommer, Herbst und Winter.'
+  if (metric === 'vertical_ratio_over') return 'Wenn der Weg steiler wird, wächst das Abenteuer.'
 
   return 'Ein weiterer Meilenstein auf deinem sportlichen Weg.'
 }
@@ -88,14 +378,22 @@ const series = ({ prefix, sport = 'all', category = 'milestones', metric, thresh
     description: description(threshold),
     visibility,
     tier: index + 1,
-    rarity: options.rarity || rarityFromTier(index + 1),
-    story:
-      options.story ||
-      storyFromDefinition({
+    rarity:
+      options.rarity ||
+      rarityForDefinition({
         sport,
         metric,
         threshold,
       }),
+    story:
+      typeof options.story === 'function'
+        ? options.story(threshold, index)
+        : options.story ||
+          storyFromDefinition({
+            sport,
+            metric,
+            threshold,
+          }),
     ...options,
   }))
 
@@ -145,19 +443,42 @@ const RUNNING = [
     title: v => v === 1 ? 'Erster Lauf' : `${v} Läufe`,
     description: v => v === 1 ? 'Dein erster Lauf ist geschafft.' : `Du hast ${v} Läufe abgeschlossen.`,
   }),
-  ...[
-    [510, 3], [480, 3], [450, 3], [420, 3], [390, 3], [360, 3], [330, 5], [300, 5], [270, 5], [240, 5],
-  ].map(([threshold, minDistanceKm], index) => {
-    const m = Math.floor(threshold / 60)
-    const s = String(threshold % 60).padStart(2, '0')
-    return {
-      id: `running_pace_under_${threshold}`, version: 1, sport: 'running', category: 'performance',
-      metric: 'pace_under_seconds', threshold, minDistanceKm, unit: 'min/km', icon: '⚡',
-      visibility: threshold <= 270 ? 'hinted' : 'visible', tier: index + 1,
-      title: `Pace unter ${m}:${s}`,
-      description: `Du bist über mindestens ${minDistanceKm} km schneller als ${m}:${s} min/km gelaufen.`,
-    }
-  }),
+
+...[
+  [510, 3], [480, 3], [450, 3], [420, 3], [390, 3],
+  [360, 3], [330, 5], [300, 5], [270, 5], [240, 5],
+].map(([threshold, minDistanceKm], index, values) => {
+  const m = Math.floor(threshold / 60)
+  const s = String(threshold % 60).padStart(2, '0')
+  const slowerMilestone = index === 0 ? 570 : values[index - 1][0]
+
+  return {
+    id: `running_pace_under_${threshold}`,
+    version: 1,
+    sport: 'running',
+    category: 'performance',
+    metric: 'pace_under_seconds',
+    threshold,
+    progressStartSeconds: slowerMilestone,
+    minDistanceKm,
+    unit: 'min/km',
+    icon: '⚡',
+    visibility: threshold <= 270 ? 'hinted' : 'visible',
+    tier: index + 1,
+    rarity: rarityForDefinition({
+      sport: 'running',
+      metric: 'pace_under_seconds',
+      threshold,
+    }),
+    story: storyFromDefinition({
+      sport: 'running',
+      metric: 'pace_under_seconds',
+      threshold,
+    }),
+    title: `Pace unter ${m}:${s}`,
+    description: `Du bist über mindestens ${minDistanceKm} km schneller als ${m}:${s} min/km gelaufen.`,
+  }
+}),
   ...series({
     prefix: 'running_single_elevation', sport: 'running', category: 'performance', metric: 'single_elevation_m',
     thresholds: [100, 250, 500, 750, 1000, 1500, 2000], unit: 'hm', icon: '⛰️',
@@ -206,6 +527,16 @@ const CYCLING = [
     version: 1, sport: 'cycling', category: 'performance', metric: 'average_speed_over',
     threshold, minDistanceKm: 20, maxPlausibleSpeedKmh: 65, excludeIndoor: true,
     unit: 'km/h', icon: '⚡', visibility: threshold >= 32.5 ? 'hinted' : 'visible', tier: index + 1,
+    rarity: rarityForDefinition({
+      sport: 'cycling',
+      metric: 'average_speed_over',
+      threshold,
+    }),
+    story: storyFromDefinition({
+      sport: 'cycling',
+      metric: 'average_speed_over',
+      threshold,
+    }),
     title: `Ø ${String(threshold).replace('.', ',')} km/h`,
     description: `Du bist über mindestens 20 km im Durchschnitt ${String(threshold).replace('.', ',')} km/h gefahren.`,
   })),
@@ -540,6 +871,25 @@ export const normalizeAchievementDefinition = definition => ({
     }),
 })
 
+
+const enrichDefinition = definition => ({
+  ...definition,
+  rarity:
+    definition.rarity ||
+    rarityForDefinition({
+      sport: definition.sport,
+      metric: definition.metric,
+      threshold: definition.threshold,
+    }),
+  story:
+    definition.story ||
+    storyFromDefinition({
+      sport: definition.sport,
+      metric: definition.metric,
+      threshold: definition.threshold,
+    }),
+})
+
 export const ACHIEVEMENT_DEFINITIONS = [
 
   ...GENERAL,
@@ -550,7 +900,7 @@ export const ACHIEVEMENT_DEFINITIONS = [
   ...SWIMMING,
   ...CONSISTENCY,
   ...MOMENTS,
-].map(normalizeAchievementDefinition)
+].map(enrichDefinition).map(normalizeAchievementDefinition)
 
 export const getDefinitionsForActiveSports = activeSports =>
   ACHIEVEMENT_DEFINITIONS.filter(
