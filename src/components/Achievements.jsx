@@ -322,7 +322,7 @@ function AchievementCard({ achievement }) {
       >
         {isHinted && !isUnlocked ? (
           'Die genaue Bedingung bleibt noch verborgen.'
-        ) : isUnlocked ? (
+        ) : (
           <>
             <div
               style={{
@@ -348,8 +348,6 @@ function AchievementCard({ achievement }) {
                 </div>
               )}
           </>
-        ) : (
-          achievement.description
         )}
       </div>
 
@@ -486,7 +484,7 @@ function NextAchievement({ achievement }) {
           >
             {remaining != null
               ? `Noch ${formatProgressValue(remaining, unit)}`
-              : achievement.description}
+              : achievement.story || achievement.description}
           </div>
         </div>
       </div>
