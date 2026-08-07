@@ -40,7 +40,10 @@ export const loadAndEvaluateAchievements = async ({ supabase, userId }) => {
     if (error) throw error
   }
 
-  return evaluation
+  return {
+    ...evaluation,
+    activities: activitiesResult.data || [],
+  }
 }
 
 export const markAchievementUnlocksShown = async ({
