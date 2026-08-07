@@ -30,6 +30,7 @@ const CATEGORY_ORDER = [
   'performance',
   'consistency',
   'development',
+  'experiences',
   'moments',
 ]
 
@@ -92,6 +93,14 @@ const getRemainingText = achievement => {
   if (!progress || achievement.unlocked) return null
 
   const { current, target, remaining, percent = 0 } = progress
+
+  if (
+    achievement.metric === 'context_tag' ||
+    achievement.metric === 'context_combo'
+  ) {
+    return 'Noch nicht erlebt'
+  }
+
   const amount = Number(remaining)
 
   if (achievement.metric === 'pace_under_seconds') {
@@ -194,6 +203,13 @@ const getCompactProgressText = achievement => {
     if (current == null) return null
 
     return `Beste Pace: ${formatPaceSeconds(current)} · Ziel: unter ${formatPaceSeconds(target)}`
+  }
+
+  if (
+    achievement.metric === 'context_tag' ||
+    achievement.metric === 'context_combo'
+  ) {
+    return null
   }
 
   if (

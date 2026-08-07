@@ -9,6 +9,40 @@ const numberFromValue = value => {
   return match ? Number(match[0]) || 0 : 0
 }
 
+
+const parseContext = value => {
+  if (!value) return {}
+
+  if (typeof value === 'object') return value
+
+  try {
+    return JSON.parse(value)
+  } catch {
+    return {}
+  }
+}
+
+const unique = values => [...new Set(values.filter(Boolean))]
+
+const activityContextTags = activity => {
+  const context = parseContext(activity?.activity_context)
+
+  return unique([
+    ...(Array.isArray(context?.weather?.tags)
+      ? context.weather.tags
+      : []),
+    ...(Array.isArray(context?.sun?.tags)
+      ? context.sun.tags
+      : []),
+    ...(Array.isArray(context?.environment?.auto_tags)
+      ? context.environment.auto_tags
+      : []),
+    ...(Array.isArray(context?.environment?.manual_tags)
+      ? context.environment.manual_tags
+      : []),
+  ].map(value => String(value).toLowerCase()))
+}
+
 const parsePaceSeconds = value => {
   if (!value) return null
   const match = String(value).match(/(\d+):(\d{2})/)
@@ -87,6 +121,7 @@ const normalize = activity => ({
   elevationMeters: elevationMeters(activity),
   averageSpeedKmh: averageSpeedKmh(activity),
   paceSeconds: parsePaceSeconds(activity?.pace),
+  contextTags: activityContextTags(activity),
   indoor: isIndoor(activity),
 })
 
@@ -324,12 +359,47 @@ case 'pace_under_seconds': {
       const last = relevant.at(-1)
       return { unlocked: seasons.size >= definition.threshold, value: seasons.size, unlockDate: seasons.size >= definition.threshold ? last?.date : null, activityId: seasons.size >= definition.threshold ? last?.id : null }
     }
+    case 'context_tag':
+      return firstMatching(
+        relevant,
+        a =>
+          Array.isArray(a.contextTags) &&
+          a.contextTags.includes(String(definition.threshold).toLowerCase())
+      )
+    case 'context_combo':
+      return firstMatching(
+        relevant,
+        a => {
+          const required = Array.isArray(definition.threshold)
+            ? definition.threshold.map(value => String(value).toLowerCase())
+            : []
+          return (
+            required.length > 0 &&
+            required.every(tag =>
+              Array.isArray(a.contextTags) && a.contextTags.includes(tag)
+            )
+          )
+        }
+      )
     default: return { unlocked: false, value: 0, unlockDate: null, activityId: null }
   }
 }
 
 
 const progressFor = (definition, result) => {
+  if (
+    definition.metric === 'context_tag' ||
+    definition.metric === 'context_combo'
+  ) {
+    return {
+      current: result.unlocked ? 1 : 0,
+      target: 1,
+      percent: result.unlocked ? 100 : 0,
+      remaining: result.unlocked ? 0 : 1,
+      binary: true,
+    }
+  }
+
   const target = Number(definition.threshold)
 
   if (definition.metric === 'pace_under_seconds') {

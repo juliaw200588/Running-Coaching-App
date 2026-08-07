@@ -29,6 +29,7 @@ const toDate = value => {
 const isMajorAchievement = achievement => {
   if (!achievement?.unlocked) return false
   if (achievement.category === 'moments') return true
+  if (achievement.category === 'experiences') return true
   if (achievement.visibility === 'secret') return true
 
   const threshold = Number(achievement.threshold)
