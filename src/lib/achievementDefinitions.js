@@ -15,6 +15,65 @@ export const SPORT_META = {
   swimming: { label: 'Schwimmen', icon: '🏊' },
 }
 
+
+const rarityFromTier = (tier = 1) => {
+  if (tier >= 8) return 'legendary'
+  if (tier >= 6) return 'epic'
+  if (tier >= 4) return 'rare'
+  if (tier >= 2) return 'special'
+  return 'common'
+}
+
+const storyFromDefinition = ({ sport, metric, threshold }) => {
+  if (sport === 'running' && metric === 'total_distance_km') {
+    return 'Aus kleinen Schritten werden große Wege.'
+  }
+
+  if (sport === 'running' && metric === 'single_distance_km') {
+    return threshold >= 21
+      ? 'Ein Meilenstein, den du dir Schritt für Schritt erarbeitet hast.'
+      : 'Jeder Kilometer erzählt ein Stück deiner Geschichte.'
+  }
+
+  if (metric === 'total_elevation_m' || metric === 'single_elevation_m') {
+    return 'Jeder Höhenmeter bringt dich weiter.'
+  }
+
+  if (sport === 'cycling') {
+    return 'Kilometer sammeln. Erinnerungen auch.'
+  }
+
+  if (sport === 'mountain_biking') {
+    return 'Mehr Höhenmeter, mehr Abenteuer.'
+  }
+
+  if (sport === 'hiking') {
+    return 'Manchmal liegt der Fortschritt einfach auf dem Weg.'
+  }
+
+  if (sport === 'swimming') {
+    return 'Bahn für Bahn wächst deine Ausdauer.'
+  }
+
+  if (metric === 'active_day_streak' || metric === 'active_week_streak') {
+    return 'Dranbleiben wird irgendwann zu Stärke.'
+  }
+
+  if (metric === 'start_before_hour') {
+    return 'Die Welt schläft noch – du bist schon unterwegs.'
+  }
+
+  if (metric === 'start_after_hour') {
+    return 'Wenn der Tag endet, beginnt manchmal dein Moment.'
+  }
+
+  if (metric === 'four_seasons') {
+    return 'Dein Weg kennt jede Jahreszeit.'
+  }
+
+  return 'Ein weiterer Meilenstein auf deinem sportlichen Weg.'
+}
+
 const series = ({ prefix, sport = 'all', category = 'milestones', metric, thresholds, unit, icon, title, description, visibility = 'visible', options = {} }) =>
   thresholds.map((threshold, index) => ({
     id: `${prefix}_${String(threshold).replace('.', '_')}`,
