@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase.js'
 import IgnoredActivities from './IgnoredActivities.jsx'
+import AchievementUnlockModal from './AchievementUnlockModal.jsx'
+import {
+  loadAndEvaluateAchievements,
+  markAchievementUnlocksShown,
+} from '../lib/achievementService.js'
 
 const TAG_OFFSET = { Mo: 0, Di: 1, Mi: 2, Do: 3, Fr: 4, Sa: 5, So: 6 }
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
@@ -134,6 +139,11 @@ export default function PolarConnect({ user, plan, onOpenActivities }) {
   const [showIgnoredActivities, setShowIgnoredActivities] = useState(false)
   const [ignoredCount, setIgnoredCount] = useState(0)
   const [syncSummary, setSyncSummary] = useState(null)
+  const [achievementUnlocks, setAchievementUnlocks] = useState([])
+  const [
+    openActivitiesAfterAchievements,
+    setOpenActivitiesAfterAchievements,
+  ] = useState(false)
 
   const planDays = plan ? getPlanDayDates(plan) : []
 
@@ -461,6 +471,55 @@ export default function PolarConnect({ user, plan, onOpenActivities }) {
     return `Wo. ${c.weekN} · ${weekdayLabel(c)} · ${c.einheit} (${dayPart}${kmPart})`
   }
 
+  const checkForNewAchievements = async () => {
+    try {
+      const result = await loadAndEvaluateAchievements({
+        supabase,
+        userId: user.id,
+      })
+
+      const newUnlocks = result?.newlyUnlocked || []
+
+      if (newUnlocks.length > 0) {
+        setAchievementUnlocks(newUnlocks)
+      }
+
+      return newUnlocks
+    } catch (error) {
+      // Das Speichern der Aktivität soll nie daran scheitern,
+      // dass die Erfolgsauswertung vorübergehend nicht funktioniert.
+      console.warn(
+        'Neue Erfolge konnten nicht geprüft werden:',
+        error
+      )
+      return []
+    }
+  }
+
+  const closeAchievementModal = async () => {
+    const ids = achievementUnlocks.map(item => item.id)
+
+    setAchievementUnlocks([])
+
+    try {
+      await markAchievementUnlocksShown({
+        supabase,
+        userId: user.id,
+        achievementIds: ids,
+      })
+    } catch (error) {
+      console.warn(
+        'Erfolge konnten nicht als angesehen markiert werden:',
+        error
+      )
+    }
+
+    if (openActivitiesAfterAchievements) {
+      setOpenActivitiesAfterAchievements(false)
+      onOpenActivities?.()
+    }
+  }
+
   const assignActivity = async (activity, chosenKey) => {
     setAssigning(activity.id)
 
@@ -564,6 +623,11 @@ export default function PolarConnect({ user, plan, onOpenActivities }) {
       const remaining = pending.filter(a => a.id !== activity.id)
       setPending(remaining)
 
+      // Erst jetzt ist die Aktivität endgültig in `logs` übernommen.
+      // Deshalb erfolgt die Erfolgsauswertung genau an dieser Stelle
+      // und nicht bereits beim Polar-Sync in die Pending-Liste.
+      const newAchievements = await checkForNewAchievements()
+
       if (remaining.length > 0) {
         setMessage({
           type: 'success',
@@ -589,9 +653,15 @@ export default function PolarConnect({ user, plan, onOpenActivities }) {
         })
         setAssigning(null)
 
-        setTimeout(() => {
-          onOpenActivities?.()
-        }, 650)
+        if (newAchievements.length > 0) {
+          // Bei der letzten offenen Aktivität bleibt das Freischalt-Erlebnis
+          // sichtbar. Erst nach "Fertig" wechseln wir zu Aktivitäten.
+          setOpenActivitiesAfterAchievements(true)
+        } else {
+          setTimeout(() => {
+            onOpenActivities?.()
+          }, 650)
+        }
       }
     } catch (e) {
       console.error('Aktivität übernehmen fehlgeschlagen:', e)
@@ -749,8 +819,21 @@ const discardActivity = async (activity) => {
       }
 
       setHistoryAssignedIds(prev => new Set([...prev, historyId]))
-      setMessage({ type: 'success', text: '✅ Zugeordnet! Seite wird aktualisiert…' })
-      setTimeout(() => window.location.reload(), 900)
+
+      const newAchievements = await checkForNewAchievements()
+
+      if (newAchievements.length > 0) {
+        setMessage({
+          type: 'success',
+          text: '✅ Zugeordnet!',
+        })
+      } else {
+        setMessage({
+          type: 'success',
+          text: '✅ Zugeordnet! Seite wird aktualisiert…',
+        })
+        setTimeout(() => window.location.reload(), 900)
+      }
     } catch (e) {
       console.error('Zuordnung aus Verlauf fehlgeschlagen:', e)
       setMessage({ type: 'error', text: 'Zuordnung fehlgeschlagen. Bitte erneut versuchen.' })
@@ -769,6 +852,12 @@ const discardActivity = async (activity) => {
 
   return (
     <div>
+      <AchievementUnlockModal
+        open={achievementUnlocks.length > 0}
+        achievements={achievementUnlocks}
+        onClose={closeAchievementModal}
+      />
+
       {showIgnoredActivities && (
         <IgnoredActivities
           user={user}
