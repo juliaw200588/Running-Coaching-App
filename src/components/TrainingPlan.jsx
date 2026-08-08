@@ -5,6 +5,7 @@ import PhaseTimeline from './PhaseTimeline.jsx'
 import PhaseCards from './PhaseCards.jsx'
 import SplitAccordion from './SplitAccordion.jsx'
 import StoryShareModal from './StoryShareModal.jsx'
+import WeeklyAnalysis from './WeeklyAnalysis.jsx'
 
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
@@ -179,6 +180,8 @@ export default function TrainingPlan({ plan, onReset, user }) {
   const [routeMapLoading, setRouteMapLoading] = useState(false)
   const [routeMapError, setRouteMapError] = useState(null)
   const [storyOpen, setStoryOpen] = useState(false)
+  const [weekAnalyses, setWeekAnalyses] = useState({})
+  const [analysisModal, setAnalysisModal] = useState(null)
   const [skipReasonInput, setSkipReasonInput] = useState('')
   const fileRef = useRef()
 
@@ -287,6 +290,28 @@ export default function TrainingPlan({ plan, onReset, user }) {
       } else {
         try { const l = await window.storage.get('laufplan_logs'); if (l) setLogs(JSON.parse(l.value)) } catch {}
       }
+
+
+// Wochenanalysen dauerhaft am Trainingsplan anzeigen
+if (user) {
+  try {
+    const { data: analysisRows } = await supabase
+      .from('week_analyses')
+      .select(
+        'id, week_number, week_start, analysis, recommendation, next_week_adjustment, analysis_data'
+      )
+      .eq('user_id', user.id)
+      .order('week_number', { ascending: true })
+
+    const analysisMap = {}
+    ;(analysisRows || []).forEach(row => {
+      analysisMap[row.week_number] = row
+    })
+    setWeekAnalyses(analysisMap)
+  } catch (error) {
+    console.error('Wochenanalysen laden fehlgeschlagen:', error)
+  }
+}
 
       // Screenshots: zuerst aus Supabase, dann localStorage als Fallback
       if (user) {
@@ -785,40 +810,8 @@ export default function TrainingPlan({ plan, onReset, user }) {
           : null
 
         return (
-          <div
-            style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(60,30,20,0.45)',
-              zIndex: 300,
-              display: 'flex',
-              alignItems: 'flex-end',
-              justifyContent: 'center',
-            }}
-          >
-            <div
-              style={{
-                background: 'white',
-                borderRadius: '28px 28px 0 0',
-                width: '100%',
-                maxWidth: 520,
-                height: 'min(88dvh, 880px)',
-                maxHeight: 'calc(100dvh - 72px)',
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden',
-                boxShadow: '0 -8px 40px rgba(255,140,105,0.2)',
-              }}
-            >
-              <div
-                style={{
-                  flex: 1,
-                  minHeight: 0,
-                  overflowY: 'auto',
-                  WebkitOverflowScrolling: 'touch',
-                  padding: '24px 24px 28px',
-                }}
-              >
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(60,30,20,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+            <div style={{ background: 'white', borderRadius: '28px 28px 0 0', padding: '24px 24px 44px', width: '100%', maxWidth: 520, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 -8px 40px rgba(255,140,105,0.2)' }}>
               <div style={{ width: 36, height: 4, background: '#F0E8E0', borderRadius: 99, margin: '0 auto 18px' }} />
               <div style={{ fontSize: 11, color: '#C4A882', marginBottom: 2, fontFamily: 'sans-serif' }}>{detailModal.tag}</div>
               <h3 style={{ fontSize: 18, fontWeight: 'bold', color: '#3D2B1F', marginBottom: 18 }}>{detailModal.einheit}</h3>
@@ -865,27 +858,12 @@ export default function TrainingPlan({ plan, onReset, user }) {
                 </div>
               )}
 
-
-              </div>
-
-              <div
-                style={{
-                  flexShrink: 0,
-                  display: 'flex',
-                  gap: 10,
-                  padding: '12px 24px max(16px, calc(env(safe-area-inset-bottom) + 8px))',
-                  background: 'rgba(255,255,255,0.98)',
-                  borderTop: '1px solid #F0E8E0',
-                  boxShadow: '0 -8px 24px rgba(61,43,31,0.08)',
-                  backdropFilter: 'blur(14px)',
-                  WebkitBackdropFilter: 'blur(14px)',
-                }}
-              >
-                <button onClick={() => { setDetailModal(null); setStoryOpen(false) }} style={{ flex: 1, padding: 14, borderRadius: 16, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+              <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
+                <button onClick={() => setDetailModal(null)} style={{ flex: 1, padding: 14, borderRadius: 16, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
                   Schließen
                 </button>
                 <button onClick={() => setStoryOpen(true)} style={{ flex: 1.4, padding: 14, borderRadius: 16, border: 'none', background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)', color: 'white', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
-                  ↗️ Aktivität teilen
+                  📸 Story-Bild
                 </button>
               </div>
             </div>
@@ -902,12 +880,17 @@ export default function TrainingPlan({ plan, onReset, user }) {
         distance={detailModal ? logs[detailModal.key]?.km : null}
         pace={detailModal ? logs[detailModal.key]?.pace : null}
         heartRate={detailModal ? logs[detailModal.key]?.bpm : null}
-        calories={detailModal && logs[detailModal.key]?.kalorien ? `${logs[detailModal.key].kalorien} kcal` : null}
         phases={detailModal ? logs[detailModal.key]?.run_segments || [] : []}
-        runningIndex={detailModal ? logs[detailModal.key]?.running_index : null}
-        elevation={detailModal && logs[detailModal.key]?.hoehenmeter ? `${logs[detailModal.key].hoehenmeter} m` : null}
-        logoSrc="/route-icon.png"
       />
+
+
+{analysisModal && (
+  <WeeklyAnalysis
+    analysis={analysisModal}
+    weekNumber={analysisModal.week_number}
+    onClose={() => setAnalysisModal(null)}
+  />
+)}
 
       {/* Header */}
       <div style={{ background: 'linear-gradient(135deg, #FF8C69 0%, #FFB347 50%, #FF6B9D 100%)', padding: '36px 20px 28px', borderRadius: '0 0 32px 32px', boxShadow: '0 8px 32px rgba(255,140,105,0.3)', position: 'relative', overflow: 'hidden' }}>
@@ -1075,6 +1058,39 @@ export default function TrainingPlan({ plan, onReset, user }) {
                         </div>
                       )
                     })}
+
+                    {weekAnalyses[week.n] && (
+                      <button
+                        type="button"
+                        onClick={() => setAnalysisModal(weekAnalyses[week.n])}
+                        style={{
+                          width: '100%',
+                          marginTop: 10,
+                          padding: '12px 13px',
+                          borderRadius: 14,
+                          border: '1.5px solid #DDE9E2',
+                          background: 'linear-gradient(135deg,#F3FBF7,#FFF8F1)',
+                          color: '#527E67',
+                          fontSize: 11,
+                          fontWeight: 'bold',
+                          fontFamily: 'sans-serif',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 10,
+                        }}
+                      >
+                        <span>
+                          📊 Wochenanalyse ansehen
+                          {weekAnalyses[week.n]?.analysis_data?.coach?.nextWeekFocus?.title
+                            ? ` · Fokus: ${weekAnalyses[week.n].analysis_data.coach.nextWeekFocus.title}`
+                            : ''}
+                        </span>
+                        <span style={{ color: '#94AA9D' }}>→</span>
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

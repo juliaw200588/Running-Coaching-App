@@ -141,7 +141,31 @@ function App() {
         const { data: supaLogs } = await supabase.from('logs').select('*').eq('user_id', user.id)
         if (supaLogs && supaLogs.length > 0) {
           supaLogs.forEach(l => {
-            logs[l.day_key] = { pace: l.pace || '', km: l.km || '', bpm: l.bpm || '', note: l.note || '', running_index: l.running_index || '', cadence: l.cadence || '' }
+            logs[l.day_key] = {
+              id: l.id,
+              day_key: l.day_key,
+              pace: l.pace || '',
+              km: l.km || '',
+              bpm: l.bpm || '',
+              note: l.note || '',
+              running_index: l.running_index || '',
+              cadence: l.cadence || '',
+              actual_date: l.actual_date || '',
+              uhrzeit: l.uhrzeit || '',
+              hf_max: l.hf_max || '',
+              hoehenmeter: l.hoehenmeter || '',
+              elevation_gain: l.elevation_gain || '',
+              gefuehl: l.gefuehl || '',
+              training_load: l.training_load || '',
+              recovery_time: l.recovery_time || '',
+              duration_seconds: l.duration_seconds || null,
+              moving_time_seconds: l.moving_time_seconds || null,
+              km_splits: l.km_splits || null,
+              run_segments: l.run_segments || null,
+              activity_context: l.activity_context || null,
+              sport_type: l.sport_type || 'running',
+              source: l.source || null,
+            }
           })
         } else {
           logs = JSON.parse(localStorage.getItem('laufplan_logs') || '{}')
@@ -204,13 +228,36 @@ function App() {
         logged: !!logs[d.key],
         skipped: !logs[d.key] && skipped[d.key] !== undefined,
         skipReason: skipped[d.key] || '',
-        pace: logs[d.key]?.pace,
-        km: logs[d.key]?.km,
-        bpm: logs[d.key]?.bpm,
-        note: logs[d.key]?.note,
-        running_index: logs[d.key]?.running_index,
-        cadence: logs[d.key]?.cadence,
+        ...(logs[d.key] || {}),
       }))
+
+      // Frühere echte Einheiten aus dem Plan als Vergleichsbasis laden.
+      // So kann die Analyse z.B. Intervall mit Intervall und Long Run mit Long Run vergleichen.
+      const historyLogs = []
+      for (const phase of plan.phases || []) {
+        for (const week of phase.weeks || []) {
+          for (let di = 0; di < (week.days || []).length; di += 1) {
+            const day = week.days[di]
+            if (day.optional) continue
+
+            const key = dayKey(phase.id, week.n, di)
+            const log = logs[key]
+
+            if (!log || !log.actual_date) continue
+
+            historyLogs.push({
+              ...day,
+              key,
+              phaseId: phase.id,
+              phaseLabel: phase.label,
+              weekNumber: week.n,
+              logged: true,
+              skipped: false,
+              ...log,
+            })
+          }
+        }
+      }
 
       // Nur Tage, die WEDER geloggt NOCH bewusst übersprungen wurden, blockieren die Analyse.
       const unloggedCount = weekLogs.filter(l => !l.logged && !l.skipped).length
@@ -259,7 +306,7 @@ function App() {
       // Vorherige Analysen laden für Kontext
       const { data: previousAnalyses } = await supabase
         .from('week_analyses')
-        .select('week_number, analysis, recommendation, next_week_adjustment')
+        .select('week_number, analysis, recommendation, next_week_adjustment, analysis_data')
         .eq('user_id', user.id)
         .order('week_number', { ascending: false })
         .limit(3)
@@ -293,9 +340,18 @@ function App() {
           plan,
           nextWeekDays,
           previousAnalyses: previousAnalyses || [],
+          historyLogs,
           schuhWarnung: schuhWarnung || null,
           currentHFMax: currentHFMax || null,
           currentRuheHF: currentProfile?.ruhe_hf || null,
+          aktuelleWochenKm: currentProfile?.wochen_km || null,
+          isRegenWeek,
+          nextIsRegenWeek,
+          currentPhase: {
+            id: currentPhase.id,
+            label: currentPhase.label,
+            description: currentPhase.description,
+          },
         })
       })
 
@@ -348,15 +404,13 @@ function App() {
         analysis: result.analyse,
         recommendation: result.empfehlung,
         next_week_adjustment: result.anpassung,
+        analysis_data: result.analysisData || null,
       })
 
-      // Schuhwarnung hinzufügen falls nötig
-      const schuhText = schuhWarnung ? ` 👟 Achtung: ${schuhWarnung} – neue Schuhe empfohlen!` : ''
-      const anpassungText = result.nextWeekAdjusted?.some(d => d.adjusted)
-        ? ` 📋 ${result.anpassung}`
-        : ' Plan bleibt wie geplant.'
-
-      const message = `${result.emoji} Woche ${currentWeek.n}: ${result.analyse} ${result.empfehlung}${anpassungText}${schuhText}`
+      // Glocke = Hinweis. Die vollständige Analyse bleibt dauerhaft bei der Woche im Trainingsplan.
+      const message =
+        `📊 Deine Analyse für Woche ${currentWeek.n} ist fertig. ` +
+        `Öffne die Woche im Trainingsplan, um deinen Wochen-Coach anzusehen.`
 
       await supabase.from('notifications').insert({
         user_id: user.id,

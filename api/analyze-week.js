@@ -1,154 +1,381 @@
+import { buildTrainingAnalysis, secondsToPace } from '../src/lib/trainingAnalysis.js'
+
+const RESPONSE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    weekVerdict: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        status: {
+          type: 'string',
+          enum: ['excellent', 'good', 'solid', 'recovery_needed', 'attention'],
+        },
+        headline: { type: 'string' },
+        summary: { type: 'string' },
+      },
+      required: ['status', 'headline', 'summary'],
+    },
+    positive: {
+      type: 'array',
+      maxItems: 2,
+      items: { type: 'string' },
+    },
+    attention: {
+      type: 'array',
+      maxItems: 2,
+      items: { type: 'string' },
+    },
+    development: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        summary: { type: 'string' },
+        signals: {
+          type: 'array',
+          maxItems: 4,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              metric: { type: 'string' },
+              trend: { type: 'string', enum: ['up', 'stable', 'down', 'unclear'] },
+              text: { type: 'string' },
+            },
+            required: ['metric', 'trend', 'text'],
+          },
+        },
+      },
+      required: ['summary', 'signals'],
+    },
+    loadAssessment: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        status: { type: 'string', enum: ['low', 'optimal', 'high', 'unclear'] },
+        text: { type: 'string' },
+      },
+      required: ['status', 'text'],
+    },
+    planDecision: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['keep', 'progress', 'reduce', 'recovery', 'cautious_return'],
+        },
+        reason: { type: 'string' },
+      },
+      required: ['action', 'reason'],
+    },
+    nextWeekFocus: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        title: { type: 'string' },
+        text: { type: 'string' },
+      },
+      required: ['title', 'text'],
+    },
+    confidence: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        level: { type: 'string', enum: ['high', 'medium', 'low'] },
+        reason: { type: 'string' },
+      },
+      required: ['level', 'reason'],
+    },
+    recommendation: { type: 'string' },
+    adjustmentSummary: { type: 'string' },
+    emoji: { type: 'string' },
+    nextWeekAdjusted: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          tag: { type: 'string' },
+          einheit: { type: 'string' },
+          details: { type: 'string' },
+          adjusted: { type: 'boolean' },
+          adjustmentReason: { type: 'string' },
+        },
+        required: [
+          'tag',
+          'einheit',
+          'details',
+          'adjusted',
+          'adjustmentReason',
+        ],
+      },
+    },
+  },
+  required: [
+    'weekVerdict',
+    'positive',
+    'attention',
+    'development',
+    'loadAssessment',
+    'planDecision',
+    'nextWeekFocus',
+    'confidence',
+    'recommendation',
+    'adjustmentSummary',
+    'emoji',
+    'nextWeekAdjusted',
+  ],
+}
+
+const compactRunForPrompt = run => ({
+  tag: run.tag,
+  workout: run.workout,
+  workoutType: run.workoutType,
+  plannedDetails: run.plannedDetails,
+  completed: run.completed,
+  skipped: run.skipped,
+  skipReason: run.skipReason,
+  actual: run.actual
+    ? {
+        km: run.actual.km,
+        pace: run.actual.paceSeconds
+          ? `${secondsToPace(run.actual.paceSeconds)} min/km`
+          : null,
+        avgHr: run.actual.avgHr,
+        maxHr: run.actual.maxHr,
+        avgHrZone: run.actual.avgHrZone,
+        durationSeconds: run.actual.durationSeconds,
+        runningIndex: run.actual.runningIndex,
+        cadence: run.actual.cadence,
+        elevationGainMeters: run.actual.elevationGainMeters,
+        feeling: run.actual.feeling,
+        note: run.actual.note,
+        context: run.actual.context,
+      }
+    : null,
+  splitTrend: run.splitTrend
+    ? {
+        firstHalfPace: secondsToPace(run.splitTrend.firstHalfPaceSeconds),
+        secondHalfPace: secondsToPace(run.splitTrend.secondHalfPaceSeconds),
+        paceDeltaSecondsPerKm: run.splitTrend.paceDeltaSecondsPerKm,
+        firstHalfAvgHr: run.splitTrend.firstHalfAvgHr,
+        secondHalfAvgHr: run.splitTrend.secondHalfAvgHr,
+        hrDeltaBpm: run.splitTrend.hrDeltaBpm,
+      }
+    : null,
+  segmentConsistency: run.segmentConsistency
+    ? {
+        count: run.segmentConsistency.count,
+        averagePace: secondsToPace(run.segmentConsistency.averagePaceSeconds),
+        fastestPace: secondsToPace(run.segmentConsistency.fastestPaceSeconds),
+        slowestPace: secondsToPace(run.segmentConsistency.slowestPaceSeconds),
+        spreadSecondsPerKm: run.segmentConsistency.spreadSecondsPerKm,
+        firstToLastDeltaSeconds:
+          run.segmentConsistency.firstToLastDeltaSeconds,
+      }
+    : null,
+  splits: (run.splits || []).map(split => ({
+    km: split.index,
+    pace: secondsToPace(split.paceSeconds),
+    avgHr: split.avgHr,
+    maxHr: split.maxHr,
+    cadence: split.cadence,
+    ascentMeters: split.ascentMeters,
+  })),
+  segments: (run.segments || []).map(segment => ({
+    index: segment.index,
+    label: segment.label,
+    distanceMeters: segment.distanceMeters,
+    durationSeconds: segment.durationSeconds,
+    pace: secondsToPace(segment.paceSeconds),
+    avgHr: segment.avgHr,
+    maxHr: segment.maxHr,
+    cadence: segment.cadence,
+  })),
+})
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
-  if (req.method === 'OPTIONS') return res.status(200).end()
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { weekLogs, plannedDays, weekNumber, plan, nextWeekDays, previousAnalyses, schuhWarnung, isRegenWeek, nextIsRegenWeek, currentHFMax, currentRuheHF, aktuelleWochenKm } = req.body
+  if (req.method === 'OPTIONS') return res.status(200).end()
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' })
+  }
+
+  const {
+    weekLogs = [],
+    plannedDays = [],
+    weekNumber,
+    plan,
+    nextWeekDays = [],
+    previousAnalyses = [],
+    historyLogs = [],
+    schuhWarnung,
+    isRegenWeek = false,
+    nextIsRegenWeek = false,
+    currentHFMax,
+    currentRuheHF,
+    aktuelleWochenKm,
+    currentPhase,
+  } = req.body || {}
 
   try {
-    const loggedCount = weekLogs.filter(l => l.logged).length
-    const skippedCount = weekLogs.filter(l => l.skipped).length
-    const plannedCount = plannedDays.length
-    const missedDays = plannedDays.filter(d => !weekLogs.find(l => l.key === d.key && (l.logged || l.skipped)))
-
-    const logsDetail = weekLogs
-      .filter(l => l.logged)
-      .map(l => `- ${l.tag} ${l.einheit}: ${l.pace ? `Pace ${l.pace}` : ''} ${l.km ? `/ ${l.km}` : ''} ${l.bpm ? `/ HF ${l.bpm}` : ''}${l.running_index ? ` / Running Index ${l.running_index}` : ''}${l.cadence ? ` / Kadenz ${l.cadence} spm` : ''} ${l.note ? `/ Notiz: "${l.note}"` : ''}`)
-      .join('\n')
-
-    const skippedDetail = skippedCount > 0
-      ? `\nBewusst übersprungene Einheiten (NICHT als Versagen werten, sondern als bewusste Entscheidung respektieren):\n${weekLogs.filter(l => l.skipped).map(l => `- ${l.tag} ${l.einheit}${l.skipReason ? ` (Grund: "${l.skipReason}")` : ' (kein Grund angegeben)'}`).join('\n')}`
-      : ''
-
-    const plannedDetail = plannedDays
-      .map(d => `- ${d.tag} ${d.einheit}: ${d.details}`)
-      .join('\n')
-
-    const missedDetail = missedDays.length > 0
-      ? `Ausgefallene Einheiten (weder geloggt noch bewusst übersprungen - hier nachfragen/sanft ansprechen):\n${missedDays.map(d => `- ${d.tag} ${d.einheit}`).join('\n')}`
-      : (skippedCount > 0 ? 'Alle übrigen Einheiten absolviert!' : 'Alle Einheiten absolviert!')
-
-    const nextWeekDetail = nextWeekDays
-      ? nextWeekDays.map(d => `- ${d.tag} ${d.einheit}: ${d.details}`).join('\n')
-      : 'Letzte Woche des Plans'
-
-    const previousContext = previousAnalyses?.length > 0
-      ? `\nVorherige Wochen (Kontext):\n${previousAnalyses.map(a => `- Woche ${a.week_number}: ${a.analysis} → ${a.next_week_adjustment || 'keine Anpassung'}`).join('\n')}`
-      : ''
-
-    const karvonenZone = (pct) => Math.round((currentHFMax - currentRuheHF) * pct + currentRuheHF)
-    const hfContext = currentHFMax
-      ? (currentRuheHF
-          ? `\nAktuelle maximale Herzfrequenz: ${currentHFMax} bpm, Ruhe-HF: ${currentRuheHF} bpm (Herzfrequenzreserve-Methode). Zone 1: <${karvonenZone(0.6)} bpm, Zone 2: ${karvonenZone(0.6)}-${karvonenZone(0.7)} bpm, Zone 3: ${karvonenZone(0.7)}-${karvonenZone(0.8)} bpm, Zone 4: ${karvonenZone(0.8)}-${karvonenZone(0.9)} bpm, Zone 5: >${karvonenZone(0.9)} bpm. WICHTIG: Ordne die HF-Werte aus den Logs oben explizit einer dieser Zonen zu, bevor du sie bewertest - verlasse dich nicht auf ein reines Zahlengefühl. Ein Wert an oder über der Zone-2-Obergrenze liegt bereits in Zone 3, nicht mehr "niedrig".`
-          : `\nAktuelle maximale Herzfrequenz: ${currentHFMax} bpm. Zone 1: <${Math.round(currentHFMax*0.6)} bpm, Zone 2: ${Math.round(currentHFMax*0.6)}-${Math.round(currentHFMax*0.7)} bpm, Zone 3: ${Math.round(currentHFMax*0.7)}-${Math.round(currentHFMax*0.8)} bpm, Zone 4: ${Math.round(currentHFMax*0.8)}-${Math.round(currentHFMax*0.9)} bpm, Zone 5: >${Math.round(currentHFMax*0.9)} bpm. WICHTIG: Ordne die HF-Werte aus den Logs oben explizit einer dieser Zonen zu, bevor du sie bewertest - verlasse dich nicht auf ein reines Zahlengefühl. Ein Wert an oder über der Zone-2-Obergrenze liegt bereits in Zone 3, nicht mehr "niedrig".`)
-      : ''
-    const kmContext = aktuelleWochenKm
-      ? `\nAktuelle Wochenkilometer laut Profil: ${aktuelleWochenKm} km`
-      : ''
-    const regenContext = isRegenWeek
-      ? '\n⚡ Diese Woche war eine Regenerationswoche – niedrigerer Umfang ist normal und gewollt.'
-      : ''
-    const nextRegenContext = nextIsRegenWeek
-      ? '\n💤 Nächste Woche ist eine Regenerationswoche – Umfang soll bewusst reduziert bleiben, keine Steigerung!'
-      : ''
-    const schuhContext = schuhWarnung
-      ? `\n⚠️ Schuhwarnung: ${schuhWarnung} – Schuhe nähern sich dem Ende ihrer Laufzeit!`
-      : ''
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-5',
-        max_tokens: 2000,
-        system: `Du bist ein professioneller Lauftrainer. Analysiere die Trainingswoche mit Blick auf die letzten Wochen und passe die nächste Woche konkret an.
-
-Antworte NUR mit validem JSON ohne Markdown:
-{
-  "analyse": "2-3 Sätze ehrliche Auswertung – was lief gut, was weniger. Erkenne Muster über mehrere Wochen.",
-  "empfehlung": "1-2 konkrete motivierende Empfehlungen für nächste Woche",
-  "anpassung": "Kurze Beschreibung was nächste Woche angepasst wird (oder 'Plan bleibt wie geplant')",
-  "emoji": "🔥 super / ✅ gut / 💪 solide / 😴 Erholung nötig / ⚠️ Achtung",
-  "nextWeekAdjusted": [
-    {
-      "tag": "Di",
-      "einheit": "Intervalle",
-      "details": "konkret angepasste Details",
-      "adjusted": true,
-      "adjustmentReason": "kurzer Grund"
-    }
-  ]
-}
-
-Anpassungsregeln:
-- HF dauerhaft zu hoch (mehrere Wochen) → stärker reduzieren
-- Running Index über mehrere Wochen steigend → objektives Zeichen für Fitnessfortschritt, positiv erwähnen, auch wenn sich die Person selbst unsicher fühlt. Fallend oder stagnierend über mehrere Wochen bei hohem Trainingsumfang → möglicher Hinweis auf Übertraining, in der Analyse ansprechen und ggf. mehr Erholung einbauen
-- Pace zu schnell → Details anpassen, Zone 2 betonen
-- Einheiten ausgefallen (weder geloggt noch bewusst übersprungen) → Umfang reduzieren, Regeneration, sanft nachfragen was los war
-- Einheiten BEWUSST übersprungen (mit oder ohne Grund) → NICHT wie ein Versagen behandeln! Das war eine informierte Entscheidung der Person, keine Nachlässigkeit. Erkenne es wertschätzend an ("Gut, dass du auf deinen Körper gehört hast" bei Krankheit/Verletzung, oder einfach neutral "Diese Woche hattest du weniger Zeit" bei anderen Gründen).
-  - Bei ERKÄLTUNG/INFEKT als Grund: wende die "Above-the-neck-Regel" an. Symptome nur oberhalb des Halses (Schnupfen, leichtes Halskratzen) → nächste Woche kann normal/nur leicht vorsichtiger weitergehen. Symptome unterhalb des Halses (Fieber, Gliederschmerzen, Husten, Brustschmerzen) oder unklar → deutlich vorsichtiger wieder einsteigen, erste Einheit(en) nächste Woche nur locker/kurz, keine Intervalle/Tempo.
-  - Bei VERLETZUNG als Grund: konservativer wieder aufbauen, nicht da weitermachen wo der Plan stand. In der Empfehlung kurz erwähnen, dass schmerzfreies Alternativtraining (Schwimmen, Radfahren, Aquajogging) die Fitness in der Zwischenzeit erhalten kann, aber Ruhe/ärztliche Abklärung bei anhaltenden Schmerzen Vorrang hat.
-  - Bei anderen Gründen (Zeitmangel etc.): normal weitermachen, keine Dramatisierung.
-- Eine Woche perfekt → leichte Steigerung möglich (5-10% mehr Umfang oder leicht intensiver)
-- Mehrere Wochen perfekt → etwas mehr Steigerung (bis 10%), nächste Stufe der Periodisierung
-- Eine Woche schlecht/ausgefallen (unentschuldigt) → sofort anpassen, nicht abwarten
-
-PACE-ANPASSUNG basierend auf HF und Notizen:
-- HF bei Zone 2 Lauf zu hoch (>70% HFmax oder Notiz "Puls hoch/anstrengend") → Zone 2 Pace um 10-15 sec/km reduzieren (langsamer)
-- HF bei Zone 2 Lauf zu niedrig (<60% HFmax oder Notiz "sehr leicht/zu leicht") → Zone 2 Pace um 10 sec/km erhöhen (schneller)
-- HF bei Intervallen/Tempo passt → Pace beibehalten
-- Keine HF-Daten aber Notiz "zu schnell/anstrengend" → Pace reduzieren
-- Keine HF-Daten aber Notiz "sehr leicht" → Pace erhöhen
-- Passe NUR Zone 2 und Langer Lauf Paces an – Intervall/Tempo Paces bleiben stabil
-- Schreibe die neue Pace explizit in die Details (z.B. "Zone 2 (8:10-8:40 min/km)" statt nur "Zone 2"). Falls oben HF-Zonengrenzen berechnet wurden, IMMER zusätzlich den passenden HF-Bereich mit angeben, Format "Zone X (Pace-Bereich min/km, HF-Bereich bpm)" - auch bei unveränderten Einheiten (adjusted: false), falls die Details bisher nur Pace ohne HF enthielten, dort ebenfalls den HF-Bereich ergänzen
-- Erschöpfung in Notizen → Erholung priorisieren
-- Schuhwarnung vorhanden → explizit in Empfehlung erwähnen
-- Regenerationswoche (isRegenWeek): niedrigerer Umfang ist gewollt, keine Kritik daran
-- Nächste Woche Regen (nextIsRegenWeek): KEINE Steigerung vorschlagen, Umfang bewusst niedrig lassen
-- Konservativ anpassen – Verletzungsprävention hat Vorrang
-- ALLE Einheiten zurückgeben, auch unveränderte (adjusted: false)
-- Nie auf KI oder Tools verweisen`,
-
-        messages: [{
-          role: 'user',
-          content: `Woche ${weekNumber} Analyse:
-
-Geplante Einheiten (${plannedCount}):
-${plannedDetail}
-
-Absolvierte Einheiten (${loggedCount}/${plannedCount}):
-${logsDetail || 'Keine Logs vorhanden'}
-${skippedDetail}
-
-${missedDetail}
-${previousContext}
-${hfContext}
-${kmContext}
-${regenContext}
-${nextRegenContext}
-${schuhContext}
-
-Nächste Woche (bitte anpassen falls nötig):
-${nextWeekDetail}
-
-Plan: ${plan?.title || 'Trainingsplan'}, Ziel: ${plan?.goal || 'unbekannt'}`
-        }]
-      })
+    const facts = buildTrainingAnalysis({
+      weekLogs,
+      plannedDays,
+      historyLogs,
+      currentHFMax,
+      currentRuheHF,
+      isRegenWeek,
+      nextIsRegenWeek,
+      aktuelleWochenKm,
     })
 
-    const data = await response.json()
-    const text = data.content[0].text
-    const clean = text.replace(/```json|```/g, '').trim()
-    const result = JSON.parse(clean)
+    const coachContext = {
+      weekNumber,
+      phase: currentPhase
+        ? {
+            id: currentPhase.id || null,
+            label: currentPhase.label || null,
+            description: currentPhase.description || null,
+          }
+        : null,
+      plan: {
+        title: plan?.title || 'Trainingsplan',
+        goal: plan?.goal || null,
+      },
+      adherence: facts.adherence,
+      weekContext: facts.weekContext,
+      runs: facts.runs.map(compactRunForPrompt),
+      similarComparisons: facts.similarComparisons,
+      efficiencyCandidates: facts.efficiencyCandidates,
+      recoverySpacing: facts.recoverySpacing,
+      fatigueSignals: facts.fatigueSignals,
+      deterministicConfidence: facts.confidence,
+      previousAnalyses: (previousAnalyses || []).slice(0, 3),
+      shoesWarning: schuhWarnung || null,
+      nextWeek: (nextWeekDays || []).map(day => ({
+        tag: day.tag,
+        einheit: day.einheit,
+        details: day.details,
+        optional: Boolean(day.optional),
+      })),
+    }
 
-    res.status(200).json(result)
-  } catch (e) {
-    res.status(500).json({ error: e.message })
+    const system = `Du bist ein professioneller Lauftrainer und analysierst eine abgeschlossene Trainingswoche.
+
+Deine Prioritäten:
+1. Trainingsziel und aktuelle Trainingsphase verstehen.
+2. Soll und Ist jeder Einheit vergleichen.
+3. Bei Intervallen/Tempoläufen Phasen/Segmente verwenden, wenn vorhanden. Beurteile NICHT die Gesamtpace als Intervallpace.
+4. Bei Long Runs und lockeren Läufen Kilometer-Splits, Pace-Drift und HF-Drift berücksichtigen.
+5. Ähnliche Einheit mit ähnlicher Einheit vergleichen, nicht pauschal Wochendurchschnitte.
+6. Belastung konservativ steuern. Eine perfekte Woche bedeutet NICHT automatisch, dass zusätzlich gesteigert werden soll; wenn der Plan selbst bereits Progression vorsieht, genügt meist "keep".
+7. Regenerationswochen sind bewusst leichter und dürfen nicht als Rückschritt bewertet werden.
+8. Einzelne schwache Kennzahlen niemals als Übertraining diagnostizieren. Ermüdung nur bei mehreren zusammenpassenden Signalen vorsichtig formulieren.
+9. Krankheit/Verletzung konservativ behandeln. Keine Diagnose stellen. Bei Fieber, Brustsymptomen, ausgeprägten Gliederschmerzen oder unklaren stärkeren Beschwerden keine intensive Einheit empfehlen.
+10. Bewusst übersprungene Einheiten wertfrei anhand des angegebenen Grundes einordnen.
+11. Wetter/Höhenmeter nur berücksichtigen, wenn sie die Interpretation tatsächlich erklären.
+12. Running Index und Pace/HF-Verhältnis als Entwicklungssignale nutzen, aber nicht isoliert überbewerten.
+13. Nur maximal zwei wirklich wichtige positive Punkte und zwei Punkte unter "Darauf achten".
+14. Genau EINEN konkreten Fokus für die nächste Woche formulieren.
+15. Jede Planänderung transparent begründen.
+16. ALLE Einheiten der nächsten Woche in nextWeekAdjusted zurückgeben, auch unveränderte (adjusted=false).
+17. Intervall-/Tempo-Paces nicht aufgrund einer einzelnen guten Woche aggressiv erhöhen.
+18. Bei Zone-2-/Long-Run-Paces nur konservativ ändern und Herzfrequenzkontext mitdenken.
+19. Nie KI, Modelle, Prompts oder Tools erwähnen.
+
+Die deterministisch berechneten Fakten sind die primäre Datenbasis. Wenn Daten fehlen, keine Präzision vortäuschen. Confidence muss die tatsächliche Datenqualität widerspiegeln.`
+
+    const response = await fetch(
+      'https://api.anthropic.com/v1/messages',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-5',
+          max_tokens: 2600,
+          system,
+          output_config: {
+            format: {
+              type: 'json_schema',
+              schema: RESPONSE_SCHEMA,
+            },
+          },
+          messages: [
+            {
+              role: 'user',
+              content:
+                `Analysiere Woche ${weekNumber}. Hier sind die bereits ` +
+                `verdichteten Trainingsdaten:\n${JSON.stringify(coachContext)}`,
+            },
+          ],
+        }),
+      }
+    )
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      console.error('Anthropic Wochenanalyse Fehler:', data)
+      throw new Error(
+        data?.error?.message ||
+        `Anthropic API Fehler ${response.status}`
+      )
+    }
+
+    const text = data?.content?.find(
+      item => item?.type === 'text'
+    )?.text
+
+    if (!text) {
+      throw new Error('Claude hat keine Analyse zurückgegeben.')
+    }
+
+    const result = JSON.parse(text)
+
+    // Legacy-Felder beibehalten, damit bestehender App-Code weiterhin funktioniert.
+    return res.status(200).json({
+      ...result,
+      analyse:
+        result.weekVerdict?.summary ||
+        result.weekVerdict?.headline ||
+        '',
+      empfehlung: result.recommendation || '',
+      anpassung:
+        result.adjustmentSummary ||
+        'Plan bleibt wie geplant',
+      analysisData: {
+        version: 2,
+        generatedAt: new Date().toISOString(),
+        weekNumber,
+        phase: coachContext.phase,
+        facts: {
+          adherence: facts.adherence,
+          weekContext: facts.weekContext,
+          efficiencyCandidates: facts.efficiencyCandidates,
+          recoverySpacing: facts.recoverySpacing,
+          fatigueSignals: facts.fatigueSignals,
+          confidence: facts.confidence,
+        },
+        coach: result,
+      },
+    })
+  } catch (error) {
+    console.error('Wochenanalyse v2 Fehler:', error)
+
+    return res.status(500).json({
+      error:
+        error?.message ||
+        'Wochenanalyse konnte nicht erstellt werden.',
+    })
   }
 }
