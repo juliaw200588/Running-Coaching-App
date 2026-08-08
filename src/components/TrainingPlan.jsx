@@ -1085,7 +1085,7 @@ if (user) {
                         <span>
                           📊 Wochenanalyse ansehen
                           {weekAnalyses[week.n]?.analysis_data?.coach?.nextWeekFocus?.title
-                            ? ` · Fokus: ${weekAnalyses[week.n].analysis_data.coach.nextWeekFocus.title}`
+                            ? ` · Woche ${Number(week.n) + 1}: ${weekAnalyses[week.n].analysis_data.coach.nextWeekFocus.title}`
                             : ''}
                         </span>
                         <span style={{ color: '#94AA9D' }}>→</span>
