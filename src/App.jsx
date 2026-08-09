@@ -7,6 +7,7 @@ import Profile from './components/Profile.jsx'
 import Laeufe from './components/Laeufe.jsx'
 import Notifications from './components/Notifications.jsx'
 import BottomNav from './components/BottomNav.jsx'
+import Dashboard from './components/Dashboard.jsx'
 
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
@@ -47,6 +48,7 @@ function App() {
   const [plan, setPlan] = useState(null)
   const [planId, setPlanId] = useState(null)
   const [activeTab, setActiveTab] = useState('training')
+  const [showTrainingPlan, setShowTrainingPlan] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [loadingAuth, setLoadingAuth] = useState(true)
@@ -961,6 +963,7 @@ if (!claimAcquired) return
 
     localStorage.setItem(`runcoaching_plan_${user.id}`, JSON.stringify(newPlan))
     setPlan(newPlan)
+    setShowTrainingPlan(false)
   }
 
   const handleReset = async () => {
@@ -968,6 +971,7 @@ if (!claimAcquired) return
     localStorage.removeItem(`runcoaching_plan_${user.id}`)
     setPlan(null)
     setPlanId(null)
+    setShowTrainingPlan(false)
   }
 
   const handleOpenNotifications = () => {
@@ -982,6 +986,7 @@ const handleOpenWeekAnalysisFromNotification = (weekNumber) => {
 
   setShowNotifications(false)
   setActiveTab('training')
+  setShowTrainingPlan(true)
   setOpenWeekAnalysisWeek(parsedWeek)
 }
 
@@ -1017,17 +1022,44 @@ const handleOpenWeekAnalysisFromNotification = (weekNumber) => {
 
       <div style={{ paddingBottom: 78 }}>
         {activeTab === 'training' && (
-          plan
+          showTrainingPlan
             ? (
-              <TrainingPlan
-                plan={plan}
-                onReset={handleReset}
+              <div>
+                <div style={{ position: 'sticky', top: 0, zIndex: 90, padding: '10px 14px 0', maxWidth: 720, margin: '0 auto' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setShowTrainingPlan(false); setOpenWeekAnalysisWeek(null) }}
+                    style={{ border: '1px solid #EADFD8', background: 'rgba(255,255,255,0.94)', color: '#765F52', borderRadius: 999, padding: '8px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 14px rgba(75,52,39,0.07)' }}
+                  >
+                    ← Dashboard
+                  </button>
+                </div>
+                {plan ? (
+                  <TrainingPlan
+                    plan={plan}
+                    onReset={handleReset}
+                    user={user}
+                    openWeekAnalysis={openWeekAnalysisWeek}
+                    onWeekAnalysisOpened={() => setOpenWeekAnalysisWeek(null)}
+                  />
+                ) : (
+                  <Onboarding onPlanGenerated={handlePlanGenerated} />
+                )}
+              </div>
+            )
+            : (
+              <Dashboard
                 user={user}
-                openWeekAnalysis={openWeekAnalysisWeek}
-                onWeekAnalysisOpened={() => setOpenWeekAnalysisWeek(null)}
+                plan={plan}
+                onOpenTraining={() => setShowTrainingPlan(true)}
+                onOpenActivities={() => setActiveTab('activities')}
+                onOpenProfile={() => setActiveTab('profile')}
+                onOpenWeekAnalysis={(weekNumber) => {
+                  setOpenWeekAnalysisWeek(Number(weekNumber))
+                  setShowTrainingPlan(true)
+                }}
               />
             )
-            : <Onboarding onPlanGenerated={handlePlanGenerated} />
         )}
         {activeTab === 'activities' && <Laeufe user={user} plan={plan} />}
         {activeTab === 'profile' && (
