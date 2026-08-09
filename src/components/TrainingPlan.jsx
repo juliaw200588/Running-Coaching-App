@@ -35,35 +35,70 @@ const parseJsonArray = (value) => {
 // da sonst Zahlen aus Pace-/HF-Bereichen fälschlich als Minuten gezählt würden.
 const estimateDayKm = (details) => {
   if (!details) return 0
-  const clean = details.replace(/\([^)]*\)/g, '')
 
-  // Erkennt ein führendes "NN km: ..." als GESAMT-Distanz des Tages (z.B.
-  // "16 km: 12 km Zone 2 + 4 km progressiv..."). Die folgenden km-Angaben sind dann nur
-  // eine Aufschlüsselung des Gesamtwerts, keine zusätzliche Distanz - nicht mit aufsummieren.
-  const totalMatch = clean.match(/^\s*(\d+(?:[.,]\d+)?)\s*km\s*:/)
-  if (totalMatch) return parseFloat(totalMatch[1].replace(',', '.'))
+  // Klammerinhalte enthalten meistens Pace-/HF-Bereiche und keine Distanz.
+  let clean = String(details).replace(/\([^)]*\)/g, '')
+
+  // Wenn der Trainingstext mit einer Gesamtdistanz beginnt ("16 km Zone 2 ..."),
+  // ist diese Zahl maßgeblich. Spätere Angaben wie "ab km 8-10" oder Pace-Hinweise
+  // dürfen dann NICHT noch einmal addiert werden.
+  const leadingTotalKm = clean.match(
+    /^\s*(\d+(?:[.,]\d+)?)\s*km\b/i
+  )
+  if (leadingTotalKm) {
+    return parseFloat(leadingTotalKm[1].replace(',', '.'))
+  }
+
+  // Pace-Angaben VOR der Minutenauswertung entfernen.
+  // Sonst wurde z.B. "6:30 min/km" fälschlich als "30 min" gezählt –
+  // genau dadurch konnte das Wochensummary nach Coach-Anpassungen massiv steigen.
+  clean = clean
+    .replace(
+      /\b\d{1,2}:\d{2}\s*[-–]\s*\d{1,2}:\d{2}\s*min\/km\b/gi,
+      ''
+    )
+    .replace(
+      /\b\d{1,2}:\d{2}\s*min\/km\b/gi,
+      ''
+    )
 
   let km = 0
 
-  const repRegex = /(\d+)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*(km|m)\b/gi
-  let m
-  while ((m = repRegex.exec(clean))) {
-    const reps = parseInt(m[1])
-    let dist = parseFloat(m[2].replace(',', '.'))
-    if (m[3].toLowerCase() === 'm') dist = dist / 1000
-    km += reps * dist
+  // Wiederholungen zuerst erfassen, z.B. 5x800 m.
+  const repRegex =
+    /(\d+)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*(km|m)\b/gi
+
+  let match
+  while ((match = repRegex.exec(clean))) {
+    const reps = parseInt(match[1], 10)
+    let distance = parseFloat(match[2].replace(',', '.'))
+
+    if (match[3].toLowerCase() === 'm') {
+      distance /= 1000
+    }
+
+    km += reps * distance
   }
+
   let rest = clean.replace(repRegex, '')
 
-  const kmRegex = /(\d+(?:[.,]\d+)?)\s*km\b/g
-  while ((m = kmRegex.exec(rest))) {
-    km += parseFloat(m[1].replace(',', '.'))
+  // Bereiche wie "km 8-10" / "ab 8-10 km" sind Positionsangaben,
+  // keine zusätzliche Trainingsdistanz.
+  rest = rest
+    .replace(/\b(?:ab\s+)?km\s*\d+(?:[.,]\d+)?\s*[-–]\s*\d+(?:[.,]\d+)?\b/gi, '')
+    .replace(/\b(?:ab\s+)?\d+(?:[.,]\d+)?\s*[-–]\s*\d+(?:[.,]\d+)?\s*km\b/gi, '')
+
+  // Verbleibende explizite Distanzen addieren.
+  const kmRegex = /(\d+(?:[.,]\d+)?)\s*km\b/gi
+  while ((match = kmRegex.exec(rest))) {
+    km += parseFloat(match[1].replace(',', '.'))
   }
   rest = rest.replace(kmRegex, '')
 
-  const minRegex = /(\d+)\s*min\b/g
-  while ((m = minRegex.exec(rest))) {
-    km += parseInt(m[1]) / 8
+  // Nur echte Dauern wie "10 min einlaufen" / "35 min locker".
+  const minRegex = /(\d+(?:[.,]\d+)?)\s*min\b/gi
+  while ((match = minRegex.exec(rest))) {
+    km += parseFloat(match[1].replace(',', '.')) / 8
   }
 
   return km

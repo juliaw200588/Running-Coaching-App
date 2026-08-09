@@ -69,6 +69,21 @@ const dateValue = value => {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
+const germanWeekday = value => {
+  const date = dateValue(value)
+  if (!date) return null
+
+  return [
+    'Sonntag',
+    'Montag',
+    'Dienstag',
+    'Mittwoch',
+    'Donnerstag',
+    'Freitag',
+    'Samstag',
+  ][date.getDay()]
+}
+
 const diffDays = (a, b) => {
   const da = dateValue(a)
   const db = dateValue(b)
@@ -331,10 +346,18 @@ const analyzeRun = (log, maxHr, restHr) => {
     `${log?.einheit || ''} ${log?.details || ''}`
   )
 
+  const actualDate = log?.actual_date || null
+
   return {
     key: log?.key || null,
-    date: log?.actual_date || null,
+    // WICHTIG: tag = geplanter Plantag, actualDate/actualWeekday = echte Durchführung.
+    // Diese Werte dürfen in der Coach-Bewertung nicht miteinander verwechselt werden.
+    date: actualDate,
+    actualDate,
+    actualWeekday: germanWeekday(actualDate),
+    plannedTag: log?.tag || null,
     tag: log?.tag || null,
+    planWeekNumber: numeric(log?.weekNumber),
     workout: log?.einheit || null,
     workoutType,
     plannedDetails: log?.details || null,
@@ -437,6 +460,14 @@ const detectRecoverySpacing = runs => {
     .sort((a, b) => (dateValue(a.date) || 0) - (dateValue(b.date) || 0))
 
   const hardTypes = new Set(['interval', 'tempo', 'race', 'hills'])
+  const loadRelevantTypes = new Set([
+    'interval',
+    'tempo',
+    'race',
+    'hills',
+    'long_run',
+  ])
+
   const pairs = []
 
   for (let index = 1; index < completed.length; index += 1) {
@@ -444,21 +475,181 @@ const detectRecoverySpacing = runs => {
     const current = completed[index]
     const gap = diffDays(previous.date, current.date)
 
-    if (hardTypes.has(previous.workoutType) || hardTypes.has(current.workoutType)) {
-      pairs.push({
-        from: previous.workoutType,
-        to: current.workoutType,
-        daysBetween: gap,
-        potentiallyTight:
-          gap != null &&
-          gap <= 1 &&
-          hardTypes.has(previous.workoutType) &&
-          hardTypes.has(current.workoutType),
-      })
-    }
+    pairs.push({
+      previousDate: previous.actualDate,
+      previousWeekday: previous.actualWeekday,
+      previousWorkout: previous.workout,
+      previousType: previous.workoutType,
+      currentDate: current.actualDate,
+      currentWeekday: current.actualWeekday,
+      currentWorkout: current.workout,
+      currentType: current.workoutType,
+      daysBetween: gap,
+      consecutiveDay: gap === 1,
+      potentiallyTight:
+        gap != null &&
+        gap <= 1 &&
+        (
+          loadRelevantTypes.has(previous.workoutType) ||
+          hardTypes.has(current.workoutType)
+        ),
+    })
   }
 
   return pairs
+}
+
+const buildChronology = runs => {
+  const completed = runs
+    .filter(run => run.completed && run.date)
+    .sort((a, b) => (dateValue(a.date) || 0) - (dateValue(b.date) || 0))
+
+  return completed.map((run, index) => {
+    const previous = index > 0 ? completed[index - 1] : null
+
+    return {
+      date: run.actualDate,
+      weekday: run.actualWeekday,
+      plannedTag: run.plannedTag,
+      workout: run.workout,
+      workoutType: run.workoutType,
+      daysSincePreviousRun:
+        previous ? diffDays(previous.date, run.date) : null,
+      previousWorkout:
+        previous?.workout || null,
+      previousWorkoutType:
+        previous?.workoutType || null,
+    }
+  })
+}
+
+
+const normalizeSport = value => {
+  const text = String(value || '').toLowerCase()
+  if (/mountain|mtb/.test(text)) return 'mountainbike'
+  if (/bike|cycling|rad|velo/.test(text)) return 'cycling'
+  if (/walk|hike|wander/.test(text)) return 'hiking'
+  if (/swim|schwimm/.test(text)) return 'swimming'
+  if (/run|running|jog|lauf/.test(text)) return 'running'
+  if (/strength|kraft|gym|mobility/.test(text)) return 'strength'
+  return text || 'other'
+}
+
+const activityLoadClass = activity => {
+  const sport = normalizeSport(activity?.sport_type)
+  const durationMinutes =
+    numeric(activity?.moving_time_seconds ?? activity?.duration_seconds) / 60
+  const distanceKm = numeric(activity?.km)
+  const load = numeric(activity?.training_load)
+
+  if (Number.isFinite(load)) {
+    if (load >= 100) return 'high'
+    if (load >= 55) return 'moderate'
+    return 'low'
+  }
+
+  if (sport === 'mountainbike' && (durationMinutes >= 75 || distanceKm >= 20)) return 'moderate'
+  if (sport === 'cycling' && (durationMinutes >= 90 || distanceKm >= 30)) return 'moderate'
+  if (sport === 'hiking' && durationMinutes >= 120) return 'moderate'
+  if (sport === 'swimming' && durationMinutes >= 60) return 'moderate'
+  return 'low'
+}
+
+const buildAllActivityChronology = ({ activityHistory = [], weekStart }) => {
+  const start = dateValue(weekStart)
+  if (!start) return []
+  const end = new Date(start)
+  end.setDate(end.getDate() + 6)
+  end.setHours(23, 59, 59, 999)
+
+  return (activityHistory || [])
+    .filter(activity => {
+      const date = dateValue(activity?.actual_date)
+      return date && date >= start && date <= end
+    })
+    .map(activity => ({
+      id: activity.id || null,
+      date: activity.actual_date,
+      weekday: germanWeekday(activity.actual_date),
+      sport: normalizeSport(activity.sport_type),
+      distanceKm: numeric(activity.km),
+      durationMinutes:
+        Number.isFinite(numeric(activity.moving_time_seconds ?? activity.duration_seconds))
+          ? Math.round(numeric(activity.moving_time_seconds ?? activity.duration_seconds) / 60)
+          : null,
+      averageHr: numeric(activity.bpm),
+      trainingLoad: numeric(activity.training_load),
+      loadClass: activityLoadClass(activity),
+      note: activity.note || activity.gefuehl || null,
+      isPlanLinked: Boolean(activity.day_key),
+    }))
+    .sort((a, b) => (dateValue(a.date) || 0) - (dateValue(b.date) || 0))
+}
+
+const buildPlanRealityPattern = historyRuns => {
+  const groups = {}
+
+  for (const run of historyRuns) {
+    if (!run.completed || !run.plannedTag || !run.actualWeekday) continue
+    const key = run.workoutType || run.workout || 'other'
+    groups[key] ||= { workoutType: key, samples: 0, transitions: {} }
+    const transition = `${run.plannedTag}→${run.actualWeekday}`
+    groups[key].samples += 1
+    groups[key].transitions[transition] =
+      (groups[key].transitions[transition] || 0) + 1
+  }
+
+  return Object.values(groups)
+    .map(item => {
+      const entries = Object.entries(item.transitions).sort((a,b) => b[1]-a[1])
+      const [dominantPattern, dominantCount] = entries[0] || []
+      return {
+        workoutType: item.workoutType,
+        samples: item.samples,
+        dominantPattern: dominantPattern || null,
+        dominantCount: dominantCount || 0,
+        consistency: item.samples
+          ? Math.round(((dominantCount || 0) / item.samples) * 100)
+          : null,
+      }
+    })
+    .filter(item => item.samples >= 2)
+}
+
+const buildSubjectiveObjectiveSignals = runs => {
+  const subjectiveRegex =
+    /(müde|muede|schwer|erschöpft|erschoepft|anstreng|kraftlos|schlapp|matt|frisch|leicht|locker|gut gefühlt|gut gefuehlt)/i
+
+  return runs
+    .filter(run => run.completed)
+    .map(run => {
+      const note = [run.actual?.note, run.actual?.feeling]
+        .filter(Boolean)
+        .join(' ')
+
+      if (!subjectiveRegex.test(note)) return null
+
+      const objectiveFlags = []
+      if (run.secondHalf?.hrDriftBpm != null && run.secondHalf.hrDriftBpm >= 7) {
+        objectiveFlags.push(`HF-Drift +${run.secondHalf.hrDriftBpm} bpm`)
+      }
+      if (run.secondHalf?.paceDriftSecPerKm != null && run.secondHalf.paceDriftSecPerKm >= 12) {
+        objectiveFlags.push(`Pace-Drift +${run.secondHalf.paceDriftSecPerKm} sec/km`)
+      }
+      if (run.actual?.runningIndex != null) {
+        objectiveFlags.push(`Running Index ${run.actual.runningIndex}`)
+      }
+
+      return {
+        workout: run.workout,
+        date: run.actualDate,
+        weekday: run.actualWeekday,
+        subjective: note,
+        objectiveFlags,
+        hasObjectiveFatigueSignal: objectiveFlags.some(flag => /Drift/.test(flag)),
+      }
+    })
+    .filter(Boolean)
 }
 
 const confidenceFor = runs => {
@@ -511,6 +702,9 @@ export function buildTrainingAnalysis({
   weekLogs = [],
   plannedDays = [],
   historyLogs = [],
+  activityHistory = [],
+  weekNumber = null,
+  weekStart = null,
   currentHFMax = null,
   currentRuheHF = null,
   isRegenWeek = false,
@@ -613,14 +807,70 @@ export function buildTrainingAnalysis({
     })
 
   const recoverySpacing = detectRecoverySpacing(weekRuns)
+  const chronology = buildChronology(weekRuns)
+  const allActivityChronology = buildAllActivityChronology({
+    activityHistory,
+    weekStart,
+  })
+  const planRealityPatterns = buildPlanRealityPattern(historyRuns)
+  const subjectiveObjectiveSignals = buildSubjectiveObjectiveSignals(weekRuns)
+
+  const previousWeekRuns = Number.isFinite(numeric(weekNumber))
+    ? historyRuns.filter(
+        run =>
+          run.completed &&
+          run.planWeekNumber === numeric(weekNumber) - 1
+      )
+    : []
+
+  const previousWeekActualKm = previousWeekRuns
+    .map(run => run.actual?.km)
+    .filter(Number.isFinite)
+    .reduce((sum, value) => sum + value, 0)
+
+  const weekKmChangePercent =
+    previousWeekActualKm > 0
+      ? Math.round(
+          ((actualKm - previousWeekActualKm) /
+            previousWeekActualKm) *
+            100
+        )
+      : null
 
   recoverySpacing
     .filter(pair => pair.potentiallyTight)
     .forEach(pair => {
       fatigueSignals.push(
-        `Zwei intensive Reize (${pair.from} → ${pair.to}) lagen höchstens einen Tag auseinander.`
+        `${pair.currentWeekday || pair.currentDate}: nur ${pair.daysBetween} Tag(e) seit ` +
+        `${pair.previousWorkout || pair.previousType}. Das kann Restbelastung begünstigen, ` +
+        `beweist sie aber nicht.`
       )
     })
+
+  const nonRunningLoad = allActivityChronology.filter(
+    activity =>
+      activity.sport !== 'running' &&
+      activity.loadClass !== 'low'
+  )
+
+  const tightLoadChains = []
+  for (let index = 1; index < allActivityChronology.length; index += 1) {
+    const previous = allActivityChronology[index - 1]
+    const current = allActivityChronology[index]
+    const gap = diffDays(previous.date, current.date)
+
+    if (
+      gap != null &&
+      gap <= 1 &&
+      (previous.loadClass !== 'low' || current.loadClass !== 'low')
+    ) {
+      tightLoadChains.push({
+        previous,
+        current,
+        daysBetween: gap,
+      })
+    }
+  }
 
   return {
     version: 2,
@@ -635,6 +885,11 @@ export function buildTrainingAnalysis({
           : 0,
       actualKm: Math.round(actualKm * 10) / 10,
       plannedKm: plannedKm > 0 ? Math.round(plannedKm * 10) / 10 : null,
+      previousWeekActualKm:
+        previousWeekActualKm > 0
+          ? Math.round(previousWeekActualKm * 10) / 10
+          : null,
+      actualKmChangeVsPreviousWeekPercent: weekKmChangePercent,
       profileWeeklyKm: numeric(aktuelleWochenKm),
       actualDurationMinutes:
         actualDuration > 0 ? Math.round(actualDuration / 60) : null,
@@ -654,6 +909,12 @@ export function buildTrainingAnalysis({
     },
     similarComparisons,
     efficiencyCandidates,
+    chronology,
+    allActivityChronology,
+    nonRunningLoad,
+    tightLoadChains,
+    planRealityPatterns,
+    subjectiveObjectiveSignals,
     recoverySpacing,
     fatigueSignals,
     confidence: confidenceFor(weekRuns),

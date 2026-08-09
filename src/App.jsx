@@ -427,9 +427,36 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart }) => {
 
       // Logs aus Supabase laden für genaue Analyse
       let logs = {}
+      let activityHistory = []
       try {
-        const { data: supaLogs } = await supabase.from('logs').select('*').eq('user_id', user.id)
+        const { data: supaLogs } = await supabase
+          .from('logs')
+          .select('*')
+          .eq('user_id', user.id)
+
         if (supaLogs && supaLogs.length > 0) {
+          activityHistory = supaLogs
+            .filter(log => log.actual_date)
+            .map(log => ({
+              id: log.id,
+              day_key: log.day_key || null,
+              actual_date: log.actual_date || null,
+              uhrzeit: log.uhrzeit || null,
+              sport_type: log.sport_type || 'running',
+              km: log.km || null,
+              pace: log.pace || null,
+              bpm: log.bpm || null,
+              hf_max: log.hf_max || null,
+              duration_seconds: log.duration_seconds || null,
+              moving_time_seconds: log.moving_time_seconds || null,
+              training_load: log.training_load || null,
+              recovery_time: log.recovery_time || null,
+              note: log.note || null,
+              gefuehl: log.gefuehl || null,
+              elevation_gain: log.elevation_gain || log.hoehenmeter || null,
+              activity_context: log.activity_context || null,
+            }))
+
           supaLogs.forEach(l => {
             logs[l.day_key] = {
               id: l.id,
@@ -747,10 +774,12 @@ if (!claimAcquired) return
           weekLogs,
           plannedDays,
           weekNumber: currentWeek.n,
+          weekStart: weekStartStr,
           plan,
           nextWeekDays,
           previousAnalyses: previousAnalyses || [],
           historyLogs,
+          activityHistory,
           schuhWarnung: schuhWarnung || null,
           currentHFMax: currentHFMax || null,
           currentRuheHF: currentProfile?.ruhe_hf || null,
