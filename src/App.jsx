@@ -50,6 +50,7 @@ function App() {
   const [showNotifications, setShowNotifications] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [loadingAuth, setLoadingAuth] = useState(true)
+  const [openWeekAnalysisWeek, setOpenWeekAnalysisWeek] = useState(null)
   const weeklyCheckKeyRef = useRef(null)
 
   useEffect(() => {
@@ -350,6 +351,61 @@ useEffect(() => {
     return Math.ceil((((d - yearStart) / 86400000) + 1) / 7)
   }
 
+
+const releaseWeekAnalysisClaim = async (userId, weekStart) => {
+  try {
+    await supabase
+      .from('week_analysis_claims')
+      .delete()
+      .eq('user_id', userId)
+      .eq('week_start', weekStart)
+      .eq('status', 'running')
+  } catch (error) {
+    console.warn('[WochenCoach] Claim konnte nicht freigegeben werden:', error)
+  }
+}
+
+const claimWeekAnalysis = async ({ userId, weekNumber, weekStart }) => {
+  const staleBefore = new Date(Date.now() - 15 * 60 * 1000).toISOString()
+
+  try {
+    await supabase
+      .from('week_analysis_claims')
+      .delete()
+      .eq('user_id', userId)
+      .eq('week_start', weekStart)
+      .eq('status', 'running')
+      .lt('claimed_at', staleBefore)
+  } catch (error) {
+    console.warn('[WochenCoach] Veralteter Claim konnte nicht bereinigt werden:', error)
+  }
+
+  const { error } = await supabase
+    .from('week_analysis_claims')
+    .insert({
+      user_id: userId,
+      week_number: weekNumber,
+      week_start: weekStart,
+      status: 'running',
+    })
+
+  if (!error) {
+    coachDebug('Analyse-Claim erfolgreich gesetzt.', { weekNumber, weekStart })
+    return true
+  }
+
+  if (error.code === '23505') {
+    coachDebug(
+      'Analyse-Claim bereits vorhanden – kein zweiter Claude-Aufruf.',
+      { weekNumber, weekStart }
+    )
+    return false
+  }
+
+  console.error('[WochenCoach] Analyse-Claim konnte nicht gesetzt werden:', error)
+  return false
+}
+
   const runWeeklyCheck = async (
     user,
     plan,
@@ -622,6 +678,17 @@ if (unloggedCount > 0) {
   return
 }
 
+
+// Die Woche ist vollständig. Noch VOR dem kostenpflichtigen API-Aufruf
+// gewinnt genau EIN Trigger/Tab/Gerät den atomaren Wochen-Claim.
+const claimAcquired = await claimWeekAnalysis({
+  userId: user.id,
+  weekNumber: currentWeek.n,
+  weekStart: weekStartStr,
+})
+
+if (!claimAcquired) return
+
 // Aktuelle Profilwerte laden (HFmax könnte aktualisiert worden sein)
       const { data: currentProfile } = await supabase
         .from('profiles')
@@ -705,6 +772,7 @@ if (unloggedCount > 0) {
           'Wochen-Coach API Fehler:',
           result?.error || response.status
         )
+        await releaseWeekAnalysisClaim(user.id, weekStartStr)
         return
       }
 
@@ -713,6 +781,7 @@ if (unloggedCount > 0) {
           'Wochen-Coach hat keine verwertbare Analyse geliefert.',
           { triggerReason, result }
         )
+        await releaseWeekAnalysisClaim(user.id, weekStartStr)
         return
       }
 
@@ -780,6 +849,7 @@ if (unloggedCount > 0) {
           'Wochenanalyse konnte nicht gespeichert werden:',
           analysisInsertError
         )
+        await releaseWeekAnalysisClaim(user.id, weekStartStr)
         return
       }
 
@@ -787,6 +857,15 @@ if (unloggedCount > 0) {
         weekNumber: currentWeek.n,
         weekStart: weekStartStr,
       })
+
+      await supabase
+        .from('week_analysis_claims')
+        .update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+        })
+        .eq('user_id', user.id)
+        .eq('week_start', weekStartStr)
 
       // Glocke = Hinweis. Die vollständige Analyse bleibt dauerhaft bei der Woche im Trainingsplan.
       const message =
@@ -800,6 +879,8 @@ if (unloggedCount > 0) {
           type: 'week_analysis',
           message,
           from_user_id: user.id,
+          week_number: currentWeek.n,
+          week_start: weekStartStr,
         })
 
       if (notificationError) {
@@ -816,6 +897,9 @@ if (unloggedCount > 0) {
 
     } catch (e) {
       console.error('Wochenanalyse Fehler:', e)
+      if (weekStartStr) {
+        await releaseWeekAnalysisClaim(user.id, weekStartStr)
+      }
     }
   }
 
@@ -862,6 +946,16 @@ if (unloggedCount > 0) {
     setUnreadCount(0)
   }
 
+
+const handleOpenWeekAnalysisFromNotification = (weekNumber) => {
+  const parsedWeek = Number(weekNumber)
+  if (!Number.isFinite(parsedWeek)) return
+
+  setShowNotifications(false)
+  setActiveTab('training')
+  setOpenWeekAnalysisWeek(parsedWeek)
+}
+
   if (loadingAuth) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 50%, #FFF0F5 100%)', fontFamily: 'sans-serif', color: '#C4A882', fontSize: 14 }}>
       ⏳ Lade…
@@ -884,12 +978,26 @@ if (unloggedCount > 0) {
         </button>
       </div>
 
-      {showNotifications && <Notifications user={user} onClose={() => setShowNotifications(false)} />}
+      {showNotifications && (
+        <Notifications
+          user={user}
+          onClose={() => setShowNotifications(false)}
+          onOpenWeekAnalysis={handleOpenWeekAnalysisFromNotification}
+        />
+      )}
 
       <div style={{ paddingBottom: 78 }}>
         {activeTab === 'training' && (
           plan
-            ? <TrainingPlan plan={plan} onReset={handleReset} user={user} />
+            ? (
+              <TrainingPlan
+                plan={plan}
+                onReset={handleReset}
+                user={user}
+                openWeekAnalysis={openWeekAnalysisWeek}
+                onWeekAnalysisOpened={() => setOpenWeekAnalysisWeek(null)}
+              />
+            )
             : <Onboarding onPlanGenerated={handlePlanGenerated} />
         )}
         {activeTab === 'activities' && <Laeufe user={user} plan={plan} />}

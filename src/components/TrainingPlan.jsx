@@ -159,7 +159,13 @@ function findCurrentPhaseWeek(plan) {
   return { phaseIdx: 0, weekIdx: 0 }
 }
 
-export default function TrainingPlan({ plan, onReset, user }) {
+export default function TrainingPlan({
+  plan,
+  onReset,
+  user,
+  openWeekAnalysis = null,
+  onWeekAnalysisOpened,
+}) {
   const [activePhase, setActivePhase] = useState(() => findCurrentPhaseWeek(plan).phaseIdx)
   const [showPauseModal, setShowPauseModal] = useState(false)
   const [pauseWeeks, setPauseWeeks] = useState(1)
@@ -182,6 +188,24 @@ export default function TrainingPlan({ plan, onReset, user }) {
   const [storyOpen, setStoryOpen] = useState(false)
   const [weekAnalyses, setWeekAnalyses] = useState({})
   const [analysisModal, setAnalysisModal] = useState(null)
+
+
+useEffect(() => {
+  if (openWeekAnalysis == null) return
+
+  const analysis = weekAnalyses[Number(openWeekAnalysis)]
+  if (!analysis) return
+
+  setAnalysisModal(analysis)
+
+  if (typeof onWeekAnalysisOpened === 'function') {
+    onWeekAnalysisOpened()
+  }
+}, [
+  openWeekAnalysis,
+  weekAnalyses,
+  onWeekAnalysisOpened,
+])
   const [skipReasonInput, setSkipReasonInput] = useState('')
   const fileRef = useRef()
 
@@ -1083,7 +1107,7 @@ if (user) {
                         }}
                       >
                         <span>
-                          📊 Wochenanalyse ansehen
+                          📊 Coach-Rückblick ansehen
                           {weekAnalyses[week.n]?.analysis_data?.coach?.nextWeekFocus?.title
                             ? ` · Woche ${Number(week.n) + 1}: ${weekAnalyses[week.n].analysis_data.coach.nextWeekFocus.title}`
                             : ''}

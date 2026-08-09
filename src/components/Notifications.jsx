@@ -1,117 +1,242 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 
-export default function Notifications({ user, onClose }) {
+const relativeTime = value => {
+  if (!value) return ''
+  const date = new Date(value)
+  const minutes = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000))
+  if (minutes < 1) return 'gerade eben'
+  if (minutes < 60) return `vor ${minutes} Min.`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `vor ${hours} Std.`
+  const days = Math.floor(hours / 24)
+  if (days === 1) return 'gestern'
+  return `vor ${days} Tagen`
+}
+
+const weekFromMessage = message => {
+  const match = String(message || '').match(/Woche\s+(\d+)/i)
+  return match ? Number(match[1]) : null
+}
+
+export default function Notifications({
+  user,
+  onClose,
+  onOpenWeekAnalysis,
+}) {
   const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    loadNotifications()
+    if (!user?.id) return undefined
+    let cancelled = false
 
-    // Realtime Updates
-    const channel = supabase
-      .channel('notifications')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'notifications',
-        filter: `user_id=eq.${user.id}`
-      }, payload => {
-        setNotifications(prev => [payload.new, ...prev])
-      })
-      .subscribe()
+    const load = async () => {
+      setLoading(true)
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('id, type, message, read, created_at, week_number, week_start')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
 
-    return () => supabase.removeChannel(channel)
-  }, [user])
+      if (!cancelled) {
+        if (error) {
+          console.error('Benachrichtigungen laden fehlgeschlagen:', error)
+          setNotifications([])
+        } else {
+          setNotifications(data || [])
+        }
+        setLoading(false)
+      }
 
-  const loadNotifications = async () => {
-    const { data } = await supabase
+      await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('user_id', user.id)
+        .eq('read', false)
+    }
+
+    load()
+    return () => { cancelled = true }
+  }, [user?.id])
+
+  const removeOne = async (event, id) => {
+    event.stopPropagation()
+    const { error } = await supabase
       .from('notifications')
-      .select('*')
+      .delete()
+      .eq('id', id)
       .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(30)
-    setNotifications(data || [])
-    setLoading(false)
 
-    // Alle als gelesen markieren
-    await supabase
-      .from('notifications')
-      .update({ read: true })
-      .eq('user_id', user.id)
-      .eq('read', false)
-  }
-
-  const deleteNotification = async (id) => {
-    await supabase.from('notifications').delete().eq('id', id)
-    setNotifications(prev => prev.filter(n => n.id !== id))
-  }
-
-  const clearAll = async () => {
-    await supabase.from('notifications').delete().eq('user_id', user.id)
-    setNotifications([])
-  }
-
-  const typeIcon = (type) => {
-    switch (type) {
-      case 'friend_request': return '👥'
-      case 'friend_accepted': return '🎉'
-      case 'friend_logged': return '🏃‍♀️'
-      case 'friend_plan': return '📋'
-      default: return '🔔'
+    if (!error) {
+      setNotifications(prev => prev.filter(item => item.id !== id))
     }
   }
 
-  const timeAgo = (dateStr) => {
-    const diff = Date.now() - new Date(dateStr).getTime()
-    const min = Math.floor(diff / 60000)
-    const h = Math.floor(diff / 3600000)
-    const d = Math.floor(diff / 86400000)
-    if (min < 1) return 'gerade eben'
-    if (min < 60) return `vor ${min} Min.`
-    if (h < 24) return `vor ${h} Std.`
-    return `vor ${d} Tag${d > 1 ? 'en' : ''}`
+  const removeAll = async () => {
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('user_id', user.id)
+
+    if (!error) setNotifications([])
+  }
+
+  const openNotification = notification => {
+    if (notification.type !== 'week_analysis') return
+    const weekNumber =
+      notification.week_number ?? weekFromMessage(notification.message)
+
+    if (
+      weekNumber != null &&
+      typeof onOpenWeekAnalysis === 'function'
+    ) {
+      onOpenWeekAnalysis(weekNumber)
+    }
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(60,30,20,0.45)', zIndex: 300, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-      <div style={{ background: 'white', borderRadius: '28px 28px 0 0', width: '100%', maxWidth: 520, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 -8px 40px rgba(255,140,105,0.2)' }}>
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 140,
+        background: 'rgba(66,42,31,0.38)',
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        paddingTop: 24,
+      }}
+    >
+      <div
+        onClick={event => event.stopPropagation()}
+        style={{
+          width: 'calc(100% - 28px)',
+          maxWidth: 650,
+          maxHeight: 'calc(100vh - 24px)',
+          background: '#FFFDFC',
+          borderRadius: '28px 28px 0 0',
+          overflow: 'hidden',
+          boxShadow: '0 12px 40px rgba(74,48,34,0.18)',
+        }}
+      >
+        <div style={{ width: 38, height: 4, borderRadius: 99, background: '#EADFD7', margin: '25px auto 13px' }} />
 
-        <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid #F0E8E0', flexShrink: 0 }}>
-          <div style={{ width: 36, height: 4, background: '#F0E8E0', borderRadius: 99, margin: '0 auto 16px' }} />
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <h2 style={{ fontSize: 18, fontWeight: 'bold', color: '#3D2B1F', margin: 0 }}>🔔 Benachrichtigungen</h2>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {notifications.length > 0 && (
-                <button onClick={clearAll} style={{ fontSize: 12, color: '#C4A882', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'sans-serif' }}>Alle löschen</button>
-              )}
-              <button onClick={onClose} style={{ background: '#F5EDE8', border: 'none', borderRadius: 10, padding: '6px 12px', color: '#8B6B5A', cursor: 'pointer', fontFamily: 'sans-serif', fontSize: 13 }}>✕</button>
-            </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 22px 17px', borderBottom: '1px solid #F1E7E0' }}>
+          <div style={{ fontSize: 20, fontWeight: 'bold', color: '#3D2B1F' }}>
+            🔔 Benachrichtigungen
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {notifications.length > 0 && (
+              <button type="button" onClick={removeAll}
+                style={{ border: 'none', background: 'transparent', color: '#C5A277', cursor: 'pointer', fontSize: 11, fontWeight: 'bold' }}>
+                Alle löschen
+              </button>
+            )}
+            <button type="button" onClick={onClose}
+              style={{ width: 40, height: 40, borderRadius: 13, border: 'none', background: '#F6EFEB', color: '#9A7F6D', cursor: 'pointer', fontSize: 18 }}>
+              ×
+            </button>
           </div>
         </div>
 
-        <div style={{ overflowY: 'auto', flex: 1, padding: '12px 24px 40px' }}>
-          {loading && <div style={{ textAlign: 'center', padding: 30, color: '#B8A090', fontFamily: 'sans-serif' }}>⏳ Lade…</div>}
-
-          {!loading && notifications.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '40px 20px', color: '#B8A090', fontFamily: 'sans-serif' }}>
-              <div style={{ fontSize: 40, marginBottom: 10 }}>🔔</div>
-              <div style={{ fontSize: 14 }}>Keine Benachrichtigungen</div>
+        <div style={{ overflowY: 'auto', maxHeight: 'calc(100vh - 130px)', padding: '14px 22px 32px' }}>
+          {loading && (
+            <div style={{ padding: 28, textAlign: 'center', color: '#B09A8B', fontSize: 12 }}>
+              ⏳ Lade…
             </div>
           )}
 
-          {notifications.map(n => (
-            <div key={n.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 14px', background: n.read ? 'white' : '#FFF5EE', borderRadius: 14, border: `1.5px solid ${n.read ? '#F0E8E0' : '#FFE0CC'}`, marginBottom: 8, transition: 'all 0.2s' }}>
-              <div style={{ width: 40, height: 40, borderRadius: '50%', background: n.read ? '#F5EDE8' : 'linear-gradient(135deg,#FF8C69,#FF6B9D)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
-                {typeIcon(n.type)}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, color: '#3D2B1F', fontFamily: 'sans-serif', lineHeight: 1.5 }}>{n.message}</div>
-                <div style={{ fontSize: 11, color: '#C4A882', fontFamily: 'sans-serif', marginTop: 4 }}>{timeAgo(n.created_at)}</div>
-              </div>
-              <button onClick={() => deleteNotification(n.id)} style={{ background: 'none', border: 'none', color: '#D4C4B8', cursor: 'pointer', fontSize: 16, flexShrink: 0 }}>×</button>
+          {!loading && notifications.length === 0 && (
+            <div style={{ padding: '38px 16px', textAlign: 'center', color: '#A99182', fontSize: 12, lineHeight: 1.6 }}>
+              Hier ist gerade alles ruhig. 🌿
             </div>
-          ))}
+          )}
+
+          {!loading && notifications.map(notification => {
+            const isWeekAnalysis = notification.type === 'week_analysis'
+
+            return (
+              <div
+                key={notification.id}
+                role={isWeekAnalysis ? 'button' : undefined}
+                tabIndex={isWeekAnalysis ? 0 : undefined}
+                onClick={() => openNotification(notification)}
+                onKeyDown={event => {
+                  if (
+                    isWeekAnalysis &&
+                    (event.key === 'Enter' || event.key === ' ')
+                  ) {
+                    event.preventDefault()
+                    openNotification(notification)
+                  }
+                }}
+                style={{
+                  position: 'relative',
+                  display: 'flex',
+                  gap: 12,
+                  padding: '15px 38px 15px 15px',
+                  marginBottom: 10,
+                  borderRadius: 16,
+                  border: isWeekAnalysis ? '1px solid #FFD6C2' : '1px solid #EFE5DE',
+                  background: isWeekAnalysis ? 'linear-gradient(135deg,#FFF5EE,#FFF9F5)' : '#FFFFFF',
+                  cursor: isWeekAnalysis ? 'pointer' : 'default',
+                }}
+              >
+                <div style={{
+                  flexShrink: 0,
+                  width: 46,
+                  height: 46,
+                  borderRadius: '50%',
+                  display: 'grid',
+                  placeItems: 'center',
+                  background: isWeekAnalysis ? 'linear-gradient(135deg,#FF8C69,#FF6B9D)' : '#F6EFEB',
+                  fontSize: 19,
+                }}>
+                  {isWeekAnalysis ? '📊' : '🔔'}
+                </div>
+
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ color: '#55443A', fontSize: 12, lineHeight: 1.5, fontFamily: 'sans-serif' }}>
+                    {notification.message}
+                  </div>
+
+                  {isWeekAnalysis && (
+                    <div style={{ marginTop: 7, color: '#C66B43', fontSize: 10.5, fontWeight: 'bold', fontFamily: 'sans-serif' }}>
+                      Wochenanalyse ansehen →
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: 4, color: '#C0A28B', fontSize: 9.5, fontFamily: 'sans-serif' }}>
+                    {relativeTime(notification.created_at)}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  aria-label="Benachrichtigung löschen"
+                  onClick={event => removeOne(event, notification.id)}
+                  style={{
+                    position: 'absolute',
+                    top: 12,
+                    right: 12,
+                    width: 22,
+                    height: 22,
+                    border: 'none',
+                    background: 'transparent',
+                    color: '#D7C6BC',
+                    cursor: 'pointer',
+                    fontSize: 16,
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            )
+          })}
         </div>
       </div>
     </div>
