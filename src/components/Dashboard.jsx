@@ -58,13 +58,97 @@ const sportMeta = value => {
 }
 
 const parsePlannedKm = details => {
-  const text = String(details || '')
-  const direct = [...text.matchAll(/(\d+(?:[.,]\d+)?)\s*km\b/gi)]
-    .map(match => Number(match[1].replace(',', '.')))
-    .filter(Number.isFinite)
-  if (!direct.length) return 0
-  // Keine Pace-Werte, Bereiche oder km-Split-Nummern aufsummieren: nur größte plausible Distanz.
-  return Math.max(...direct)
+  if (!details) return 0
+
+  // Klammern enthalten meist Pace-/HF-Bereiche, nicht Trainingsdistanz.
+  let clean = String(details).replace(/\([^)]*\)/g, '')
+
+  // Beginnt der Text mit einer Gesamtdistanz ("16 km Zone 2 ..."),
+  // ist diese Zahl maßgeblich. Spätere "km 8-10"-Hinweise werden nicht addiert.
+  const leadingTotalKm = clean.match(
+    /^\s*(\d+(?:[.,]\d+)?)\s*km\b/i
+  )
+  if (leadingTotalKm) {
+    return parseFloat(leadingTotalKm[1].replace(',', '.'))
+  }
+
+  // Pace-Angaben entfernen, bevor Minuten ausgewertet werden.
+  // "6:30 min/km" darf niemals als "30 min" zählen.
+  clean = clean
+    .replace(
+      /\b\d{1,2}:\d{2}\s*[-–]\s*\d{1,2}:\d{2}\s*min\/km\b/gi,
+      ''
+    )
+    .replace(
+      /\b\d{1,2}:\d{2}\s*min\/km\b/gi,
+      ''
+    )
+
+  let km = 0
+
+  // Wiederholungen wie 5x800 m / 4×1 km.
+  const repRegex =
+    /(\d+)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*(km|m)\b/gi
+
+  let match
+  while ((match = repRegex.exec(clean))) {
+    const reps = parseInt(match[1], 10)
+    let distance = parseFloat(match[2].replace(',', '.'))
+
+    if (match[3].toLowerCase() === 'm') {
+      distance /= 1000
+    }
+
+    km += reps * distance
+  }
+
+  let rest = clean.replace(repRegex, '')
+
+  // Positions-/Progressionshinweise entfernen.
+  rest = rest
+    .replace(
+      /\b(?:ab\s+)?km\s*\d+(?:[.,]\d+)?\s*[-–]\s*\d+(?:[.,]\d+)?\b/gi,
+      ''
+    )
+    .replace(
+      /\b(?:ab\s+)?\d+(?:[.,]\d+)?\s*[-–]\s*\d+(?:[.,]\d+)?\s*km\b/gi,
+      ''
+    )
+
+  // Verbleibende echte Distanzen addieren.
+  const kmRegex = /(\d+(?:[.,]\d+)?)\s*km\b/gi
+  while ((match = kmRegex.exec(rest))) {
+    km += parseFloat(match[1].replace(',', '.'))
+  }
+  rest = rest.replace(kmRegex, '')
+
+  // Echte Dauerblöcke schätzen wir konservativ mit 8:00 min/km.
+  const minRegex = /(\d+(?:[.,]\d+)?)\s*min\b/gi
+  while ((match = minRegex.exec(rest))) {
+    km += parseFloat(match[1].replace(',', '.')) / 8
+  }
+
+  return km
+}
+
+const normalizeSport = value => {
+  const text = String(value || '').toLowerCase()
+
+  if (/mountain|mtb/.test(text)) return 'mountain_biking'
+  if (/bike|cycling|rad|velo/.test(text)) return 'cycling'
+  if (/walk|hike|wander|marsch/.test(text)) return 'hiking'
+  if (/swim|schwimm/.test(text)) return 'swimming'
+  if (/run|running|jog|lauf/.test(text)) return 'running'
+  return 'other'
+}
+
+const SPORT_SUMMARY_META = {
+  running: { icon: '🏃', label: 'Laufen' },
+  cycling: { icon: '🚴', label: 'Rad' },
+  mountain_biking: { icon: '🚵', label: 'MTB' },
+  hiking: { icon: '🥾', label: 'Wandern' },
+  swimming: { icon: '🏊', label: 'Schwimmen' },
+  other: { icon: '✨', label: 'Weitere' },
 }
 
 const tagIndex = tag => ({ mo:0, montag:0, di:1, dienstag:1, mi:2, mittwoch:2, do:3, donnerstag:3, fr:4, freitag:4, sa:5, samstag:5, so:6, sonntag:6 }[String(tag || '').trim().toLowerCase()] ?? null)
@@ -162,9 +246,66 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
       const d = localDate(l.actual_date)
       return d && d >= weekStart && d <= weekEnd
     })
-    const actualKm = actualWeekLogs.reduce((sum,l) => sum + (num(l.km) || 0), 0)
-    const plannedKm = planned.reduce((sum,d) => sum + parsePlannedKm(d.details), 0)
-    return { planned, completed, skippedDays, open, actualWeekLogs, actualKm, plannedKm, weekStart, weekEnd }
+
+    const currentPlanKeys = new Set(
+      planned.map(day => day.key)
+    )
+
+    // Hauptwert: nur Aktivitäten, die einer Planeinheit DIESER Woche
+    // zugeordnet wurden. Der tatsächliche Durchführungstag ist egal.
+    const planLogs = actualWeekLogs.filter(
+      log => log.day_key && currentPlanKeys.has(log.day_key)
+    )
+
+    const actualPlanKm = planLogs.reduce(
+      (sum, log) => sum + (num(log.km) || 0),
+      0
+    )
+
+    // Alles Weitere bleibt sichtbar, aber getrennt vom Trainingsplan.
+    // Mehrere Aktivitäten derselben Sportart werden zusammengefasst.
+    const extraLogs = actualWeekLogs.filter(
+      log => !(log.day_key && currentPlanKeys.has(log.day_key))
+    )
+
+    const additionalBySport = Object.values(
+      extraLogs.reduce((acc, log) => {
+        const sport = normalizeSport(log.sport_type)
+
+        if (!acc[sport]) {
+          acc[sport] = {
+            sport,
+            count: 0,
+            km: 0,
+          }
+        }
+
+        acc[sport].count += 1
+        acc[sport].km += num(log.km) || 0
+        return acc
+      }, {})
+    )
+      .filter(item => item.count > 0)
+      .sort((a, b) => b.km - a.km)
+
+    const plannedKm = planned.reduce(
+      (sum,d) => sum + parsePlannedKm(d.details),
+      0
+    )
+
+    return {
+      planned,
+      completed,
+      skippedDays,
+      open,
+      actualWeekLogs,
+      planLogs,
+      actualPlanKm,
+      additionalBySport,
+      plannedKm,
+      weekStart,
+      weekEnd,
+    }
   }, [context, logs, logsByKey, skippedKeys])
 
   const hero = useMemo(() => {
@@ -180,7 +321,7 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
     if (todayLinked) {
       const plannedDay = weekData.planned.find(d => d.key === todayLinked.day_key)
       const moved = plannedDay && plannedDay.scheduleIndex !== context.dayIndex
-      return { type:'trained', eyebrow:'HEUTE TRAINiert', title: plannedDay?.einheit || sportMeta(todayLinked.sport_type).label, text: moved ? `Ursprünglich für ${plannedDay.tag} geplant – heute absolviert.` : 'Deine heutige Einheit ist erledigt.', icon:'✓', log:todayLinked, plannedDay }
+      return { type:'trained', eyebrow:'HEUTE TRAINIERT', title: plannedDay?.einheit || sportMeta(todayLinked.sport_type).label, text: moved ? `Ursprünglich für ${plannedDay.tag} geplant – heute absolviert.` : 'Deine heutige Einheit ist erledigt.', icon:'✓', log:todayLinked, plannedDay }
     }
 
     const analysis = analyses.find(a => Number(a.week_number) === Number(context.week.n))
@@ -202,7 +343,10 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
   }, [plan, context, weekData, todayActivities, latestActivity, analyses, logsByKey, skippedKeys])
 
   const latestAnalysis = analyses[0] || null
-  const focus = latestAnalysis?.analysis_data?.nextWeekFocus || latestAnalysis?.analysis_data?.next_week_focus || null
+  const focus =
+    latestAnalysis?.analysis_data?.nextWeekFocus ||
+    latestAnalysis?.analysis_data?.next_week_focus ||
+    null
   const runningIndexes = logs.map(l => num(l.running_index)).filter(v => v != null).slice(0,5)
   const currentRI = runningIndexes[0] || null
   const previousRI = runningIndexes[1] || null
@@ -262,7 +406,75 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
               <button onClick={onOpenTraining} style={{border:'none',background:'transparent',color:'#C56D52',fontSize:10,fontWeight:800,cursor:'pointer'}}>Woche ansehen →</button>
             </div>
             <div style={{height:8,borderRadius:99,background:'#F2E9E3',overflow:'hidden',marginTop:13}}><div style={{height:'100%',width:`${weekData.planned.length ? Math.round(((weekData.completed.length+weekData.skippedDays.length)/weekData.planned.length)*100) : 0}%`,background:'linear-gradient(90deg,#FF9C75,#E77A77)',borderRadius:99}} /></div>
-            <div style={{display:'flex',justifyContent:'space-between',marginTop:9,fontSize:10,color:'#8F7A6E'}}><span>{weekData.skippedDays.length ? `${weekData.skippedDays.length} bewusst übersprungen` : `${weekData.open.length} noch offen`}</span><strong style={{color:'#5F4B40'}}>{weekData.actualKm.toLocaleString('de-DE',{maximumFractionDigits:1})}{weekData.plannedKm ? ` / ca. ${weekData.plannedKm.toLocaleString('de-DE',{maximumFractionDigits:1})}` : ''} km</strong></div>
+            <div style={{display:'flex',justifyContent:'space-between',gap:12,marginTop:9,fontSize:10,color:'#8F7A6E'}}>
+              <span>
+                {weekData.skippedDays.length
+                  ? `${weekData.skippedDays.length} bewusst übersprungen`
+                  : `${weekData.open.length} noch offen`}
+              </span>
+              <strong style={{color:'#5F4B40',textAlign:'right'}}>
+                {weekData.actualPlanKm.toLocaleString('de-DE',{maximumFractionDigits:1})}
+                {weekData.plannedKm
+                  ? ` / ca. ${weekData.plannedKm.toLocaleString('de-DE',{maximumFractionDigits:1})}`
+                  : ''} km im Plan
+              </strong>
+            </div>
+
+            {weekData.additionalBySport.length > 0 && (
+              <div
+                style={{
+                  marginTop: 12,
+                  paddingTop: 10,
+                  borderTop: '1px solid #F0E4DC',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 8.8,
+                    fontWeight: 900,
+                    color: '#A58472',
+                    letterSpacing: .6,
+                    marginBottom: 7,
+                  }}
+                >
+                  ZUSÄTZLICH AKTIV
+                </div>
+
+                <div style={{display:'grid',gap:6}}>
+                  {weekData.additionalBySport.map(item => {
+                    const meta =
+                      SPORT_SUMMARY_META[item.sport] ||
+                      SPORT_SUMMARY_META.other
+
+                    return (
+                      <div
+                        key={item.sport}
+                        style={{
+                          display:'flex',
+                          justifyContent:'space-between',
+                          alignItems:'center',
+                          gap:10,
+                          fontSize:10,
+                          color:'#7F6B60',
+                        }}
+                      >
+                        <span>
+                          {meta.icon} {item.count}× {meta.label}
+                        </span>
+
+                        {item.km > 0 && (
+                          <strong style={{color:'#5F4B40'}}>
+                            {item.km.toLocaleString('de-DE',{
+                              maximumFractionDigits:1
+                            })} km
+                          </strong>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </section>
         )}
 
@@ -277,7 +489,16 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
         {plan && latestAnalysis && (
           <button onClick={() => onOpenWeekAnalysis?.(latestAnalysis.week_number)} style={{...card,width:'100%',padding:16,marginTop:12,textAlign:'left',cursor:'pointer',background:'linear-gradient(135deg,#FFF7F1,#F8F2FB)'}}>
             <div style={{display:'flex',alignItems:'center',gap:9}}><div style={{fontSize:22}}>🧠</div><div><div style={{fontSize:10,fontWeight:900,color:'#8E6A9E',letterSpacing:.6}}>DEIN COACH</div><div style={{fontSize:13.5,fontWeight:850,marginTop:2}}>Fokus für deine nächste Woche</div></div></div>
-            <div style={{fontSize:12,lineHeight:1.5,color:'#6F5A50',marginTop:11}}>{focus?.title ? <><strong>{focus.title}.</strong> {focus.text || ''}</> : (latestAnalysis.recommendation || 'Deine letzte Wochenanalyse ist bereit.')}</div>
+            <div style={{fontSize:12,lineHeight:1.5,color:'#6F5A50',marginTop:11}}>
+              {focus?.title ? (
+                <>
+                  <strong>{focus.title}.</strong>{' '}
+                  {focus.text || ''}
+                </>
+              ) : (
+                'Deine Wochenanalyse ist bereit. Schau dir an, worauf es in der nächsten Woche ankommt.'
+              )}
+            </div>
             <div style={{fontSize:10,fontWeight:800,color:'#8E6A9E',marginTop:10}}>Wochen-Coach ansehen →</div>
           </button>
         )}
