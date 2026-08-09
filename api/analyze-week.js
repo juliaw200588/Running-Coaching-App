@@ -19,12 +19,10 @@ const RESPONSE_SCHEMA = {
     },
     positive: {
       type: 'array',
-      maxItems: 2,
       items: { type: 'string' },
     },
     attention: {
       type: 'array',
-      maxItems: 2,
       items: { type: 'string' },
     },
     development: {
@@ -34,7 +32,6 @@ const RESPONSE_SCHEMA = {
         summary: { type: 'string' },
         signals: {
           type: 'array',
-          maxItems: 4,
           items: {
             type: 'object',
             additionalProperties: false,
