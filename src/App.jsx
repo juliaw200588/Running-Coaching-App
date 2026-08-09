@@ -10,6 +10,34 @@ import BottomNav from './components/BottomNav.jsx'
 
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
+const WEEK_REMINDER_HOUR = 18
+
+const parseLocalPlanDate = (value) => {
+  if (!value) return new Date()
+
+  if (typeof value === 'string') {
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    if (match) {
+      return new Date(
+        Number(match[1]),
+        Number(match[2]) - 1,
+        Number(match[3]),
+        0,
+        0,
+        0,
+        0
+      )
+    }
+  }
+
+  const date = new Date(value)
+  date.setHours(0, 0, 0, 0)
+  return date
+}
+
+const formatLocalDate = (date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+
 function App() {
   const [user, setUser] = useState(null)
   const [plan, setPlan] = useState(null)
@@ -83,48 +111,201 @@ function App() {
     }
   }
 
-  // Wöchentliche Analyse
-  useEffect(() => {
-    if (!user || !plan) return
+// Wöchentliche Analyse
+//
+// Die Datenbank entscheidet, ob eine Woche bereits analysiert wurde.
+// localStorage ist KEINE Sperre mehr. Dadurch funktioniert der Coach
+// zuverlässig nach Login, Gerätewechsel und später synchronisierten Läufen.
+useEffect(() => {
+  if (!user || !plan) return undefined
 
-    const today = new Date()
-    const startDate = new Date(plan.startDate || today)
-    const daysSinceStart = Math.floor((today - startDate) / 86400000)
-    if (daysSinceStart < 0) return
+  let disposed = false
+  let retryTimer = null
+  let sundayEveningTimer = null
+
+  const getCheckContext = (today) => {
+    const startDate = parseLocalPlanDate(plan.startDate || today)
+    const todayLocal = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate()
+    )
+
+    const daysSinceStart = Math.floor(
+      (todayLocal - startDate) / 86400000
+    )
+
+    if (daysSinceStart < 0) return null
 
     const dayInWeek = daysSinceStart % 7
     const isLastDay = dayInWeek === 6
-    // Analyse-Fenster: erster, zweiter oder dritter Tag der neuen Woche (falls App nicht täglich geöffnet)
-    const isFirstDaysNextWeek = (dayInWeek === 0 || dayInWeek === 1 || dayInWeek === 2) && daysSinceStart > 0
+    const isFirstDaysNextWeek =
+      (dayInWeek === 0 || dayInWeek === 1 || dayInWeek === 2) &&
+      daysSinceStart > 0
 
-    if (!isLastDay && !isFirstDaysNextWeek) return
+    if (!isLastDay && !isFirstDaysNextWeek) return null
 
-    const lastAnalysisKey = `last_week_analysis_${user.id}`
     const currentWeekInPlan = Math.floor(daysSinceStart / 7)
-    // Die Woche, die TATSÄCHLICH ausgewertet wird, ist nicht immer die aktuelle
-    // Kalenderwoche - im Nachhol-Fenster (Mo/Di/Mi) wird die VORHERIGE Woche geprüft.
-    // Muss hier genauso berechnet werden wie unten in runWeeklyCheck, damit Vergleich
-    // und Speicherung dieselbe Woche meinen (sonst merkt sich die App fälschlich die
-    // falsche Woche als "schon erledigt" - genau das war der Bug).
-    const analyzeWeek = isLastDay ? currentWeekInPlan : currentWeekInPlan - 1
-    if (analyzeWeek < 0) return
+    const analyzeWeek = isLastDay
+      ? currentWeekInPlan
+      : currentWeekInPlan - 1
 
-    const lastAnalysis = localStorage.getItem(lastAnalysisKey)
+    if (analyzeWeek < 0) return null
 
-    if (lastAnalysis === String(analyzeWeek)) return
+    const weekStartDate = new Date(startDate)
+    weekStartDate.setDate(
+      weekStartDate.getDate() + (analyzeWeek * 7)
+    )
 
-    // Sperre gegen parallele Durchläufe: user/plan können beim Laden mehrfach mit neuen
-    // Objekt-Referenzen gesetzt werden (z.B. durch getSession() UND onAuthStateChange()),
-    // wodurch dieser Effect mehrfach kurz hintereinander feuert, bevor der erste Durchlauf
-    // fertig ist. Ohne synchrone Sperre können dadurch mehrere identische Erinnerungen
-    // gleichzeitig verschickt werden. Der Schlüssel ist pro User+Woche+Tagesart eindeutig,
-    // ein echter Wochenwechsel oder Nutzerwechsel darf also trotzdem neu prüfen.
-    const runKey = `${user.id}_${analyzeWeek}_${isLastDay ? 'last' : 'next'}`
+    return {
+      startDate,
+      planStartStr: formatLocalDate(startDate),
+      weekStartStr: formatLocalDate(weekStartDate),
+      currentWeekInPlan,
+      analyzeWeek,
+      isLastDay,
+      isFirstDaysNextWeek,
+      lastAnalysisKey: `last_week_analysis_${user.id}`,
+    }
+  }
+
+  const runCheck = (reason = 'app') => {
+    if (disposed) return
+
+    const today = new Date()
+    const context = getCheckContext(today)
+
+    if (!context) return
+
+    // Nur eine GLEICHZEITIGE Prüfung derselben Woche zulassen.
+    // Nach Abschluss oder Fehler wird die Sperre wieder freigegeben.
+    const runKey =
+      `${user.id}_${context.weekStartStr}_` +
+      `${context.isLastDay ? 'last' : 'catchup'}`
+
     if (weeklyCheckKeyRef.current === runKey) return
+
     weeklyCheckKeyRef.current = runKey
 
-    runWeeklyCheck(user, plan, today, currentWeekInPlan, lastAnalysisKey, isLastDay)
-  }, [user, plan])
+    Promise.resolve(
+      runWeeklyCheck(
+        user,
+        plan,
+        today,
+        context.currentWeekInPlan,
+        context.lastAnalysisKey,
+        context.isLastDay,
+        context.weekStartStr,
+        context.planStartStr,
+        reason
+      )
+    ).finally(() => {
+      if (weeklyCheckKeyRef.current === runKey) {
+        weeklyCheckKeyRef.current = null
+      }
+    })
+  }
+
+  const queueCheck = (reason) => {
+    if (disposed) return
+
+    if (retryTimer) clearTimeout(retryTimer)
+
+    // Supabase-Events kommen teilweise unmittelbar hintereinander.
+    // Kurz bündeln, damit nicht für denselben Import mehrfach geprüft wird.
+    retryTimer = setTimeout(() => runCheck(reason), 700)
+  }
+
+  const handleVisibility = () => {
+    if (document.visibilityState === 'visible') {
+      runCheck('visible')
+    }
+  }
+
+  const handleFocus = () => runCheck('focus')
+
+  // Direkt beim Laden / Login / Planwechsel prüfen.
+  runCheck('startup')
+
+  // Wenn die App am Sonntag schon vor dem Abend geöffnet ist,
+  // um 18 Uhr erneut prüfen. Fehlt dann noch eine Einheit, kommt
+  // die gewohnte Erinnerung. Sind alle Einheiten vollständig,
+  // startet die Analyse.
+  const now = new Date()
+  const initialContext = getCheckContext(now)
+
+  if (
+    initialContext?.isLastDay &&
+    now.getHours() < WEEK_REMINDER_HOUR
+  ) {
+    const evening = new Date(now)
+    evening.setHours(WEEK_REMINDER_HOUR, 0, 0, 0)
+
+    sundayEveningTimer = setTimeout(
+      () => runCheck('sunday-evening'),
+      Math.max(1000, evening.getTime() - now.getTime())
+    )
+  }
+
+  window.addEventListener('focus', handleFocus)
+  document.addEventListener(
+    'visibilitychange',
+    handleVisibility
+  )
+
+  // Neue/aktualisierte Logs (z.B. Polar-Zuordnung oder manueller Log)
+  // lösen eine erneute Vollständigkeitsprüfung aus.
+  const logsChannel = supabase
+    .channel(`weekly_check_logs_${user.id}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'logs',
+        filter: `user_id=eq.${user.id}`,
+      },
+      () => queueCheck('log-change')
+    )
+    .subscribe()
+
+  // Auch bewusstes Überspringen kann eine Woche vollständig machen.
+  const skippedChannel = supabase
+    .channel(`weekly_check_skipped_${user.id}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'skipped_days',
+        filter: `user_id=eq.${user.id}`,
+      },
+      () => queueCheck('skip-change')
+    )
+    .subscribe()
+
+  return () => {
+    disposed = true
+
+    if (retryTimer) clearTimeout(retryTimer)
+    if (sundayEveningTimer) {
+      clearTimeout(sundayEveningTimer)
+    }
+
+    window.removeEventListener('focus', handleFocus)
+    document.removeEventListener(
+      'visibilitychange',
+      handleVisibility
+    )
+
+    supabase.removeChannel(logsChannel)
+    supabase.removeChannel(skippedChannel)
+
+    // Ein User-/Planwechsel darf niemals durch eine alte In-Flight-Sperre
+    // blockiert werden.
+    weeklyCheckKeyRef.current = null
+  }
+}, [user, plan])
 
   const getWeekNumber = (date) => {
     const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
@@ -133,7 +314,17 @@ function App() {
     return Math.ceil((((d - yearStart) / 86400000) + 1) / 7)
   }
 
-  const runWeeklyCheck = async (user, plan, today, currentWeekInPlan, lastAnalysisKey, isLastDay) => {
+  const runWeeklyCheck = async (
+    user,
+    plan,
+    today,
+    currentWeekInPlan,
+    lastAnalysisKey,
+    isLastDay,
+    weekStartStr,
+    planStartStr,
+    triggerReason = 'unknown'
+  ) => {
     try {
       // Logs aus Supabase laden für genaue Analyse
       let logs = {}
@@ -183,8 +374,7 @@ function App() {
         }
       } catch (e) { console.error('Skipped Days laden fehlgeschlagen:', e) }
 
-      const startDate = new Date(plan.startDate || today)
-      const daysSinceStart = Math.floor((today - startDate) / 86400000)
+      const startDate = parseLocalPlanDate(plan.startDate || today)
       const analyzeWeek = isLastDay ? currentWeekInPlan : currentWeekInPlan - 1
 
       let currentPhase = null
@@ -207,14 +397,31 @@ function App() {
       // Handy + PC), hat jedes sein EIGENES localStorage - eines "weiß" nicht, dass das
       // andere schon analysiert hat. Die Datenbank ist die einzige gemeinsame, verlässliche
       // Quelle. Diese Prüfung ist der eigentliche Fix für wiederholte Analysen derselben Woche.
-      const { data: existingAnalysis } = await supabase
-        .from('week_analyses')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('week_number', currentWeek.n)
-        .limit(1)
+      const { data: existingAnalyses, error: existingAnalysisError } =
+        await supabase
+          .from('week_analyses')
+          .select('id, week_start')
+          .eq('user_id', user.id)
+          .eq('week_number', currentWeek.n)
 
-      if (existingAnalysis && existingAnalysis.length > 0) {
+      if (existingAnalysisError) {
+        console.error(
+          'Wochenanalyse-Status konnte nicht geprüft werden:',
+          existingAnalysisError
+        )
+        return
+      }
+
+      // Neue Analysen speichern den echten Wochenstart.
+      // Alte Analysen speicherten an dieser Stelle versehentlich den
+      // Planstart. Beides wird für den aktuellen Plan akzeptiert,
+      // damit alte Wochen nicht erneut analysiert werden.
+      const alreadyAnalyzed = (existingAnalyses || []).some(row =>
+        row.week_start === weekStartStr ||
+        row.week_start === planStartStr
+      )
+
+      if (alreadyAnalyzed) {
         localStorage.setItem(lastAnalysisKey, String(analyzeWeek))
         return
       }
@@ -262,32 +469,63 @@ function App() {
       // Nur Tage, die WEDER geloggt NOCH bewusst übersprungen wurden, blockieren die Analyse.
       const unloggedCount = weekLogs.filter(l => !l.logged && !l.skipped).length
 
-      // Reminder, solange noch Logs fehlen - unabhängig davon, ob heute der letzte Tag der
-      // Woche (So) oder einer der Folgetage (Mo/Di/Mi) ist. Höchstens EINE Erinnerung pro Tag,
-      // sonst würde bei jedem erneuten Öffnen der App eine neue Benachrichtigung verschickt.
-      if (unloggedCount > 0) {
-        const reminderDedupKey = `last_week_reminder_${user.id}`
-        // Lokales Datum bauen statt toISOString() (das würde in Zeitzonen wie Deutschland
-        // um einen Tag verschieben können - siehe frühere Polar-Datumsbugs).
-        const todayLocalStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-        const lastReminderDate = localStorage.getItem(reminderDedupKey)
+// Erinnerung bleibt erhalten:
+// - Am letzten Tag der Trainingswoche erst ab 18:00 Uhr.
+//   So kann ein für Sonntag geplanter Lauf tagsüber noch normal stattfinden.
+// - Im Nachholfenster (die ersten drei Tage der Folgewoche) weiterhin
+//   höchstens einmal pro Tag, falls noch etwas ungeklärt ist.
+if (unloggedCount > 0) {
+  const isSundayEvening =
+    isLastDay && today.getHours() >= WEEK_REMINDER_HOUR
 
-        if (lastReminderDate === todayLocalStr) {
-          return // heute schon erinnert, nicht nochmal
-        }
+  const isCatchupDay = !isLastDay
 
-        await supabase.from('notifications').insert({
-          user_id: user.id,
-          type: 'week_reminder',
-          message: `⏰ Woche ${currentWeek.n}: Noch ${unloggedCount} Lauf${unloggedCount > 1 ? 'e' : ''} nicht eingetragen – trag sie ein für deine Wochenanalyse!`,
-          from_user_id: user.id,
-        })
-        localStorage.setItem(reminderDedupKey, todayLocalStr)
-        setUnreadCount(prev => prev + 1)
-        return
-      }
+  // Sonntag vor 18 Uhr: noch keine Erinnerung.
+  if (!isSundayEvening && !isCatchupDay) {
+    return
+  }
 
-      // Aktuelle Profilwerte laden (HFmax könnte aktualisiert worden sein)
+  const reminderDedupKey =
+    `last_week_reminder_${user.id}_${weekStartStr}`
+
+  const todayLocalStr = formatLocalDate(today)
+  const lastReminderDate =
+    localStorage.getItem(reminderDedupKey)
+
+  if (lastReminderDate === todayLocalStr) {
+    return
+  }
+
+  const { error: reminderError } = await supabase
+    .from('notifications')
+    .insert({
+      user_id: user.id,
+      type: 'week_reminder',
+      message:
+        `⏰ Woche ${currentWeek.n}: Noch ${unloggedCount} ` +
+        `Lauf${unloggedCount > 1 ? 'e' : ''} nicht eingetragen – ` +
+        `trag ${unloggedCount > 1 ? 'sie' : 'ihn'} ein oder markiere ` +
+        `die Einheit als übersprungen, damit dein Wochen-Coach starten kann.`,
+      from_user_id: user.id,
+    })
+
+  if (!reminderError) {
+    localStorage.setItem(
+      reminderDedupKey,
+      todayLocalStr
+    )
+    setUnreadCount(prev => prev + 1)
+  } else {
+    console.error(
+      'Wochen-Erinnerung konnte nicht gespeichert werden:',
+      reminderError
+    )
+  }
+
+  return
+}
+
+// Aktuelle Profilwerte laden (HFmax könnte aktualisiert worden sein)
       const { data: currentProfile } = await supabase
         .from('profiles')
         .select('max_hf, ruhe_hf, wochen_km, geburtsdatum, geschlecht')
@@ -356,7 +594,22 @@ function App() {
       })
 
       const result = await response.json()
-      if (!result.analyse) return
+
+      if (!response.ok || result?.error) {
+        console.error(
+          'Wochen-Coach API Fehler:',
+          result?.error || response.status
+        )
+        return
+      }
+
+      if (!result.analyse) {
+        console.error(
+          'Wochen-Coach hat keine verwertbare Analyse geliefert.',
+          { triggerReason, result }
+        )
+        return
+      }
 
       // Plan anpassen
       if (nextWeek && result.nextWeekAdjusted?.length > 0) {
@@ -396,30 +649,53 @@ function App() {
         }
       }
 
-      // Analyse in Supabase speichern
-      await supabase.from('week_analyses').insert({
-        user_id: user.id,
-        week_number: currentWeek.n,
-        week_start: startDate.toISOString().split('T')[0],
-        analysis: result.analyse,
-        recommendation: result.empfehlung,
-        next_week_adjustment: result.anpassung,
-        analysis_data: result.analysisData || null,
-      })
+      // Analyse in Supabase speichern.
+      // week_start ist jetzt der tatsächliche Start dieser Trainingswoche
+      // und nicht mehr versehentlich der Start des gesamten Plans.
+      const { error: analysisInsertError } = await supabase
+        .from('week_analyses')
+        .insert({
+          user_id: user.id,
+          week_number: currentWeek.n,
+          week_start: weekStartStr,
+          analysis: result.analyse,
+          recommendation: result.empfehlung,
+          next_week_adjustment: result.anpassung,
+          analysis_data: result.analysisData || null,
+        })
+
+      if (analysisInsertError) {
+        console.error(
+          'Wochenanalyse konnte nicht gespeichert werden:',
+          analysisInsertError
+        )
+        return
+      }
 
       // Glocke = Hinweis. Die vollständige Analyse bleibt dauerhaft bei der Woche im Trainingsplan.
       const message =
         `📊 Deine Analyse für Woche ${currentWeek.n} ist fertig. ` +
         `Öffne die Woche im Trainingsplan, um deinen Wochen-Coach anzusehen.`
 
-      await supabase.from('notifications').insert({
-        user_id: user.id,
-        type: 'week_analysis',
-        message,
-        from_user_id: user.id,
-      })
+      const { error: notificationError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: user.id,
+          type: 'week_analysis',
+          message,
+          from_user_id: user.id,
+        })
 
-      setUnreadCount(prev => prev + 1)
+      if (notificationError) {
+        console.error(
+          'Wochenanalyse-Benachrichtigung konnte nicht gespeichert werden:',
+          notificationError
+        )
+      } else {
+        setUnreadCount(prev => prev + 1)
+      }
+
+      // Nur noch Cache/Kompatibilität. Dieser Wert blockiert keine Analyse mehr.
       localStorage.setItem(lastAnalysisKey, String(analyzeWeek))
 
     } catch (e) {
