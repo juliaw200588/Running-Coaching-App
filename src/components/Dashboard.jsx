@@ -317,11 +317,41 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
     if (context?.completed) return { type:'completedPlan', eyebrow:'PLAN ABGESCHLOSSEN', title:'Stark – dieser Trainingsblock ist geschafft.', text:'Schau auf deinen Weg zurück oder plane dein nächstes Ziel.', icon:'🏁' }
     if (!weekData) return null
 
-    const todayLinked = todayActivities.find(l => l.day_key)
+    // Heute absolvierte Aktivität, die einer Planeinheit DIESER Woche zugeordnet ist.
+    // Nur dann darf die Hero-Karte von einer erledigten Planeinheit sprechen.
+    const todayLinked = todayActivities.find(
+      l => l.day_key && weekData.planned.some(d => d.key === l.day_key)
+    )
     if (todayLinked) {
       const plannedDay = weekData.planned.find(d => d.key === todayLinked.day_key)
       const moved = plannedDay && plannedDay.scheduleIndex !== context.dayIndex
-      return { type:'trained', eyebrow:'HEUTE TRAINIERT', title: plannedDay?.einheit || sportMeta(todayLinked.sport_type).label, text: moved ? `Ursprünglich für ${plannedDay.tag} geplant – heute absolviert.` : 'Deine heutige Einheit ist erledigt.', icon:'✓', log:todayLinked, plannedDay }
+      return {
+        type:'trained',
+        eyebrow:'HEUTE TRAINIERT',
+        title: plannedDay?.einheit || sportMeta(todayLinked.sport_type).label,
+        text: moved
+          ? `Ursprünglich für ${plannedDay.tag} geplant – heute absolviert.`
+          : 'Deine heutige Planeinheit ist geschafft.',
+        icon:'✓',
+        log:todayLinked,
+        plannedDay
+      }
+    }
+
+    // Freie/Zusatzaktivitäten von heute sind echtes Training, erfüllen aber
+    // niemals automatisch eine Planeinheit.
+    const todayExtra = todayActivities.find(
+      l => !l.day_key || !weekData.planned.some(d => d.key === l.day_key)
+    )
+    if (todayExtra) {
+      return {
+        type:'extra',
+        eyebrow:'HEUTE TRAINIERT',
+        title:sportMeta(todayExtra.sport_type).label,
+        text:'Heute warst du zusätzlich aktiv.',
+        icon:sportMeta(todayExtra.sport_type).icon,
+        log:todayExtra
+      }
     }
 
     const analysis = analyses.find(a => Number(a.week_number) === Number(context.week.n))
@@ -359,7 +389,7 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
   const openHero = () => {
     if (hero?.type === 'analysis' && hero.analysis?.week_number) onOpenWeekAnalysis?.(hero.analysis.week_number)
     else if (['today','open','already','before','completedPlan'].includes(hero?.type)) onOpenTraining?.()
-    else if (hero?.type === 'trained' && hero.log) onOpenActivities?.()
+    else if (['trained','extra'].includes(hero?.type) && hero.log) onOpenActivities?.()
     else if (hero?.type === 'new') onOpenTraining?.()
     else if (hero?.type === 'free') onOpenActivities?.()
   }
@@ -488,7 +518,15 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
 
         {plan && latestAnalysis && (
           <button onClick={() => onOpenWeekAnalysis?.(latestAnalysis.week_number)} style={{...card,width:'100%',padding:16,marginTop:12,textAlign:'left',cursor:'pointer',background:'linear-gradient(135deg,#FFF7F1,#F8F2FB)'}}>
-            <div style={{display:'flex',alignItems:'center',gap:9}}><div style={{fontSize:22}}>🧠</div><div><div style={{fontSize:10,fontWeight:900,color:'#8E6A9E',letterSpacing:.6}}>DEIN COACH</div><div style={{fontSize:13.5,fontWeight:850,marginTop:2}}>Fokus für deine nächste Woche</div></div></div>
+            <div style={{display:'flex',alignItems:'center',gap:9}}>
+              <div style={{fontSize:22}}>🧠</div>
+              <div>
+                <div style={{fontSize:10,fontWeight:900,color:'#8E6A9E',letterSpacing:.6}}>DEIN COACH</div>
+                <div style={{fontSize:13.5,fontWeight:850,marginTop:2}}>
+                  {focus?.title ? 'Fokus für deine nächste Woche' : 'Deine Wochenanalyse ist bereit'}
+                </div>
+              </div>
+            </div>
             <div style={{fontSize:12,lineHeight:1.5,color:'#6F5A50',marginTop:11}}>
               {focus?.title ? (
                 <>
@@ -496,7 +534,7 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
                   {focus.text || ''}
                 </>
               ) : (
-                'Deine Wochenanalyse ist bereit. Schau dir an, worauf es in der nächsten Woche ankommt.'
+                'Schau dir an, was deine Trainingswoche gezeigt hat und worauf es in der nächsten Woche ankommt.'
               )}
             </div>
             <div style={{fontSize:10,fontWeight:800,color:'#8E6A9E',marginTop:10}}>Wochen-Coach ansehen →</div>
