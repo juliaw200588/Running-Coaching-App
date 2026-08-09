@@ -12,6 +12,10 @@ const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
 const WEEK_REMINDER_HOUR = 18
 
+const coachDebug = (...args) => {
+  console.log('[WochenCoach]', ...args)
+}
+
 const parseLocalPlanDate = (value) => {
   if (!value) return new Date()
 
@@ -135,7 +139,13 @@ useEffect(() => {
       (todayLocal - startDate) / 86400000
     )
 
-    if (daysSinceStart < 0) return null
+    if (daysSinceStart < 0) {
+      coachDebug('Noch vor Planstart.', {
+        planStart: formatLocalDate(startDate),
+        today: formatLocalDate(todayLocal),
+      })
+      return null
+    }
 
     const dayInWeek = daysSinceStart % 7
     const isLastDay = dayInWeek === 6
@@ -143,14 +153,23 @@ useEffect(() => {
       (dayInWeek === 0 || dayInWeek === 1 || dayInWeek === 2) &&
       daysSinceStart > 0
 
-    if (!isLastDay && !isFirstDaysNextWeek) return null
+    if (!isLastDay && !isFirstDaysNextWeek) {
+      coachDebug('Außerhalb des Analysefensters.', {
+        dayInWeek,
+        daysSinceStart,
+      })
+      return null
+    }
 
     const currentWeekInPlan = Math.floor(daysSinceStart / 7)
     const analyzeWeek = isLastDay
       ? currentWeekInPlan
       : currentWeekInPlan - 1
 
-    if (analyzeWeek < 0) return null
+    if (analyzeWeek < 0) {
+      coachDebug('Noch keine abgeschlossene Trainingswoche verfügbar.')
+      return null
+    }
 
     const weekStartDate = new Date(startDate)
     weekStartDate.setDate(
@@ -175,7 +194,18 @@ useEffect(() => {
     const today = new Date()
     const context = getCheckContext(today)
 
-    if (!context) return
+    if (!context) {
+      coachDebug('Keine prüfbare Woche für Trigger:', reason)
+      return
+    }
+
+    coachDebug('Prüfung gestartet.', {
+      trigger: reason,
+      analyzeWeekIndex: context.analyzeWeek,
+      weekStart: context.weekStartStr,
+      isLastDay: context.isLastDay,
+      isCatchup: context.isFirstDaysNextWeek,
+    })
 
     // Nur eine GLEICHZEITIGE Prüfung derselben Woche zulassen.
     // Nach Abschluss oder Fehler wird die Sperre wieder freigegeben.
@@ -183,7 +213,13 @@ useEffect(() => {
       `${user.id}_${context.weekStartStr}_` +
       `${context.isLastDay ? 'last' : 'catchup'}`
 
-    if (weeklyCheckKeyRef.current === runKey) return
+    if (weeklyCheckKeyRef.current === runKey) {
+      coachDebug(
+        'Prüfung läuft bereits, paralleler Start wird übersprungen.',
+        runKey
+      )
+      return
+    }
 
     weeklyCheckKeyRef.current = runKey
 
@@ -326,6 +362,13 @@ useEffect(() => {
     triggerReason = 'unknown'
   ) => {
     try {
+      coachDebug('runWeeklyCheck()', {
+        triggerReason,
+        currentWeekInPlan,
+        isLastDay,
+        weekStartStr,
+      })
+
       // Logs aus Supabase laden für genaue Analyse
       let logs = {}
       try {
@@ -391,7 +434,22 @@ useEffect(() => {
         }
       }
 
-      if (!currentPhase || !currentWeek) return
+      if (!currentPhase || !currentWeek) {
+        coachDebug('Abbruch: Trainingswoche im Plan nicht gefunden.', {
+          analyzeWeek,
+          phases: (plan.phases || []).map(phase => ({
+            id: phase.id,
+            weeks: (phase.weeks || []).map(week => week.n),
+          })),
+        })
+        return
+      }
+
+      coachDebug('Trainingswoche gefunden.', {
+        phase: currentPhase.id,
+        phaseLabel: currentPhase.label,
+        weekNumber: currentWeek.n,
+      })
 
       // Geräteübergreifende Prüfung: läuft die App auf mehreren Geräten/Browsern (z.B.
       // Handy + PC), hat jedes sein EIGENES localStorage - eines "weiß" nicht, dass das
@@ -416,12 +474,27 @@ useEffect(() => {
       // Alte Analysen speicherten an dieser Stelle versehentlich den
       // Planstart. Beides wird für den aktuellen Plan akzeptiert,
       // damit alte Wochen nicht erneut analysiert werden.
-      const alreadyAnalyzed = (existingAnalyses || []).some(row =>
-        row.week_start === weekStartStr ||
-        row.week_start === planStartStr
+      const rowsForWeek = existingAnalyses || []
+
+      const exactWeekMatch = rowsForWeek.some(
+        row => row.week_start === weekStartStr
       )
 
-      if (alreadyAnalyzed) {
+      const legacyFirstWeekMatch =
+        analyzeWeek === 0 &&
+        rowsForWeek.some(row => row.week_start === planStartStr)
+
+      coachDebug('DB-Prüfung week_analyses.', {
+        weekNumber: currentWeek.n,
+        expectedWeekStart: weekStartStr,
+        planStart: planStartStr,
+        rows: rowsForWeek,
+        exactWeekMatch,
+        legacyFirstWeekMatch,
+      })
+
+      if (exactWeekMatch || legacyFirstWeekMatch) {
+        coachDebug('Abbruch: Diese Trainingswoche ist bereits analysiert.')
         localStorage.setItem(lastAnalysisKey, String(analyzeWeek))
         return
       }
@@ -469,6 +542,21 @@ useEffect(() => {
       // Nur Tage, die WEDER geloggt NOCH bewusst übersprungen wurden, blockieren die Analyse.
       const unloggedCount = weekLogs.filter(l => !l.logged && !l.skipped).length
 
+      coachDebug('Vollständigkeitsprüfung.', {
+        plannedCount: plannedDays.length,
+        loggedCount: weekLogs.filter(item => item.logged).length,
+        skippedCount: weekLogs.filter(item => item.skipped).length,
+        unloggedCount,
+        days: weekLogs.map(item => ({
+          key: item.key,
+          tag: item.tag,
+          einheit: item.einheit,
+          logged: item.logged,
+          skipped: item.skipped,
+          actual_date: item.actual_date || null,
+        })),
+      })
+
 // Erinnerung bleibt erhalten:
 // - Am letzten Tag der Trainingswoche erst ab 18:00 Uhr.
 //   So kann ein für Sonntag geplanter Lauf tagsüber noch normal stattfinden.
@@ -482,6 +570,10 @@ if (unloggedCount > 0) {
 
   // Sonntag vor 18 Uhr: noch keine Erinnerung.
   if (!isSundayEvening && !isCatchupDay) {
+    coachDebug('Offene Einheit vorhanden, Sonntag noch vor Erinnerungszeit.', {
+      hour: today.getHours(),
+      reminderHour: WEEK_REMINDER_HOUR,
+    })
     return
   }
 
@@ -493,6 +585,7 @@ if (unloggedCount > 0) {
     localStorage.getItem(reminderDedupKey)
 
   if (lastReminderDate === todayLocalStr) {
+    coachDebug('Erinnerung wurde heute bereits gesendet.')
     return
   }
 
@@ -510,6 +603,10 @@ if (unloggedCount > 0) {
     })
 
   if (!reminderError) {
+    coachDebug('Wochen-Erinnerung gesendet.', {
+      weekNumber: currentWeek.n,
+      unloggedCount,
+    })
     localStorage.setItem(
       reminderDedupKey,
       todayLocalStr
@@ -567,6 +664,14 @@ if (unloggedCount > 0) {
       const isRegenWeek = !!currentWeek.regen
       const nextIsRegenWeek = !!nextWeek?.regen
 
+      coachDebug('Starte /api/analyze-week.', {
+        weekNumber: currentWeek.n,
+        historyLogs: historyLogs.length,
+        nextWeek: nextWeek?.n || null,
+        isRegenWeek,
+        nextIsRegenWeek,
+      })
+
       const response = await fetch('/api/analyze-week', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -610,6 +715,12 @@ if (unloggedCount > 0) {
         )
         return
       }
+
+      coachDebug('API-Analyse erfolgreich empfangen.', {
+        weekNumber: currentWeek.n,
+        verdict: result?.weekVerdict?.status || null,
+        hasAnalysisData: Boolean(result.analysisData),
+      })
 
       // Plan anpassen
       if (nextWeek && result.nextWeekAdjusted?.length > 0) {
@@ -671,6 +782,11 @@ if (unloggedCount > 0) {
         )
         return
       }
+
+      coachDebug('Wochenanalyse gespeichert.', {
+        weekNumber: currentWeek.n,
+        weekStart: weekStartStr,
+      })
 
       // Glocke = Hinweis. Die vollständige Analyse bleibt dauerhaft bei der Woche im Trainingsplan.
       const message =
