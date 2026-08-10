@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { loadAndEvaluateAchievements } from '../lib/achievementService.js'
+import { getHeroImageForDashboard } from '../lib/heroImages.js'
 
 const DAY_MS = 86400000
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
@@ -317,8 +318,6 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
     if (context?.completed) return { type:'completedPlan', eyebrow:'PLAN ABGESCHLOSSEN', title:'Stark – dieser Trainingsblock ist geschafft.', text:'Schau auf deinen Weg zurück oder plane dein nächstes Ziel.', icon:'🏁' }
     if (!weekData) return null
 
-    // Heute absolvierte Aktivität, die einer Planeinheit DIESER Woche zugeordnet ist.
-    // Nur dann darf die Hero-Karte von einer erledigten Planeinheit sprechen.
     const todayLinked = todayActivities.find(
       l => l.day_key && weekData.planned.some(d => d.key === l.day_key)
     )
@@ -338,8 +337,6 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
       }
     }
 
-    // Freie/Zusatzaktivitäten von heute sind echtes Training, erfüllen aber
-    // niemals automatisch eine Planeinheit.
     const todayExtra = todayActivities.find(
       l => !l.day_key || !weekData.planned.some(d => d.key === l.day_key)
     )
@@ -398,6 +395,28 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
 
   const heroMeta = hero?.log ? [kmText(hero.log.km), durationText(hero.log.moving_time_seconds || hero.log.duration_seconds), hero.log.bpm ? `Ø HF ${hero.log.bpm}` : null].filter(Boolean).join(' · ') : null
 
+  const heroImage = useMemo(
+    () =>
+      getHeroImageForDashboard({
+        hero,
+        userId: user?.id,
+        dateKey: todayStr,
+        weekNumber: context?.week?.n,
+      }),
+    [
+      hero?.type,
+      hero?.title,
+      hero?.log?.id,
+      hero?.log?.polar_exercise_id,
+      hero?.log?.sport_type,
+      hero?.plannedDay?.key,
+      hero?.plannedDay?.einheit,
+      user?.id,
+      todayStr,
+      context?.week?.n,
+    ]
+  )
+
   return (
     <div style={{ minHeight:'100vh', background:'linear-gradient(180deg,#FFF9F4 0%,#FBF8F6 45%,#F6FAF7 100%)', fontFamily:'sans-serif', color:'#3D2B1F' }}>
       <div style={{ maxWidth:720, margin:'0 auto', padding:'24px 16px 30px' }}>
@@ -407,7 +426,28 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
         </div>
 
         <button type="button" onClick={openHero} style={{...card,width:'100%',padding:0,overflow:'hidden',textAlign:'left',cursor:'pointer',border:'none',position:'relative',minHeight:245,background:'linear-gradient(135deg,#6F8F7B 0%,#A7BCA8 42%,#E7B79B 100%)'}}>
-          <div style={{position:'absolute',inset:0,background:"linear-gradient(180deg,rgba(25,35,30,.08),rgba(35,27,23,.58)), radial-gradient(circle at 78% 24%,rgba(255,244,215,.72),transparent 22%), linear-gradient(155deg,transparent 0 45%,rgba(55,83,61,.45) 46% 62%,rgba(38,61,45,.58) 63% 100%)"}} />
+          {heroImage && (
+            <div
+              aria-hidden="true"
+              style={{
+                position:'absolute',
+                inset:0,
+                backgroundImage:`url("${heroImage}")`,
+                backgroundSize:'cover',
+                backgroundPosition:'center',
+                backgroundRepeat:'no-repeat',
+              }}
+            />
+          )}
+          <div
+            style={{
+              position:'absolute',
+              inset:0,
+              background: heroImage
+                ? 'linear-gradient(180deg,rgba(20,24,21,.07) 0%,rgba(26,24,21,.20) 40%,rgba(27,23,20,.72) 100%)'
+                : "linear-gradient(180deg,rgba(25,35,30,.08),rgba(35,27,23,.58)), radial-gradient(circle at 78% 24%,rgba(255,244,215,.72),transparent 22%), linear-gradient(155deg,transparent 0 45%,rgba(55,83,61,.45) 46% 62%,rgba(38,61,45,.58) 63% 100%)"
+            }}
+          />
           <div style={{position:'relative',zIndex:1,minHeight:245,padding:'22px 20px',display:'flex',flexDirection:'column',justifyContent:'flex-end',color:'#fff'}}>
             <div style={{fontSize:10,fontWeight:900,letterSpacing:1.4,opacity:.9}}>{hero?.eyebrow}</div>
             <div style={{fontSize:26,fontWeight:850,lineHeight:1.08,marginTop:7,maxWidth:520}}>{hero?.title}</div>
