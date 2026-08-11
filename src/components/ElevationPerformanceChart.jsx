@@ -275,6 +275,32 @@ export default function ElevationPerformanceChart({
       } L ${scaled[0].x} ${padding.top + innerHeight} Z`
     : ''
 
+  // Eigene Geometrie für die vergrößerte Ansicht.
+  // Dadurch wird das Diagramm höher gezeichnet, ohne Schriften und Linien
+  // einfach vertikal zu verzerren.
+  const largeChartHeight = 330
+  const largePadding = { left: 42, right: 14, top: 18, bottom: 32 }
+  const largeInnerHeight =
+    largeChartHeight - largePadding.top - largePadding.bottom
+
+  const largeScaled = profile.map(point => ({
+    x: largePadding.left + (point.distance / distanceRange) * innerWidth,
+    y:
+      largePadding.top +
+      largeInnerHeight -
+      ((point.altitude - minAltitude) / altitudeRange) * largeInnerHeight,
+  }))
+
+  const largeLinePath = largeScaled
+    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
+    .join(' ')
+
+  const largeAreaPath = largeScaled.length
+    ? `${largeLinePath} L ${largeScaled[largeScaled.length - 1].x} ${
+        largePadding.top + largeInnerHeight
+      } L ${largeScaled[0].x} ${largePadding.top + largeInnerHeight} Z`
+    : ''
+
   const gridValues =
     minAltitude !== null && maxAltitude !== null
       ? [0, 0.5, 1].map(
@@ -287,6 +313,19 @@ export default function ElevationPerformanceChart({
 
   const activeProfilePosition = activeProfilePoint
     ? getProfilePointPosition(activeProfilePoint)
+    : null
+
+  const activeLargeProfilePosition = activeProfilePoint
+    ? {
+        x:
+          largePadding.left +
+          (activeProfilePoint.distance / distanceRange) * innerWidth,
+        y:
+          largePadding.top +
+          largeInnerHeight -
+          ((activeProfilePoint.altitude - minAltitude) / altitudeRange) *
+            largeInnerHeight,
+      }
     : null
 
   const updateActiveProfilePoint = event => {
@@ -1185,7 +1224,7 @@ export default function ElevationPerformanceChart({
                 }}
               >
                 <svg
-                  viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+                  viewBox={`0 0 ${chartWidth} ${largeChartHeight}`}
                   onPointerDown={updateActiveProfilePoint}
                   onPointerMove={event => {
                     if (event.pointerType === 'mouse' || event.buttons > 0) {
@@ -1193,10 +1232,9 @@ export default function ElevationPerformanceChart({
                     }
                   }}
                   onMouseMove={updateActiveProfilePoint}
-                  preserveAspectRatio="none"
                   style={{
                     width: '100%',
-                    height: '340px',
+                    height: 'auto',
                     display: 'block',
                     touchAction: 'none',
                     userSelect: 'none',
@@ -1215,22 +1253,23 @@ export default function ElevationPerformanceChart({
 
                   {gridValues.map(value => {
                     const y =
-                      padding.top +
-                      innerHeight -
-                      ((value - minAltitude) / altitudeRange) * innerHeight
+                      largePadding.top +
+                      largeInnerHeight -
+                      ((value - minAltitude) / altitudeRange) *
+                        largeInnerHeight
 
                     return (
                       <g key={`large-${value}`}>
                         <line
-                          x1={padding.left}
-                          x2={chartWidth - padding.right}
+                          x1={largePadding.left}
+                          x2={chartWidth - largePadding.right}
                           y1={y}
                           y2={y}
                           stroke="#EFE8E2"
                           strokeWidth="1"
                         />
                         <text
-                          x={padding.left - 7}
+                          x={largePadding.left - 7}
                           y={y + 3}
                           textAnchor="end"
                           fontSize="9"
@@ -1242,9 +1281,9 @@ export default function ElevationPerformanceChart({
                     )
                   })}
 
-                  <path d={areaPath} fill="url(#elevationFillLarge)" />
+                  <path d={largeAreaPath} fill="url(#elevationFillLarge)" />
                   <path
-                    d={linePath}
+                    d={largeLinePath}
                     fill="none"
                     stroke="#58A978"
                     strokeWidth="3"
@@ -1252,20 +1291,20 @@ export default function ElevationPerformanceChart({
                     strokeLinecap="round"
                   />
 
-                  {activeProfilePosition && activeProfilePoint && (
+                  {activeLargeProfilePosition && activeProfilePoint && (
                     <g pointerEvents="none">
                       <line
-                        x1={activeProfilePosition.x}
-                        x2={activeProfilePosition.x}
-                        y1={padding.top}
-                        y2={padding.top + innerHeight}
+                        x1={activeLargeProfilePosition.x}
+                        x2={activeLargeProfilePosition.x}
+                        y1={largePadding.top}
+                        y2={largePadding.top + largeInnerHeight}
                         stroke="#C96F52"
                         strokeWidth="1.5"
                         strokeDasharray="4 3"
                       />
                       <circle
-                        cx={activeProfilePosition.x}
-                        cy={activeProfilePosition.y}
+                        cx={activeLargeProfilePosition.x}
+                        cy={activeLargeProfilePosition.y}
                         r="5"
                         fill="#C96F52"
                         stroke="#FFFFFF"
@@ -1275,7 +1314,7 @@ export default function ElevationPerformanceChart({
                   )}
 
                   {[0, 0.25, 0.5, 0.75, 1].map(ratio => {
-                    const x = padding.left + ratio * innerWidth
+                    const x = largePadding.left + ratio * innerWidth
                     const distance = distanceRange * ratio
 
                     return (
@@ -1283,7 +1322,7 @@ export default function ElevationPerformanceChart({
                         <line
                           x1={x}
                           x2={x}
-                          y1={padding.top + innerHeight}
+                          y1={largePadding.top + largeInnerHeight}
                           y2={padding.top + innerHeight + 4}
                           stroke="#DCCFC5"
                         />
