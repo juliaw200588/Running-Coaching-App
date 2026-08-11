@@ -192,30 +192,41 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
   const [achievement, setAchievement] = useState(null)
 
   const load = async () => {
-    if (!user?.id) return
+    if (!user?.id) {
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
-    const [profileRes, logsRes, skippedRes, analysisRes] = await Promise.all([
-      supabase.from('profiles').select('*').eq('id', user.id).single(),
-      supabase.from('logs').select('*').eq('user_id', user.id).order('actual_date', { ascending: false }),
-      supabase.from('skipped_days').select('day_key, reason').eq('user_id', user.id),
-      supabase.from('week_analyses').select('*').eq('user_id', user.id).order('week_start', { ascending: false }).limit(6),
-    ])
-    setProfile(profileRes.data || null)
-    setLogs(logsRes.data || [])
-    setSkipped(skippedRes.data || [])
-    setAnalyses(analysisRes.data || [])
 
     try {
-      const result = await loadAndEvaluateAchievements({ supabase, userId: user.id })
-      const unlocked = [...(result?.unlocked || [])]
-        .filter(item => item?.unlocked)
-        .sort((a,b) => new Date(b.unlockedAt || 0) - new Date(a.unlockedAt || 0))
-      setAchievement(unlocked[0] || null)
+      const [profileRes, logsRes, skippedRes, analysisRes] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', user.id).single(),
+        supabase.from('logs').select('*').eq('user_id', user.id).order('actual_date', { ascending: false }),
+        supabase.from('skipped_days').select('day_key, reason').eq('user_id', user.id),
+        supabase.from('week_analyses').select('*').eq('user_id', user.id).order('week_start', { ascending: false }).limit(6),
+      ])
+
+      setProfile(profileRes.data || null)
+      setLogs(logsRes.data || [])
+      setSkipped(skippedRes.data || [])
+      setAnalyses(analysisRes.data || [])
+
+      try {
+        const result = await loadAndEvaluateAchievements({ supabase, userId: user.id })
+        const unlocked = [...(result?.unlocked || [])]
+          .filter(item => item?.unlocked)
+          .sort((a,b) => new Date(b.unlockedAt || 0) - new Date(a.unlockedAt || 0))
+        setAchievement(unlocked[0] || null)
+      } catch (error) {
+        console.warn('[Dashboard] Erfolge konnten nicht geladen werden:', error)
+        setAchievement(null)
+      }
     } catch (error) {
-      console.warn('[Dashboard] Erfolge konnten nicht geladen werden:', error)
-      setAchievement(null)
+      console.error('[Dashboard] Dashboard-Daten konnten nicht geladen werden:', error)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   useEffect(() => {
@@ -391,8 +402,6 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
     else if (hero?.type === 'free') onOpenActivities?.()
   }
 
-  if (loading) return <div style={{minHeight:'80vh',display:'grid',placeItems:'center',fontFamily:'sans-serif',color:'#A88F80'}}>Dashboard wird vorbereitet…</div>
-
   const heroMeta = hero?.log ? [kmText(hero.log.km), durationText(hero.log.moving_time_seconds || hero.log.duration_seconds), hero.log.bpm ? `Ø HF ${hero.log.bpm}` : null].filter(Boolean).join(' · ') : null
 
   const heroImage = useMemo(
@@ -416,6 +425,22 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
       context?.week?.n,
     ]
   )
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          minHeight:'80vh',
+          display:'grid',
+          placeItems:'center',
+          fontFamily:'sans-serif',
+          color:'#A88F80'
+        }}
+      >
+        Dashboard wird vorbereitet…
+      </div>
+    )
+  }
 
   return (
     <div style={{ minHeight:'100vh', background:'linear-gradient(180deg,#FFF9F4 0%,#FBF8F6 45%,#F6FAF7 100%)', fontFamily:'sans-serif', color:'#3D2B1F' }}>
