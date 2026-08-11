@@ -1,3 +1,5 @@
+import { trainingFeedbackText } from './trainingFeedback.js'
+
 const parseJson = value => {
   if (value == null || value === '') return null
   if (Array.isArray(value) || typeof value === 'object') return value
@@ -377,7 +379,7 @@ const analyzeRun = (log, maxHr, restHr) => {
           elevationGainMeters: numeric(
             log?.elevation_gain ?? log?.hoehenmeter
           ),
-          feeling: log?.gefuehl || null,
+          feeling: trainingFeedbackText(log?.gefuehl) || null,
           trainingLoad: numeric(log?.training_load),
           recoveryTime: numeric(log?.recovery_time),
           note: log?.note || null,
@@ -580,7 +582,7 @@ const buildAllActivityChronology = ({ activityHistory = [], weekStart }) => {
       averageHr: numeric(activity.bpm),
       trainingLoad: numeric(activity.training_load),
       loadClass: activityLoadClass(activity),
-      note: activity.note || activity.gefuehl || null,
+      note: activity.note || trainingFeedbackText(activity.gefuehl) || null,
       isPlanLinked: Boolean(activity.day_key),
     }))
     .sort((a, b) => (dateValue(a.date) || 0) - (dateValue(b.date) || 0))
@@ -618,7 +620,7 @@ const buildPlanRealityPattern = historyRuns => {
 
 const buildSubjectiveObjectiveSignals = runs => {
   const subjectiveRegex =
-    /(müde|muede|schwer|erschöpft|erschoepft|anstreng|kraftlos|schlapp|matt|frisch|leicht|locker|gut gefühlt|gut gefuehlt)/i
+    /(müde|muede|schwer|sehr hart|fordernd|erschöpft|erschoepft|anstreng|kraftlos|schlapp|matt|frisch|leicht|locker|passend|normal|gut gefühlt|gut gefuehlt)/i
 
   return runs
     .filter(run => run.completed)

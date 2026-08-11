@@ -6,6 +6,8 @@ import PhaseCards from './PhaseCards.jsx'
 import SplitAccordion from './SplitAccordion.jsx'
 import StoryShareModal from './StoryShareModal.jsx'
 import WeeklyAnalysis from './WeeklyAnalysis.jsx'
+import TrainingFeedbackModal from './TrainingFeedbackModal.jsx'
+import { encodeTrainingFeedback, hasStructuredTrainingFeedback, trainingFeedbackSummary } from '../lib/trainingFeedback.js'
 
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
@@ -223,6 +225,8 @@ export default function TrainingPlan({
   const [storyOpen, setStoryOpen] = useState(false)
   const [weekAnalyses, setWeekAnalyses] = useState({})
   const [analysisModal, setAnalysisModal] = useState(null)
+  const [feedbackModal, setFeedbackModal] = useState(null)
+  const [feedbackSaving, setFeedbackSaving] = useState(false)
 
 
 useEffect(() => {
@@ -585,6 +589,56 @@ if (user) {
     }
   }
 
+  const openFeedback = (key, tag, einheit) => {
+    const existing = logs[key] || {}
+    setFeedbackModal({
+      key,
+      tag,
+      einheit,
+      feeling: existing.gefuehl || '',
+      note: existing.note || '',
+    })
+  }
+
+  const saveTrainingFeedback = async ({ effort, recovery, note }) => {
+    if (!feedbackModal?.key) return
+
+    const key = feedbackModal.key
+    const existing = logs[key] || {}
+    const gefuehl = encodeTrainingFeedback(
+      { effort, recovery },
+      existing.gefuehl || feedbackModal.feeling || null
+    )
+
+    setFeedbackSaving(true)
+    try {
+      const nextLog = {
+        ...existing,
+        gefuehl,
+        note: note || '',
+      }
+
+      await persistLogs({ ...logs, [key]: nextLog })
+
+      if (user) {
+        const { error } = await supabase.from('logs').upsert({
+          user_id: user.id,
+          day_key: key,
+          gefuehl,
+          note: note || null,
+        }, { onConflict: 'user_id,day_key' })
+
+        if (error) throw error
+      }
+
+      setFeedbackModal(null)
+    } catch (error) {
+      console.error('Trainingsfeedback konnte nicht gespeichert werden:', error)
+    } finally {
+      setFeedbackSaving(false)
+    }
+  }
+
   const openLog = (key, tag, einheit) => {
     const ex = logs[key] || {}
     setLogInput({ pace: ex.pace || '', km: ex.km || '', bpm: ex.bpm || '', note: ex.note || '', schuh_id: ex.schuh_id || '' })
@@ -633,7 +687,7 @@ if (user) {
   const saveLog = async () => {
     const key = logModal.key
     const oldLog = logs[key]
-    const nl = { ...logs, [key]: { ...logInput } }
+    const nl = { ...logs, [key]: { ...(oldLog || {}), ...logInput } }
     await persistLogs(nl)
     await persistScreenshot(key, modalScreenshot, screenshots)
 
@@ -685,7 +739,18 @@ if (user) {
       }
     }
 
+    const shouldAskFeedback = !hasStructuredTrainingFeedback(oldLog?.gefuehl)
     setLogModal(null); setModalScreenshot(null); setModalPreview(null)
+
+    if (shouldAskFeedback) {
+      setFeedbackModal({
+        key,
+        tag: logModal.tag,
+        einheit: logModal.einheit,
+        feeling: oldLog?.gefuehl || '',
+        note: logInput.note || '',
+      })
+    }
   }
 
   const deleteLog = async (key) => {
@@ -819,6 +884,15 @@ if (user) {
           </div>
         </div>
       )}
+
+      <TrainingFeedbackModal
+        open={feedbackModal}
+        feeling={feedbackModal?.feeling}
+        note={feedbackModal?.note}
+        saving={feedbackSaving}
+        onClose={() => setFeedbackModal(null)}
+        onSave={saveTrainingFeedback}
+      />
 
       {/* Skip Modal */}
       {skipModal && (
@@ -1089,6 +1163,15 @@ if (user) {
                                 {logs[key]?.cadence && <span style={{ fontSize: 10, background: '#E8F5EF', color: '#3D8B6E', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>👣 {logs[key].cadence} spm</span>}
                                 {loggedSchuh && <span style={{ fontSize: 10, background: '#FFF5EE', color: '#C17A3A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>👟 {loggedSchuh.marke} {loggedSchuh.modell}</span>}
                                 {logs[key]?.note && <span style={{ fontSize: 10, background: '#F5EDE8', color: '#8B6B5A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>💬 {logs[key].note.slice(0, 30)}{logs[key].note.length > 30 ? '…' : ''}</span>}
+                                {hasStructuredTrainingFeedback(logs[key]?.gefuehl) ? (
+                                  <button onClick={() => openFeedback(key, day.tag, day.einheit)} style={{ fontSize: 10, background: '#FFF3EC', border: '1px solid #FFD8C7', color: '#B8674E', padding: '3px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif', cursor: 'pointer' }}>
+                                    {trainingFeedbackSummary(logs[key]?.gefuehl)}
+                                  </button>
+                                ) : (
+                                  <button onClick={() => openFeedback(key, day.tag, day.einheit)} style={{ fontSize: 10, background: '#FFF3EC', border: '1px solid #FFD8C7', color: '#C56D52', padding: '3px 9px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif', cursor: 'pointer' }}>
+                                    🙂 Wie war's?
+                                  </button>
+                                )}
                                 <button onClick={() => setDetailModal({ key, tag: day.tag, einheit: day.einheit })} style={{ fontSize: 10, background: 'none', border: 'none', color: '#B8A090', fontWeight: 'bold', fontFamily: 'sans-serif', cursor: 'pointer', textDecoration: 'underline', padding: '2px 4px' }}>
                                   Details →
                                 </button>

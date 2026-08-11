@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { loadAndEvaluateAchievements } from '../lib/achievementService.js'
 import { getHeroImageForDashboard } from '../lib/heroImages.js'
+import TrainingFeedbackModal from './TrainingFeedbackModal.jsx'
+import { getDailyCoaching } from '../lib/dailyCoaching.js'
+import { encodeTrainingFeedback, hasStructuredTrainingFeedback } from '../lib/trainingFeedback.js'
 
 const DAY_MS = 86400000
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
@@ -190,6 +193,8 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
   const [skipped, setSkipped] = useState([])
   const [analyses, setAnalyses] = useState([])
   const [achievement, setAchievement] = useState(null)
+  const [feedbackModal, setFeedbackModal] = useState(null)
+  const [feedbackSaving, setFeedbackSaving] = useState(false)
 
   const load = async () => {
     if (!user?.id) {
@@ -380,6 +385,50 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
     return { type:'rest', eyebrow:'HEUTE IST RUHETAG', title:'Erholung gehört zum Training.', text:next ? `Als Nächstes: ${next.tag} · ${next.einheit}` : 'Für diese Woche ist keine weitere Einheit offen.', icon:'🌿', plannedDay:next }
   }, [plan, context, weekData, todayActivities, latestActivity, analyses, logsByKey, skippedKeys])
 
+  const dailyCoaching = useMemo(
+    () => getDailyCoaching({ context, weekData, logs, todayStr, hero }),
+    [context, weekData, logs, todayStr, hero]
+  )
+
+  const needsTodayFeedback = Boolean(
+    hero?.type === 'trained' &&
+    hero?.log?.day_key &&
+    !hasStructuredTrainingFeedback(hero.log.gefuehl)
+  )
+
+  const saveDashboardFeedback = async ({ effort, recovery, note }) => {
+    if (!feedbackModal?.log?.day_key || !user?.id) return
+
+    const log = feedbackModal.log
+    const gefuehl = encodeTrainingFeedback(
+      { effort, recovery },
+      log.gefuehl || null
+    )
+
+    setFeedbackSaving(true)
+    try {
+      const { error } = await supabase.from('logs').upsert({
+        user_id: user.id,
+        day_key: log.day_key,
+        gefuehl,
+        note: note || null,
+      }, { onConflict: 'user_id,day_key' })
+
+      if (error) throw error
+
+      setLogs(current => current.map(item =>
+        item.day_key === log.day_key
+          ? { ...item, gefuehl, note: note || null }
+          : item
+      ))
+      setFeedbackModal(null)
+    } catch (error) {
+      console.error('[Dashboard] Trainingsfeedback konnte nicht gespeichert werden:', error)
+    } finally {
+      setFeedbackSaving(false)
+    }
+  }
+
   const latestAnalysis = analyses[0] || null
   const focus =
     latestAnalysis?.analysis_data?.nextWeekFocus ||
@@ -443,7 +492,17 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
   }
 
   return (
-    <div style={{ minHeight:'100vh', background:'linear-gradient(180deg,#FFF9F4 0%,#FBF8F6 45%,#F6FAF7 100%)', fontFamily:'sans-serif', color:'#3D2B1F' }}>
+    <>
+      <TrainingFeedbackModal
+        open={feedbackModal}
+        feeling={feedbackModal?.log?.gefuehl}
+        note={feedbackModal?.log?.note || ''}
+        saving={feedbackSaving}
+        onClose={() => setFeedbackModal(null)}
+        onSave={saveDashboardFeedback}
+      />
+
+      <div style={{ minHeight:'100vh', background:'linear-gradient(180deg,#FFF9F4 0%,#FBF8F6 45%,#F6FAF7 100%)', fontFamily:'sans-serif', color:'#3D2B1F' }}>
       <div style={{ maxWidth:720, margin:'0 auto', padding:'24px 16px 30px' }}>
         <div style={{ padding:'4px 2px 16px' }}>
           <div style={{fontSize:22,fontWeight:800}}>{greeting}{name ? `, ${name}` : ''} 👋</div>
@@ -483,6 +542,28 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
             </div>
           </div>
         </button>
+
+        {plan && dailyCoaching && (
+          <section style={{...card,marginTop:12,padding:'13px 14px',background:dailyCoaching.tone === 'attention' ? '#FFF8EE' : dailyCoaching.tone === 'rest' ? '#F3F8F4' : '#F5FAF7',border:dailyCoaching.tone === 'attention' ? '1px solid #F3D9B4' : '1px solid #DDE9E2'}}>
+            <div style={{display:'flex',gap:10,alignItems:'flex-start'}}>
+              <div style={{fontSize:18,lineHeight:1}}>{dailyCoaching.icon}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:11.5,fontWeight:850,color:dailyCoaching.tone === 'attention' ? '#9C6B2E' : '#527E67'}}>{dailyCoaching.title}</div>
+                <div style={{fontSize:10.2,lineHeight:1.45,color:'#806D63',marginTop:3}}>{dailyCoaching.text}</div>
+              </div>
+            </div>
+
+            {needsTodayFeedback && (
+              <button
+                type="button"
+                onClick={() => setFeedbackModal({ log: hero.log })}
+                style={{width:'100%',marginTop:10,padding:'9px 11px',borderRadius:12,border:'1px solid #FFD8C7',background:'#FFF3EC',color:'#B8674E',fontSize:10.5,fontWeight:850,cursor:'pointer',textAlign:'left'}}
+              >
+                🙂 Training kurz einschätzen · 2 Angaben
+              </button>
+            )}
+          </section>
+        )}
 
         {!plan && !latestActivity && (
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:8,marginTop:12}}>
@@ -631,7 +712,8 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
           <button onClick={onOpenTraining} style={{...card,width:'100%',padding:16,marginTop:12,textAlign:'left',cursor:'pointer',background:'#FFF7F0'}}><div style={{fontSize:10,fontWeight:900,color:'#B97459'}}>DU TRAINIERST GERADE FREI</div><div style={{fontSize:13,fontWeight:800,marginTop:5}}>Möchtest du auf ein bestimmtes Ziel hinarbeiten?</div><div style={{fontSize:10,color:'#9A8174',marginTop:5}}>Trainingspläne entdecken →</div></button>
         )}
       </div>
-    </div>
+      </div>
+    </>
   )
 }
 
