@@ -331,83 +331,163 @@ export default function Laeufe({ user, plan }) {
       })
       .catch(() => setRouteMapError('Kartenbild konnte nicht geladen werden'))
       .finally(() => setRouteMapLoading(false))
-  }, [detailRun, user])
+  }, [
+    detailRun?.logId,
+    detailRun?.polarExerciseId,
+    detailRun?.routeMapUrl,
+    user?.id,
+  ])
+
+  const normalizeLogSummary = l => {
+    const dayKey = l.day_key || ''
+    const isExtra = dayKey.startsWith('extra_polar_')
+    const planDay = !isExtra ? planDayByKey(dayKey) : null
+    const isPolar = l.note?.toLowerCase().includes('polar')
+
+    let date = l.actual_date
+    if (!date) {
+      if (isExtra) {
+        const m = dayKey.match(/extra_polar_(\d{4}-\d{2}-\d{2})_/)
+        date = m ? m[1] : null
+      } else if (planDay) {
+        date = planDay.dateStr
+      }
+    }
+
+    return {
+      id: 'log_' + l.id,
+      logId: l.id,
+      dayKey,
+      date,
+      km: l.km,
+      pace: l.pace,
+      bpm: l.bpm,
+      note: l.note,
+      schuhId: l.schuh_id,
+      runningIndex: l.running_index,
+      cadence: l.cadence,
+      uhrzeit: l.uhrzeit,
+      hfMax: l.hf_max,
+      hoehenmeter: l.hoehenmeter,
+      gefuehl: l.gefuehl,
+      trainingLoad: l.training_load,
+      recoveryTime: l.recovery_time,
+      polarExerciseId: l.polar_exercise_id,
+      routeMapUrl: l.route_map_url,
+      kalorien: l.kalorien,
+      sportType: l.sport_type || 'running',
+      activityName: l.activity_name || null,
+      durationSeconds: l.duration_seconds,
+      movingTimeSeconds: l.moving_time_seconds,
+      distanceMeters: l.distance_meters,
+      averageSpeedKmh: l.average_speed_kmh,
+      maxSpeedKmh: l.max_speed_kmh,
+      elevationGain: l.elevation_gain,
+      elevationLoss: l.elevation_loss,
+      duration: l.duration_seconds
+        ? formatDuration(l.duration_seconds)
+        : null,
+      status: isExtra ? 'extra' : 'assigned',
+      source: l.source || (isPolar ? 'polar' : 'manual'),
+      planInfo: planDay
+        ? {
+            weekN: planDay.weekN,
+            tag: planDay.tag,
+            einheit: planDay.einheit,
+          }
+        : null,
+
+      // Große Detailfelder werden bewusst erst beim Öffnen nachgeladen.
+      routeWaypoints: [],
+      kmSplits: [],
+      runSegments: [],
+      activityContext: null,
+      detailsLoaded: false,
+      detailsLoading: false,
+    }
+  }
 
   const loadAll = async () => {
     setLoading(true)
+
     try {
-      const [{ data: logsData }, { data: pendingData }] = await Promise.all([
-        supabase.from('logs').select('*').eq('user_id', user.id),
-        supabase.from('polar_pending_activities').select('*').eq('user_id', user.id),
-      ])
+      const { data: logsData, error } = await supabase
+        .from('logs')
+        .select(
+          'id,day_key,actual_date,km,pace,bpm,note,schuh_id,running_index,cadence,uhrzeit,hf_max,hoehenmeter,gefuehl,training_load,recovery_time,polar_exercise_id,route_map_url,kalorien,sport_type,activity_name,duration_seconds,moving_time_seconds,distance_meters,average_speed_kmh,max_speed_kmh,elevation_gain,elevation_loss,source'
+        )
+        .eq('user_id', user.id)
+        .order('actual_date', { ascending: false })
 
-      const normalized = []
+      if (error) throw error
 
-      ;(logsData || []).forEach(l => {
-        const isExtra = l.day_key.startsWith('extra_polar_')
-        const planDay = !isExtra ? planDayByKey(l.day_key) : null
-        const isPolar = l.note?.toLowerCase().includes('polar')
-        let date = l.actual_date
-        if (!date) {
-          if (isExtra) {
-            const m = l.day_key.match(/extra_polar_(\d{4}-\d{2}-\d{2})_/)
-            date = m ? m[1] : null
-          } else if (planDay) {
-            date = planDay.dateStr
-          }
-        }
-        normalized.push({
-          id: 'log_' + l.id,
-          logId: l.id,
-          dayKey: l.day_key,
-          date,
-          km: l.km,
-          pace: l.pace,
-          bpm: l.bpm,
-          note: l.note,
-          schuhId: l.schuh_id,
-          runningIndex: l.running_index,
-          cadence: l.cadence,
-          uhrzeit: l.uhrzeit,
-          hfMax: l.hf_max,
-          hoehenmeter: l.hoehenmeter,
-          gefuehl: l.gefuehl,
-          trainingLoad: l.training_load,
-          recoveryTime: l.recovery_time,
-          polarExerciseId: l.polar_exercise_id,
-          routeMapUrl: l.route_map_url,
-          kalorien: l.kalorien,
-          routeWaypoints: parseJsonArray(l.route_waypoints),
-          kmSplits: parseJsonArray(l.km_splits),
-          runSegments: parseJsonArray(l.run_segments),
-          sportType: l.sport_type || 'running',
-          activityName: l.activity_name || null,
-          durationSeconds: l.duration_seconds,
-          movingTimeSeconds: l.moving_time_seconds,
-          distanceMeters: l.distance_meters,
-          averageSpeedKmh: l.average_speed_kmh,
-          maxSpeedKmh: l.max_speed_kmh,
-          elevationGain: l.elevation_gain,
-          elevationLoss: l.elevation_loss,
-          activityContext: l.activity_context || null,
-          duration: l.duration_seconds ? formatDuration(l.duration_seconds) : null,
-          status: isExtra ? 'extra' : 'assigned',
-          source: l.source || (isPolar ? 'polar' : 'manual'),
-          planInfo: planDay ? { weekN: planDay.weekN, tag: planDay.tag, einheit: planDay.einheit } : null,
-        })
-      })
-
-      // Offene Polar-Aktivitäten werden hier bewusst nicht ergänzt.
-      // Sie bleiben im Profil unter „Geräte“ sichtbar, bis der Nutzer sie
-      // dort ausdrücklich übernimmt. Erst danach stehen sie in `logs`
-      // und erscheinen in der Aktivitätenübersicht.
-
-      normalized.sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+      const normalized = (logsData || []).map(normalizeLogSummary)
+      normalized.sort((a, b) =>
+        (b.date || '').localeCompare(a.date || '')
+      )
       setRuns(normalized)
     } catch (e) {
       console.error('Läufe laden fehlgeschlagen:', e)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
+  }
+
+  const openActivityDetails = async run => {
+    if (!run?.logId) {
+      setDetailRun(run)
+      return
+    }
+
+    if (run.detailsLoaded) {
+      setDetailRun(run)
+      return
+    }
+
+    const loadingRun = {
+      ...run,
+      detailsLoading: true,
+    }
+    setDetailRun(loadingRun)
+
+    try {
+      const { data, error } = await supabase
+        .from('logs')
+        .select('route_waypoints,km_splits,run_segments,activity_context')
+        .eq('id', run.logId)
+        .eq('user_id', user.id)
+        .single()
+
+      if (error) throw error
+
+      const completedRun = {
+        ...run,
+        routeWaypoints: parseJsonArray(data?.route_waypoints),
+        kmSplits: parseJsonArray(data?.km_splits),
+        runSegments: parseJsonArray(data?.run_segments),
+        activityContext: data?.activity_context || null,
+        detailsLoaded: true,
+        detailsLoading: false,
+      }
+
+      // Detaildaten im lokalen Bestand cachen, damit ein erneutes Öffnen
+      // derselben Aktivität keine weitere Datenbankabfrage benötigt.
+      setRuns(current =>
+        current.map(item =>
+          item.logId === run.logId ? completedRun : item
+        )
+      )
+      setDetailRun(current =>
+        current?.logId === run.logId ? completedRun : current
+      )
+    } catch (error) {
+      console.error('Aktivitätsdetails konnten nicht geladen werden:', error)
+      setDetailRun(current =>
+        current?.logId === run.logId
+          ? { ...current, detailsLoading: false, detailsLoadError: true }
+          : current
+      )
+    }
   }
 
   const getCandidates = (run) => {
@@ -436,14 +516,41 @@ export default function Laeufe({ user, plan }) {
   const reassignRun = async (run, chosenKey) => {
     setSaving(true)
     setMessage(null)
+
     try {
+      // Die Listenansicht lädt große Detailfelder absichtlich nicht.
+      // Falls eine Aktivität neu zugeordnet wird, holen wir diese Felder
+      // nur für genau diese eine Aktivität nach, damit beim Verschieben
+      // keine Route/Splits/Segmente verloren gehen.
+      let runToSave = run
+
+      if (run.status !== 'pending' && !run.detailsLoaded && run.logId) {
+        const { data: detailData, error: detailError } = await supabase
+          .from('logs')
+          .select('route_waypoints,km_splits,run_segments,activity_context')
+          .eq('id', run.logId)
+          .eq('user_id', user.id)
+          .single()
+
+        if (detailError) throw detailError
+
+        runToSave = {
+          ...run,
+          routeWaypoints: parseJsonArray(detailData?.route_waypoints),
+          kmSplits: parseJsonArray(detailData?.km_splits),
+          runSegments: parseJsonArray(detailData?.run_segments),
+          activityContext: detailData?.activity_context || null,
+          detailsLoaded: true,
+        }
+      }
+
 if (run.status === 'pending') {
   const { error: ignoreError } = await supabase
     .from('polar_ignored_activities')
     .upsert(
       {
         user_id: user.id,
-        polar_exercise_id: run.polarExerciseId,
+        polar_exercise_id: runToSave.polarExerciseId,
       },
       {
         onConflict: 'user_id,polar_exercise_id',
@@ -487,53 +594,77 @@ if (run.status === 'pending') {
 }
 
       if (chosenKey === 'extra') {
-        const extraKey = `extra_polar_${run.date}_${crypto.randomUUID().slice(0, 8)}`
+        const extraKey = `extra_polar_${runToSave.date}_${crypto.randomUUID().slice(0, 8)}`
         await supabase.from('logs').upsert({
           user_id: user.id,
           day_key: extraKey,
-          pace: run.pace,
-          km: run.km,
-          bpm: run.bpm,
-          note: run.note || 'Extra-Lauf',
-          schuh_id: run.schuhId,
-          actual_date: run.date,
-          running_index: run.runningIndex,
-          cadence: run.cadence,
-          uhrzeit: run.uhrzeit,
-          hf_max: run.hfMax,
-          hoehenmeter: run.hoehenmeter,
-          gefuehl: run.gefuehl,
-          training_load: run.trainingLoad,
-          recovery_time: run.recoveryTime,
-          polar_exercise_id: run.polarExerciseId,
-          kalorien: run.kalorien,
-          route_waypoints: run.routeWaypoints,
-          km_splits: run.kmSplits,
-          run_segments: run.runSegments,
+          pace: runToSave.pace,
+          km: runToSave.km,
+          bpm: runToSave.bpm,
+          note: runToSave.note || 'Extra-Lauf',
+          schuh_id: runToSave.schuhId,
+          actual_date: runToSave.date,
+          running_index: runToSave.runningIndex,
+          cadence: runToSave.cadence,
+          uhrzeit: runToSave.uhrzeit,
+          hf_max: runToSave.hfMax,
+          hoehenmeter: runToSave.hoehenmeter,
+          gefuehl: runToSave.gefuehl,
+          training_load: runToSave.trainingLoad,
+          recovery_time: runToSave.recoveryTime,
+          polar_exercise_id: runToSave.polarExerciseId,
+          kalorien: runToSave.kalorien,
+          route_waypoints: runToSave.routeWaypoints,
+          km_splits: runToSave.kmSplits,
+          run_segments: runToSave.runSegments,
+          activity_context: runToSave.activityContext || null,
+          sport_type: runToSave.sportType || 'running',
+          activity_name: runToSave.activityName || null,
+          duration_seconds: runToSave.durationSeconds,
+          moving_time_seconds: runToSave.movingTimeSeconds,
+          distance_meters: runToSave.distanceMeters,
+          average_speed_kmh: runToSave.averageSpeedKmh,
+          max_speed_kmh: runToSave.maxSpeedKmh,
+          elevation_gain: runToSave.elevationGain,
+          elevation_loss: runToSave.elevationLoss,
+          route_map_url: runToSave.routeMapUrl,
+          source: runToSave.source,
         }, { onConflict: 'user_id,day_key' })
       } else {
         await supabase.from('logs').upsert({
           user_id: user.id,
           day_key: chosenKey,
-          pace: run.pace,
-          km: run.km,
-          bpm: run.bpm,
-          note: run.note || 'Neu zugeordnet',
-          schuh_id: run.schuhId,
-          actual_date: run.date,
-          running_index: run.runningIndex,
-          cadence: run.cadence,
-          uhrzeit: run.uhrzeit,
-          hf_max: run.hfMax,
-          hoehenmeter: run.hoehenmeter,
-          gefuehl: run.gefuehl,
-          training_load: run.trainingLoad,
-          recovery_time: run.recoveryTime,
-          polar_exercise_id: run.polarExerciseId,
-          kalorien: run.kalorien,
-          route_waypoints: run.routeWaypoints,
-          km_splits: run.kmSplits,
-          run_segments: run.runSegments,
+          pace: runToSave.pace,
+          km: runToSave.km,
+          bpm: runToSave.bpm,
+          note: runToSave.note || 'Neu zugeordnet',
+          schuh_id: runToSave.schuhId,
+          actual_date: runToSave.date,
+          running_index: runToSave.runningIndex,
+          cadence: runToSave.cadence,
+          uhrzeit: runToSave.uhrzeit,
+          hf_max: runToSave.hfMax,
+          hoehenmeter: runToSave.hoehenmeter,
+          gefuehl: runToSave.gefuehl,
+          training_load: runToSave.trainingLoad,
+          recovery_time: runToSave.recoveryTime,
+          polar_exercise_id: runToSave.polarExerciseId,
+          kalorien: runToSave.kalorien,
+          route_waypoints: runToSave.routeWaypoints,
+          km_splits: runToSave.kmSplits,
+          run_segments: runToSave.runSegments,
+          activity_context: runToSave.activityContext || null,
+          sport_type: runToSave.sportType || 'running',
+          activity_name: runToSave.activityName || null,
+          duration_seconds: runToSave.durationSeconds,
+          moving_time_seconds: runToSave.movingTimeSeconds,
+          distance_meters: runToSave.distanceMeters,
+          average_speed_kmh: runToSave.averageSpeedKmh,
+          max_speed_kmh: runToSave.maxSpeedKmh,
+          elevation_gain: runToSave.elevationGain,
+          elevation_loss: runToSave.elevationLoss,
+          route_map_url: runToSave.routeMapUrl,
+          source: runToSave.source,
         }, { onConflict: 'user_id,day_key' })
         await supabase.from('training_done').upsert({ user_id: user.id, day_key: chosenKey, done: true }, { onConflict: 'user_id,day_key' })
       }
@@ -720,7 +851,7 @@ if (run.status === 'pending') {
 
     return (
       <div
-        onClick={() => setDetailRun(run)}
+        onClick={() => openActivityDetails(run)}
         style={{
           background: 'white',
           borderRadius: 14,
@@ -1032,6 +1163,40 @@ if (run.status === 'pending') {
                 </div>
               )}
 
+              {d.detailsLoading && (
+                <div
+                  style={{
+                    marginBottom: 16,
+                    padding: '12px 14px',
+                    borderRadius: 12,
+                    background: '#FFF8F3',
+                    color: '#B08E7B',
+                    fontSize: 11,
+                    fontFamily: 'sans-serif',
+                    textAlign: 'center',
+                  }}
+                >
+                  Details werden geladen…
+                </div>
+              )}
+
+              {d.detailsLoadError && (
+                <div
+                  style={{
+                    marginBottom: 16,
+                    padding: '12px 14px',
+                    borderRadius: 12,
+                    background: '#FFF4F1',
+                    color: '#B56F61',
+                    fontSize: 11,
+                    fontFamily: 'sans-serif',
+                    textAlign: 'center',
+                  }}
+                >
+                  Detaildaten konnten nicht geladen werden.
+                </div>
+              )}
+
               {running ? (
                 <>
                   <MetricDashboard
@@ -1047,47 +1212,59 @@ if (run.status === 'pending') {
                     shoe={shoeName}
                   />
 
-                  <ElevationPerformanceChart
-                    routeWaypoints={d.routeWaypoints}
-                    splits={d.kmSplits}
-                    sportType={d.sportType}
-                    elevationGain={d.elevationGain ?? d.hoehenmeter}
-                    elevationLoss={d.elevationLoss}
-                    defaultOpen={false}
-                  />
+                  {d.detailsLoaded && (
+                    <>
+                      <ElevationPerformanceChart
+                        routeWaypoints={d.routeWaypoints}
+                        splits={d.kmSplits}
+                        sportType={d.sportType}
+                        elevationGain={d.elevationGain ?? d.hoehenmeter}
+                        elevationLoss={d.elevationLoss}
+                        defaultOpen={false}
+                      />
 
-                  <PhaseTimeline phases={d.runSegments} />
+                      <PhaseTimeline phases={d.runSegments} />
 
-                  <PhaseCards phases={d.runSegments} />
+                      <PhaseCards phases={d.runSegments} />
 
-                  <SplitAccordion
-                    splits={d.kmSplits}
-                    defaultOpen={!Array.isArray(d.runSegments) || d.runSegments.length === 0}
-                  />
+                      <SplitAccordion
+                        splits={d.kmSplits}
+                        defaultOpen={
+                          !Array.isArray(d.runSegments) ||
+                          d.runSegments.length === 0
+                        }
+                      />
+                    </>
+                  )}
                 </>
               ) : (
                 <>
                   <MultisportDashboard activity={d} />
 
-                  <ElevationPerformanceChart
-                    routeWaypoints={d.routeWaypoints}
-                    splits={d.kmSplits}
-                    sportType={d.sportType}
-                    elevationGain={d.elevationGain ?? d.hoehenmeter}
-                    elevationLoss={d.elevationLoss}
-                    defaultOpen={
-                      d.sportType === 'mountain_biking' ||
-                      d.sportType === 'hiking' ||
-                      d.sportType === 'walking' ||
-                      d.sportType === 'cycling'
-                    }
-                  />
+                  {d.detailsLoaded && (
+                    <>
+                      <ElevationPerformanceChart
+                        routeWaypoints={d.routeWaypoints}
+                        splits={d.kmSplits}
+                        sportType={d.sportType}
+                        elevationGain={d.elevationGain ?? d.hoehenmeter}
+                        elevationLoss={d.elevationLoss}
+                        defaultOpen={
+                          d.sportType === 'mountain_biking' ||
+                          d.sportType === 'hiking' ||
+                          d.sportType === 'walking' ||
+                          d.sportType === 'cycling'
+                        }
+                      />
 
-                  {Array.isArray(d.kmSplits) && d.kmSplits.length > 0 && (
-                    <SplitAccordion
-                      splits={d.kmSplits}
-                      defaultOpen={false}
-                    />
+                      {Array.isArray(d.kmSplits) &&
+                        d.kmSplits.length > 0 && (
+                          <SplitAccordion
+                            splits={d.kmSplits}
+                            defaultOpen={false}
+                          />
+                        )}
+                    </>
                   )}
                 </>
               )}
@@ -1099,6 +1276,7 @@ if (run.status === 'pending') {
               )}
 
 
+{d.detailsLoaded && (
 <ActivityContextEditor
   user={user}
   logId={d.logId}
@@ -1125,6 +1303,7 @@ if (run.status === 'pending') {
     )
   }}
 />
+)}
 
 
 

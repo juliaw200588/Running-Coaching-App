@@ -196,51 +196,116 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
   const [feedbackModal, setFeedbackModal] = useState(null)
   const [feedbackSaving, setFeedbackSaving] = useState(false)
 
-  const load = async () => {
+  const loadAchievements = async () => {
+    if (!user?.id) return
+
+    try {
+      const result = await loadAndEvaluateAchievements({
+        supabase,
+        userId: user.id,
+      })
+      const unlocked = [...(result?.unlocked || [])]
+        .filter(item => item?.unlocked)
+        .sort(
+          (a, b) =>
+            new Date(b.unlockedAt || 0) - new Date(a.unlockedAt || 0)
+        )
+      setAchievement(unlocked[0] || null)
+    } catch (error) {
+      console.warn('[Dashboard] Erfolge konnten nicht geladen werden:', error)
+    }
+  }
+
+  const load = async ({
+    showLoader = false,
+    refreshAchievements = false,
+  } = {}) => {
     if (!user?.id) {
       setLoading(false)
       return
     }
 
-    setLoading(true)
+    if (showLoader) setLoading(true)
 
     try {
       const [profileRes, logsRes, skippedRes, analysisRes] = await Promise.all([
-        supabase.from('profiles').select('*').eq('id', user.id).single(),
-        supabase.from('logs').select('*').eq('user_id', user.id).order('actual_date', { ascending: false }),
-        supabase.from('skipped_days').select('day_key, reason').eq('user_id', user.id),
-        supabase.from('week_analyses').select('*').eq('user_id', user.id).order('week_start', { ascending: false }).limit(6),
+        supabase
+          .from('profiles')
+          .select('name')
+          .eq('id', user.id)
+          .single(),
+        supabase
+          .from('logs')
+          .select(
+            'id,day_key,actual_date,km,pace,bpm,note,running_index,sport_type,duration_seconds,moving_time_seconds,polar_exercise_id,gefuehl'
+          )
+          .eq('user_id', user.id)
+          .order('actual_date', { ascending: false }),
+        supabase
+          .from('skipped_days')
+          .select('day_key, reason')
+          .eq('user_id', user.id),
+        supabase
+          .from('week_analyses')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('week_start', { ascending: false })
+          .limit(6),
       ])
+
+      if (profileRes.error) throw profileRes.error
+      if (logsRes.error) throw logsRes.error
+      if (skippedRes.error) throw skippedRes.error
+      if (analysisRes.error) throw analysisRes.error
 
       setProfile(profileRes.data || null)
       setLogs(logsRes.data || [])
       setSkipped(skippedRes.data || [])
       setAnalyses(analysisRes.data || [])
 
-      try {
-        const result = await loadAndEvaluateAchievements({ supabase, userId: user.id })
-        const unlocked = [...(result?.unlocked || [])]
-          .filter(item => item?.unlocked)
-          .sort((a,b) => new Date(b.unlockedAt || 0) - new Date(a.unlockedAt || 0))
-        setAchievement(unlocked[0] || null)
-      } catch (error) {
-        console.warn('[Dashboard] Erfolge konnten nicht geladen werden:', error)
-        setAchievement(null)
+      // Die Erfolgsprüfung ist für die sichtbaren Dashboard-Daten nicht nötig.
+      // Sie läuft deshalb nachgelagert und blockiert den Seitenaufbau nicht.
+      if (refreshAchievements) {
+        void loadAchievements()
       }
     } catch (error) {
-      console.error('[Dashboard] Dashboard-Daten konnten nicht geladen werden:', error)
+      console.error(
+        '[Dashboard] Dashboard-Daten konnten nicht geladen werden:',
+        error
+      )
     } finally {
-      setLoading(false)
+      if (showLoader) setLoading(false)
     }
   }
 
   useEffect(() => {
-    load()
+    load({ showLoader: true, refreshAchievements: true })
     if (!user?.id) return undefined
-    const channel = supabase.channel(`dashboard_${user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'logs', filter: `user_id=eq.${user.id}` }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'week_analyses', filter: `user_id=eq.${user.id}` }, load)
+
+    const channel = supabase
+      .channel(`dashboard_${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'logs',
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => load({ showLoader: false, refreshAchievements: true })
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'week_analyses',
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => load({ showLoader: false, refreshAchievements: false })
+      )
       .subscribe()
+
     return () => supabase.removeChannel(channel)
   }, [user?.id, plan])
 
