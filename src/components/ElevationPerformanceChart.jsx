@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 const numberOrNull = value => {
   const number = Number(value)
@@ -182,6 +183,8 @@ export default function ElevationPerformanceChart({
 }) {
   const [detailsOpen, setDetailsOpen] = useState(defaultOpen)
   const [activeSplitIndex, setActiveSplitIndex] = useState(null)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [activeProfileIndex, setActiveProfileIndex] = useState(null)
 
   const profile = useMemo(
     () => downsample(buildProfile(routeWaypoints)),
@@ -278,6 +281,43 @@ export default function ElevationPerformanceChart({
           ratio => minAltitude + (maxAltitude - minAltitude) * ratio
         )
       : []
+
+  const activeProfilePoint =
+    activeProfileIndex == null ? null : profile[activeProfileIndex] || null
+
+  const activeProfilePosition = activeProfilePoint
+    ? getProfilePointPosition(activeProfilePoint)
+    : null
+
+  const updateActiveProfilePoint = event => {
+    if (!profile.length) return
+
+    const rect = event.currentTarget.getBoundingClientRect()
+    if (!rect.width) return
+
+    const plotLeft = rect.left + (padding.left / chartWidth) * rect.width
+    const plotRight =
+      rect.left + ((chartWidth - padding.right) / chartWidth) * rect.width
+    const clientX = event.clientX
+    const ratio = Math.max(
+      0,
+      Math.min(1, (clientX - plotLeft) / Math.max(1, plotRight - plotLeft))
+    )
+    const targetDistance = ratio * distanceRange
+
+    let nearestIndex = 0
+    let nearestDifference = Infinity
+
+    profile.forEach((point, index) => {
+      const difference = Math.abs(point.distance - targetDistance)
+      if (difference < nearestDifference) {
+        nearestDifference = difference
+        nearestIndex = index
+      }
+    })
+
+    setActiveProfileIndex(nearestIndex)
+  }
 
   const effortValues = splitMetrics.map(split => split.effortValue)
   const minEffort = effortValues.length ? Math.min(...effortValues) : 0
@@ -462,13 +502,50 @@ export default function ElevationPerformanceChart({
       )}
 
       {profile.length >= 2 && (
-        <div style={{ overflowX: 'hidden' }}>
-          <svg
-            viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-            style={{ width: '100%', display: 'block' }}
-            role="img"
-            aria-label="Höhenprofil der Aktivität"
-          >
+        <button
+          type="button"
+          onClick={() => {
+            setActiveProfileIndex(null)
+            setProfileOpen(true)
+          }}
+          aria-label="Höhenprofil vergrößern"
+          style={{
+            width: '100%',
+            display: 'block',
+            border: 'none',
+            background: 'transparent',
+            padding: 0,
+            margin: 0,
+            cursor: 'zoom-in',
+            textAlign: 'left',
+          }}
+        >
+          <div style={{ overflowX: 'hidden', position: 'relative' }}>
+            <div
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                top: 4,
+                right: 4,
+                zIndex: 1,
+                padding: '5px 7px',
+                borderRadius: 9,
+                background: 'rgba(255,255,255,0.90)',
+                border: '1px solid #EFE5DE',
+                color: '#8B6B5A',
+                fontSize: 9,
+                fontWeight: 'bold',
+                boxShadow: '0 3px 10px rgba(92,61,46,0.06)',
+              }}
+            >
+              ⛶ Vergrößern
+            </div>
+            <svg
+              viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+              style={{ width: '100%', display: 'block' }}
+              role="img"
+              aria-label="Höhenprofil der Aktivität"
+            >
             <defs>
               <linearGradient id="elevationFill" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#6DBB8B" stopOpacity="0.35" />
@@ -616,8 +693,9 @@ export default function ElevationPerformanceChart({
                 </g>
               )
             })}
-          </svg>
-        </div>
+            </svg>
+          </div>
+        </button>
       )}
 
       {detailsOpen && splitMetrics.length >= 2 && (
@@ -869,6 +947,366 @@ export default function ElevationPerformanceChart({
           Die Abschnittsanalyse verwendet die Höhenmeter der Splits.
         </div>
       )}
+
+      {profileOpen &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Höhenprofil vergrößert"
+            onClick={() => setProfileOpen(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 10000,
+              background: 'rgba(48,35,28,0.48)',
+              backdropFilter: 'blur(4px)',
+              WebkitBackdropFilter: 'blur(4px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 'max(14px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom))',
+              boxSizing: 'border-box',
+            }}
+          >
+            <div
+              onClick={event => event.stopPropagation()}
+              style={{
+                width: 'min(980px, 100%)',
+                maxHeight: '92vh',
+                overflowY: 'auto',
+                background: '#FFFCFA',
+                borderRadius: 22,
+                border: '1px solid #EEDFD5',
+                boxShadow: '0 24px 70px rgba(61,43,31,0.24)',
+                padding: '18px 16px 16px',
+                boxSizing: 'border-box',
+                fontFamily: 'sans-serif',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                  gap: 12,
+                  marginBottom: 14,
+                }}
+              >
+                <div>
+                  <div
+                    style={{
+                      fontSize: 19,
+                      lineHeight: 1.15,
+                      fontWeight: 850,
+                      color: '#3D2B1F',
+                    }}
+                  >
+                    Höhenprofil
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: '#9D8273',
+                      marginTop: 5,
+                    }}
+                  >
+                    Fahre mit dem Finger oder der Maus über das Profil.
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setProfileOpen(false)}
+                  aria-label="Höhenprofil schließen"
+                  style={{
+                    width: 38,
+                    height: 38,
+                    flexShrink: 0,
+                    borderRadius: 12,
+                    border: '1px solid #EADDD5',
+                    background: '#FFFFFF',
+                    color: '#6E5547',
+                    cursor: 'pointer',
+                    fontSize: 20,
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                  gap: 8,
+                  marginBottom: 14,
+                }}
+              >
+                {elevationGain != null && (
+                  <div
+                    style={{
+                      padding: '10px 11px',
+                      borderRadius: 13,
+                      background: '#F0FAF4',
+                      border: '1px solid #D8EFE1',
+                    }}
+                  >
+                    <div style={{ fontSize: 9, color: '#729985', fontWeight: 800 }}>
+                      AUFSTIEG
+                    </div>
+                    <div style={{ fontSize: 17, color: '#3D8B6E', fontWeight: 850, marginTop: 3 }}>
+                      ↗️ {Math.round(Number(elevationGain))} hm
+                    </div>
+                  </div>
+                )}
+
+                {elevationLoss != null && (
+                  <div
+                    style={{
+                      padding: '10px 11px',
+                      borderRadius: 13,
+                      background: '#EEF7FC',
+                      border: '1px solid #D8EAF4',
+                    }}
+                  >
+                    <div style={{ fontSize: 9, color: '#7C9EB7', fontWeight: 800 }}>
+                      ABSTIEG
+                    </div>
+                    <div style={{ fontSize: 17, color: '#497EAA', fontWeight: 850, marginTop: 3 }}>
+                      ↘️ {Math.round(Number(elevationLoss))} hm
+                    </div>
+                  </div>
+                )}
+
+                {maxAltitude !== null && (
+                  <div
+                    style={{
+                      padding: '10px 11px',
+                      borderRadius: 13,
+                      background: '#FFF6E8',
+                      border: '1px solid #F4E2C4',
+                    }}
+                  >
+                    <div style={{ fontSize: 9, color: '#AF8B55', fontWeight: 800 }}>
+                      HÖCHSTER PUNKT
+                    </div>
+                    <div style={{ fontSize: 17, color: '#A07830', fontWeight: 850, marginTop: 3 }}>
+                      🔺 {Math.round(maxAltitude)} m
+                    </div>
+                  </div>
+                )}
+
+                {minAltitude !== null && (
+                  <div
+                    style={{
+                      padding: '10px 11px',
+                      borderRadius: 13,
+                      background: '#F7F2FF',
+                      border: '1px solid #E8DDF8',
+                    }}
+                  >
+                    <div style={{ fontSize: 9, color: '#9B88BD', fontWeight: 800 }}>
+                      TIEFSTER PUNKT
+                    </div>
+                    <div style={{ fontSize: 17, color: '#7A63A6', fontWeight: 850, marginTop: 3 }}>
+                      🔻 {Math.round(minAltitude)} m
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div
+                style={{
+                  minHeight: 50,
+                  borderRadius: 14,
+                  background: activeProfilePoint ? '#FFF6EE' : '#F7F3F0',
+                  border: activeProfilePoint
+                    ? '1px solid #F4CFB8'
+                    : '1px solid #ECE2DC',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 16,
+                  padding: '9px 12px',
+                  boxSizing: 'border-box',
+                  marginBottom: 8,
+                  color: '#6E5547',
+                }}
+              >
+                {activeProfilePoint ? (
+                  <>
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 9, color: '#A38A7C', fontWeight: 800 }}>
+                        POSITION
+                      </div>
+                      <div style={{ fontSize: 17, fontWeight: 850, color: '#3D2B1F', marginTop: 2 }}>
+                        {activeProfilePoint.distance.toLocaleString('de-DE', {
+                          maximumFractionDigits: 1,
+                        })} km
+                      </div>
+                    </div>
+                    <div style={{ width: 1, alignSelf: 'stretch', background: '#EADDD4' }} />
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 9, color: '#A38A7C', fontWeight: 800 }}>
+                        HÖHE
+                      </div>
+                      <div style={{ fontSize: 17, fontWeight: 850, color: '#3D8B6E', marginTop: 2 }}>
+                        {Math.round(activeProfilePoint.altitude)} m
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 11, color: '#9D8273', textAlign: 'center' }}>
+                    Profil berühren, um Kilometer und Höhe anzuzeigen.
+                  </div>
+                )}
+              </div>
+
+              <div
+                style={{
+                  fontSize: 9,
+                  color: '#B09A8D',
+                  margin: '0 0 4px 2px',
+                }}
+              >
+                Maßstab {Math.round(minAltitude)}–{Math.round(maxAltitude)} m
+              </div>
+
+              <div
+                style={{
+                  width: '100%',
+                  overflow: 'hidden',
+                  borderRadius: 14,
+                  background: '#FFFFFF',
+                  border: '1px solid #F0E8E0',
+                }}
+              >
+                <svg
+                  viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+                  onPointerDown={updateActiveProfilePoint}
+                  onPointerMove={event => {
+                    if (event.pointerType === 'mouse' || event.buttons > 0) {
+                      updateActiveProfilePoint(event)
+                    }
+                  }}
+                  onMouseMove={updateActiveProfilePoint}
+                  style={{
+                    width: '100%',
+                    minHeight: '260px',
+                    display: 'block',
+                    touchAction: 'none',
+                    userSelect: 'none',
+                    WebkitUserSelect: 'none',
+                    cursor: 'crosshair',
+                  }}
+                  role="img"
+                  aria-label="Interaktives Höhenprofil der Aktivität"
+                >
+                  <defs>
+                    <linearGradient id="elevationFillLarge" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#6DBB8B" stopOpacity="0.38" />
+                      <stop offset="100%" stopColor="#6DBB8B" stopOpacity="0.04" />
+                    </linearGradient>
+                  </defs>
+
+                  {gridValues.map(value => {
+                    const y =
+                      padding.top +
+                      innerHeight -
+                      ((value - minAltitude) / altitudeRange) * innerHeight
+
+                    return (
+                      <g key={`large-${value}`}>
+                        <line
+                          x1={padding.left}
+                          x2={chartWidth - padding.right}
+                          y1={y}
+                          y2={y}
+                          stroke="#EFE8E2"
+                          strokeWidth="1"
+                        />
+                        <text
+                          x={padding.left - 7}
+                          y={y + 3}
+                          textAnchor="end"
+                          fontSize="9"
+                          fill="#A99183"
+                        >
+                          {Math.round(value)} m
+                        </text>
+                      </g>
+                    )
+                  })}
+
+                  <path d={areaPath} fill="url(#elevationFillLarge)" />
+                  <path
+                    d={linePath}
+                    fill="none"
+                    stroke="#58A978"
+                    strokeWidth="3"
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />
+
+                  {activeProfilePosition && activeProfilePoint && (
+                    <g pointerEvents="none">
+                      <line
+                        x1={activeProfilePosition.x}
+                        x2={activeProfilePosition.x}
+                        y1={padding.top}
+                        y2={padding.top + innerHeight}
+                        stroke="#C96F52"
+                        strokeWidth="1.5"
+                        strokeDasharray="4 3"
+                      />
+                      <circle
+                        cx={activeProfilePosition.x}
+                        cy={activeProfilePosition.y}
+                        r="5"
+                        fill="#C96F52"
+                        stroke="#FFFFFF"
+                        strokeWidth="2.5"
+                      />
+                    </g>
+                  )}
+
+                  {[0, 0.25, 0.5, 0.75, 1].map(ratio => {
+                    const x = padding.left + ratio * innerWidth
+                    const distance = distanceRange * ratio
+
+                    return (
+                      <g key={`large-distance-${ratio}`}>
+                        <line
+                          x1={x}
+                          x2={x}
+                          y1={padding.top + innerHeight}
+                          y2={padding.top + innerHeight + 4}
+                          stroke="#DCCFC5"
+                        />
+                        <text
+                          x={x}
+                          y={chartHeight - 8}
+                          textAnchor="middle"
+                          fontSize="9"
+                          fill="#A99183"
+                        >
+                          {distance.toLocaleString('de-DE', {
+                            maximumFractionDigits: 1,
+                          })}{' '}
+                          km
+                        </text>
+                      </g>
+                    )
+                  })}
+                </svg>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   )
 }
