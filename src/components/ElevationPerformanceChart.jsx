@@ -1185,7 +1185,7 @@ export default function ElevationPerformanceChart({
                 }}
               >
                 <svg
-                  viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+                  viewBox={`0 0 ${chartWidth} ${largeChartHeight}`}
                   onPointerDown={updateActiveProfilePoint}
                   onPointerMove={event => {
                     if (event.pointerType === 'mouse' || event.buttons > 0) {
