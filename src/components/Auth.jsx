@@ -1,12 +1,18 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 
-export default function Auth() {
-  const [mode, setMode] = useState('login') // 'login' | 'register'
+export default function Auth({ initialMode = 'login', onBack }) {
+  const [mode, setMode] = useState(initialMode) // 'login' | 'register'
   const [form, setForm] = useState({ email: '', password: '', name: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
+
+  useEffect(() => {
+    setMode(initialMode)
+    setError(null)
+    setSuccess(null)
+  }, [initialMode])
 
   const handleLogin = async () => {
     setLoading(true)
@@ -69,7 +75,16 @@ export default function Auth() {
   }
 
   return (
-    <div style={{ fontFamily: "'Georgia', 'Times New Roman', serif", background: 'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 50%, #FFF0F5 100%)', minHeight: '100vh' }}>
+    <div style={{ fontFamily: "'Georgia', 'Times New Roman', serif", background: 'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 50%, #FFF0F5 100%)', minHeight: '100vh', position:'relative' }}>
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          style={{ position:'absolute', top:16, left:16, zIndex:20, border:'1px solid rgba(255,255,255,.5)', background:'rgba(255,255,255,.18)', backdropFilter:'blur(8px)', color:'#fff', borderRadius:999, padding:'9px 13px', fontSize:12, fontWeight:800, cursor:'pointer', fontFamily:'sans-serif' }}
+        >
+          ← Zur Startseite
+        </button>
+      )}
 
       {/* Header */}
       <div style={{ background: 'linear-gradient(135deg, #FF8C69 0%, #FFB347 50%, #FF6B9D 100%)', padding: '56px 24px 48px', borderRadius: '0 0 40px 40px', boxShadow: '0 8px 32px rgba(255,140,105,0.3)', position: 'relative', overflow: 'hidden', textAlign: 'center' }}>

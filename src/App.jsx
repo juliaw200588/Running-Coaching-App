@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase.js'
 import Auth from './components/Auth.jsx'
+import LandingPage from './components/LandingPage.jsx'
 import Onboarding from './components/Onboarding.jsx'
 import TrainingPlan from './components/TrainingPlan.jsx'
 import Profile from './components/Profile.jsx'
@@ -53,6 +54,7 @@ function App() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [loadingAuth, setLoadingAuth] = useState(true)
   const [openWeekAnalysisWeek, setOpenWeekAnalysisWeek] = useState(null)
+  const [authEntryMode, setAuthEntryMode] = useState(null)
   const weeklyCheckKeyRef = useRef(null)
 
   useEffect(() => {
@@ -60,8 +62,9 @@ function App() {
       setUser(session?.user ?? null)
       setLoadingAuth(false)
     })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null)
+      if (event === 'SIGNED_OUT') setAuthEntryMode(null)
     })
     return () => subscription.unsubscribe()
   }, [])
@@ -996,7 +999,23 @@ const handleOpenWeekAnalysisFromNotification = (weekNumber) => {
     </div>
   )
 
-  if (!user) return <Auth />
+  if (!user) {
+    if (authEntryMode) {
+      return (
+        <Auth
+          initialMode={authEntryMode}
+          onBack={() => setAuthEntryMode(null)}
+        />
+      )
+    }
+
+    return (
+      <LandingPage
+        onLogin={() => setAuthEntryMode('login')}
+        onRegister={() => setAuthEntryMode('register')}
+      />
+    )
+  }
 
   return (
     <>
