@@ -44,7 +44,19 @@ function AppPhone({ variant = 'dashboard' }) {
   return (
     <div className="lp-phone">
       <div className="lp-phone-notch" />
-      <div className="lp-phone-screen">
+      <div
+        className="lp-phone-screen"
+        style={{
+          minHeight:
+            variant === 'dashboard'
+              ? 500
+              : variant === 'activity'
+                ? 475
+                : variant === 'coach'
+                  ? 455
+                  : 430,
+        }}
+      >
         {dashboard && (
           <>
             <div style={{fontSize:11,fontFamily:'sans-serif',fontWeight:800,color:'#9B8578'}}>Guten Morgen 👋</div>
@@ -128,6 +140,38 @@ function AppPhone({ variant = 'dashboard' }) {
             </div>
           </>
         )}
+
+        {variant === 'adapt' && (
+          <>
+            <div style={{fontSize:9,fontFamily:'sans-serif',fontWeight:900,color:'#80699A',letterSpacing:.7}}>DEINE NÄCHSTE WOCHE</div>
+            <div style={{fontSize:19,fontWeight:850,lineHeight:1.06,marginTop:7}}>Plan sinnvoll angepasst</div>
+
+            <div style={{...miniCard,padding:13,marginTop:14,background:'#F7F2FA',boxShadow:'none'}}>
+              <div style={{fontSize:7,fontWeight:900,color:'#80699A',letterSpacing:.8,fontFamily:'sans-serif'}}>WARUM</div>
+              <div style={{fontSize:11.5,fontWeight:850,lineHeight:1.3,marginTop:6}}>Gute Woche – aber leichte Ermüdungssignale.</div>
+            </div>
+
+            <div style={{display:'grid',gap:8,marginTop:10}}>
+              {[
+                ['Di','Tempodauerlauf','5 km · kontrolliert'],
+                ['Do','Locker','35 min · bewusst leicht'],
+                ['Sa','Langer Lauf','16 km · +1 km'],
+              ].map(([day,title,meta], index) => (
+                <div key={title} style={{...miniCard,padding:'11px 12px',boxShadow:'none',display:'grid',gridTemplateColumns:'32px 1fr',gap:9,alignItems:'center',background:index===1?'#F1F8F3':'#fff'}}>
+                  <div style={{width:30,height:30,borderRadius:11,display:'grid',placeItems:'center',background:index===1?'#DFF1E6':'#FFF1EA',fontSize:8,fontWeight:900,fontFamily:'sans-serif',color:index===1?'#4E8B6B':'#B56D57'}}>{day}</div>
+                  <div>
+                    <div style={{fontSize:10.5,fontWeight:850}}>{title}</div>
+                    <div style={{fontSize:7.5,fontFamily:'sans-serif',color:palette.muted,marginTop:2}}>{meta}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{marginTop:11,padding:'11px 12px',borderRadius:15,background:'#FFF7F1',border:'1px solid #F0DCCF',fontFamily:'sans-serif',fontSize:8.5,lineHeight:1.45,color:'#966E5C'}}>
+              ✓ Belastung gesteuert · ✓ Erholung berücksichtigt
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
@@ -135,6 +179,54 @@ function AppPhone({ variant = 'dashboard' }) {
 
 function LandingPage({ onLogin, onRegister }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [planSlide, setPlanSlide] = useState(0)
+  const [slideTouchStart, setSlideTouchStart] = useState(null)
+
+  const planSlides = [
+    {
+      step: '01 · PLANEN',
+      variant: 'dashboard',
+      title: 'Wissen, was ansteht.',
+      text: 'Dein Training fügt sich in deine Woche und dein Ziel ein.',
+    },
+    {
+      step: '02 · TRAINIEREN',
+      variant: 'activity',
+      title: 'Aus Plan wird Training.',
+      text: 'Synchronisierte oder eingetragene Aktivitäten verbinden sich mit deiner Trainingswoche.',
+    },
+    {
+      step: '03 · VERSTEHEN',
+      variant: 'coach',
+      title: 'Verstehen, bevor es weitergeht.',
+      text: 'Am Ende der Woche siehst du, was gut lief und worauf es als Nächstes ankommt.',
+    },
+    {
+      step: '04 · ANPASSEN',
+      variant: 'adapt',
+      title: 'Dein Plan entwickelt sich mit dir.',
+      text: 'Wenn es sinnvoll ist, wird die nächste Woche passend zu deiner Entwicklung angepasst.',
+    },
+  ]
+
+  const changePlanSlide = direction => {
+    setPlanSlide(current => {
+      const next = current + direction
+      if (next < 0) return planSlides.length - 1
+      if (next >= planSlides.length) return 0
+      return next
+    })
+  }
+
+  const handleSlideTouchEnd = event => {
+    if (slideTouchStart == null) return
+    const end = event.changedTouches?.[0]?.clientX
+    if (typeof end === 'number') {
+      const diff = slideTouchStart - end
+      if (Math.abs(diff) > 45) changePlanSlide(diff > 0 ? 1 : -1)
+    }
+    setSlideTouchStart(null)
+  }
 
   useEffect(() => {
     const onKey = event => {
@@ -199,16 +291,64 @@ function LandingPage({ onLogin, onRegister }) {
         .lp-loop { background:linear-gradient(180deg,#FFF7F1 0%,#FFFBF8 100%); border-top:1px solid #F4E6DE; border-bottom:1px solid #F4E6DE; }
         .lp-flow { display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:8px; margin-top:22px; font-family:sans-serif; font-size:10px; font-weight:950; letter-spacing:.8px; color:#A3705C; }
         .lp-flow span { background:#fff; border:1px solid #EFDACF; border-radius:999px; padding:8px 11px; }
-        .lp-phones-row { max-width:1050px; margin:55px auto 0; padding:0 22px; display:grid; grid-template-columns:repeat(3,1fr); gap:22px; align-items:end; }
-        .lp-phone-card { text-align:center; }
-        .lp-phone-card:nth-child(2) { transform:translateY(-18px); }
-        .lp-step { font-family:sans-serif; color:#C8684D; font-weight:950; font-size:9px; letter-spacing:1.2px; margin-bottom:9px; }
-        .lp-step-title { font-family:Georgia,serif; font-size:23px; margin:17px 0 7px; }
-        .lp-step-copy { font-family:sans-serif; color:${palette.muted}; font-size:12px; line-height:1.55; max-width:290px; margin:0 auto; }
-        .lp-adapt { max-width:760px; margin:46px auto 0; padding:0 22px; text-align:center; }
-        .lp-adapt-box { border:1px solid #E4D3EA; background:#F7F1FA; border-radius:22px; padding:20px; }
-        .lp-adapt h3 { font-family:Georgia,serif; font-size:25px; margin:0 0 7px; color:#685178; }
-        .lp-adapt p { font-family:sans-serif; font-size:13px; line-height:1.6; color:#8B758F; margin:0; }
+        .lp-slider-wrap { max-width:760px; margin:48px auto 0; padding:0 22px; }
+        .lp-slider-stage { position:relative; display:grid; grid-template-columns:54px minmax(0,1fr) 54px; gap:16px; align-items:center; }
+        .lp-slide-arrow { width:48px; height:48px; border-radius:50%; border:1px solid #E8D8CF; background:rgba(255,255,255,.82); color:#9E6E59; font-size:24px; cursor:pointer; box-shadow:0 10px 26px rgba(76,48,33,.07); }
+        .lp-slide { min-width:0; text-align:center; touch-action:pan-y; }
+        .lp-slide-phone { max-width:330px; margin:0 auto; }
+        .lp-step { font-family:sans-serif; color:#C8684D; font-weight:950; font-size:9px; letter-spacing:1.2px; margin-bottom:10px; }
+        .lp-step-title { font-family:Georgia,serif; font-size:26px; margin:18px 0 7px; }
+        .lp-step-copy { font-family:sans-serif; color:${palette.muted}; font-size:12.5px; line-height:1.55; max-width:420px; margin:0 auto; }
+        .lp-slide-dots { display:flex; justify-content:center; gap:8px; margin-top:19px; }
+        .lp-slide-dot { width:8px; height:8px; border-radius:50%; border:0; padding:0; background:#DDCEC5; cursor:pointer; transition:all .2s ease; }
+        .lp-slide-dot.active { width:24px; border-radius:99px; background:#D36C55; }
+        .lp-slide-tabs { display:flex; justify-content:center; flex-wrap:wrap; gap:7px; margin:0 auto 22px; }
+        .lp-slide-tab { border:1px solid #E8D7CD; background:#fff; color:#A17360; border-radius:999px; padding:8px 11px; font-family:sans-serif; font-size:9px; font-weight:900; letter-spacing:.55px; cursor:pointer; }
+        .lp-slide-tab.active { background:#FFF0E8; border-color:#F1BDA8; color:#C45F48; }
+
+        .lp-insight-section { background:linear-gradient(180deg,#FFF9F4 0%,#F6FBF7 100%); }
+        .lp-insight-grid { max-width:1080px; margin:0 auto; padding:0 22px; display:grid; grid-template-columns:1fr 1fr; gap:58px; align-items:center; }
+        .lp-insight-cards { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+        .lp-insight-card { border:1px solid #E6DDD6; background:#fff; border-radius:22px; padding:18px; min-height:142px; box-shadow:0 16px 38px rgba(62,43,31,.055); }
+        .lp-insight-label { font-family:sans-serif; font-size:8px; font-weight:950; letter-spacing:1px; color:#A48B7E; text-transform:uppercase; }
+        .lp-insight-value { font-family:Georgia,serif; font-size:27px; font-weight:800; margin-top:9px; }
+        .lp-insight-note { font-family:sans-serif; font-size:10px; line-height:1.45; color:${palette.muted}; margin-top:7px; }
+        .lp-insight-highlight { grid-column:1/-1; background:linear-gradient(135deg,#FFF5EE,#F5F2FB); }
+
+        .lp-story-section { background:#FFFCF9; }
+        .lp-story-grid { max-width:1080px; margin:0 auto; padding:0 22px; display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+        .lp-story-card { border:1px solid #E7DBD3; background:#fff; border-radius:26px; padding:24px; box-shadow:0 18px 44px rgba(67,47,36,.06); min-height:390px; }
+        .lp-story-card h3 { font-family:Georgia,serif; font-size:31px; margin:8px 0 10px; }
+        .lp-story-card p { font-family:sans-serif; font-size:12.5px; line-height:1.6; color:${palette.muted}; }
+        .lp-achievement-row { display:grid; grid-template-columns:54px 1fr; gap:12px; align-items:center; margin-top:14px; padding:13px; border-radius:18px; background:#FFF8F3; border:1px solid #F2DED1; }
+        .lp-achievement-icon { width:54px; height:54px; border-radius:17px; display:grid; place-items:center; font-size:26px; background:#FFF0E4; }
+        .lp-timeline { margin-top:18px; position:relative; padding-left:25px; }
+        .lp-timeline::before { content:""; position:absolute; left:7px; top:3px; bottom:4px; width:2px; background:#E7DAD1; }
+        .lp-timeline-item { position:relative; padding:0 0 17px 12px; }
+        .lp-timeline-item::before { content:""; position:absolute; left:-23px; top:3px; width:12px; height:12px; border-radius:50%; background:#fff; border:3px solid #D9856B; }
+        .lp-timeline-date { font-family:sans-serif; font-size:8px; color:#AC9385; }
+        .lp-timeline-title { font-size:13px; font-weight:850; margin-top:2px; }
+
+        .lp-together { max-width:1080px; margin:0 auto; padding:92px 22px; display:grid; grid-template-columns:1.05fr .95fr; gap:52px; align-items:center; }
+        .lp-together-visual { border-radius:30px; background:linear-gradient(135deg,#F7F1FA,#FFF6EF); border:1px solid #E8D8E9; padding:22px; box-shadow:0 22px 50px rgba(66,49,75,.07); }
+        .lp-goal-card { background:#fff; border:1px solid #E8DDD7; border-radius:22px; padding:18px; }
+        .lp-person-progress { margin-top:14px; }
+        .lp-person-head { display:flex; justify-content:space-between; align-items:center; gap:12px; font-family:sans-serif; font-size:11px; }
+        .lp-progress { height:8px; border-radius:99px; overflow:hidden; background:#EFE6E1; margin-top:7px; }
+        .lp-progress > div { height:100%; border-radius:99px; background:linear-gradient(90deg,#FF9B73,#FF6F83); }
+
+        .lp-connect-section { background:#F7FAF7; padding:88px 22px; }
+        .lp-connect-box { max-width:900px; margin:0 auto; text-align:center; }
+        .lp-provider-row { display:flex; justify-content:center; flex-wrap:wrap; gap:12px; margin-top:28px; }
+        .lp-provider { min-width:150px; padding:17px 20px; border-radius:20px; background:#fff; border:1px solid #DCE7DE; font-family:sans-serif; }
+        .lp-provider strong { display:block; font-size:14px; }
+        .lp-provider span { display:block; margin-top:4px; font-size:9px; color:#9B8A80; }
+        .lp-provider.soon { opacity:.62; }
+
+        .lp-final { min-height:66svh; display:flex; align-items:flex-end; position:relative; background-image:linear-gradient(180deg,rgba(28,24,19,.12),rgba(24,20,17,.72)),url("/hero/hiking/03.webp"); background-size:cover; background-position:center; }
+        .lp-final-content { width:100%; max-width:1180px; margin:0 auto; padding:70px 22px 55px; color:#fff; }
+        .lp-final h2 { font-family:Georgia,serif; font-size:clamp(42px,6vw,72px); line-height:1; letter-spacing:-1.7px; max-width:720px; margin:0 0 14px; }
+        .lp-final p { font-family:sans-serif; font-size:16px; line-height:1.55; max-width:570px; color:rgba(255,255,255,.86); }
         .lp-map-faux { height:150px; border-radius:16px; margin-top:13px; position:relative; overflow:hidden; background:linear-gradient(135deg,#DCEEDC,#DCEBFA 52%,#F4E6D8); }
         .lp-map-faux::before, .lp-map-faux::after { content:""; position:absolute; width:180px; height:2px; background:rgba(255,255,255,.9); transform:rotate(-22deg); left:-15px; top:70px; box-shadow:0 28px 0 rgba(255,255,255,.55),70px -48px 0 rgba(255,255,255,.48); }
         .lp-route-line { position:absolute; width:78px; height:94px; border:3px solid #FF8066; border-radius:47% 53% 58% 42% / 55% 36% 64% 45%; left:50%; top:50%; transform:translate(-50%,-50%) rotate(17deg); }
@@ -217,9 +357,6 @@ function LandingPage({ onLogin, onRegister }) {
         .lp-break-content { position:relative; z-index:2; max-width:1180px; width:100%; margin:0 auto; padding:70px 22px 55px; color:#fff; }
         .lp-break-content h2 { font-family:Georgia,serif; font-size:clamp(42px,6vw,72px); line-height:1; letter-spacing:-1.7px; margin:0 0 14px; max-width:800px; }
         .lp-break-content p { max-width:650px; font-family:sans-serif; font-size:17px; line-height:1.55; color:rgba(255,255,255,.88); }
-        .lp-soon { padding:80px 22px 100px; text-align:center; background:#FFF9F4; }
-        .lp-soon h2 { font-family:Georgia,serif; font-size:clamp(32px,4vw,48px); margin:0 0 12px; }
-        .lp-soon p { font-family:sans-serif; color:${palette.muted}; max-width:620px; margin:0 auto 22px; line-height:1.65; font-size:14px; }
         @media (max-width: 820px) {
           .lp-navlinks { display:none; }
           .lp-menu { display:block; position:relative; }
@@ -235,10 +372,13 @@ function LandingPage({ onLogin, onRegister }) {
           .lp-section-head { margin-bottom:36px; }
           .lp-daily-grid { grid-template-columns:1fr; gap:45px; padding:0 18px; }
           .lp-feature-lines { max-width:520px; margin:0 auto; }
-          .lp-phones-row { grid-template-columns:1fr; gap:54px; max-width:470px; }
-          .lp-phone-card:nth-child(2) { transform:none; }
+          .lp-slider-stage { grid-template-columns:1fr; }
+          .lp-slide-arrow { display:none; }
           .lp-flow { gap:6px; }
           .lp-break { min-height:62svh; background-position:58% center; }
+          .lp-insight-grid { grid-template-columns:1fr; gap:36px; }
+          .lp-story-grid { grid-template-columns:1fr; }
+          .lp-together { grid-template-columns:1fr; gap:32px; padding-top:72px; padding-bottom:72px; }
         }
         @media (max-width: 520px) {
           .lp-nav { padding:15px 0; }
@@ -247,7 +387,7 @@ function LandingPage({ onLogin, onRegister }) {
           .lp-brand img { width:30px; height:30px; }
           .lp-hero { min-height:88svh; }
           .lp-hero-content { padding-left:18px; padding-right:18px; padding-bottom:28px; }
-          .lp-hero h1 { font-size:51px; max-width:330px; }
+          .lp-hero h1 { font-size:47px; max-width:330px; }
           .lp-hero-lead { font-size:17px; line-height:1.34; max-width:350px; }
           .lp-hero-sub { font-size:12px; line-height:1.55; max-width:350px; }
           .lp-actions { margin-top:19px; }
@@ -257,11 +397,23 @@ function LandingPage({ onLogin, onRegister }) {
           .lp-title { font-size:39px; }
           .lp-copy { font-size:13px; }
           .lp-section-head { padding:0 18px; }
-          .lp-phone { width:min(92vw,345px); }
-          .lp-phone-screen { min-height:545px; }
+          .lp-phone { width:min(88vw,330px); }
+          .lp-phone-screen { min-height:0 !important; }
           .lp-feature-line h3 { font-size:20px; }
           .lp-feature-line p { font-size:12px; }
-          .lp-phones-row { padding:0 16px; }
+          .lp-slider-wrap { padding:0 16px; }
+          .lp-slide-phone { max-width:315px; }
+          .lp-slide-tabs { margin-left:-4px; margin-right:-4px; }
+          .lp-slide-tab { padding:7px 9px; font-size:8px; }
+          .lp-insight-grid, .lp-story-grid { padding:0 16px; }
+          .lp-insight-cards { grid-template-columns:1fr; }
+          .lp-insight-highlight { grid-column:auto; }
+          .lp-story-card { padding:20px; min-height:0; }
+          .lp-together { padding-left:16px; padding-right:16px; }
+          .lp-connect-section { padding-left:16px; padding-right:16px; }
+          .lp-provider { min-width:130px; }
+          .lp-final { min-height:60svh; }
+          .lp-final-content { padding:55px 18px 38px; }
           .lp-break-content { padding:55px 18px 36px; }
           .lp-break-content h2 { font-size:44px; }
           .lp-break-content p { font-size:14px; }
@@ -404,42 +556,65 @@ function LandingPage({ onLogin, onRegister }) {
             </div>
           </div>
 
-          <div className="lp-phones-row">
-            <div className="lp-phone-card">
-              <div className="lp-step">01 · PLANEN</div>
-              <AppPhone variant="dashboard" />
-              <h3 className="lp-step-title">Wissen, was ansteht.</h3>
-              <p className="lp-step-copy">
-                Dein Training fügt sich in deine Woche und dein Ziel ein.
-              </p>
+          <div className="lp-slider-wrap">
+            <div className="lp-slide-tabs">
+              {planSlides.map((slide, index) => (
+                <button
+                  key={slide.step}
+                  type="button"
+                  className={`lp-slide-tab ${planSlide === index ? 'active' : ''}`}
+                  onClick={() => setPlanSlide(index)}
+                >
+                  {slide.step.replace(/^\d+ · /, '')}
+                </button>
+              ))}
             </div>
 
-            <div className="lp-phone-card">
-              <div className="lp-step">02 · TRAINIEREN</div>
-              <AppPhone variant="activity" />
-              <h3 className="lp-step-title">Aus Plan wird Training.</h3>
-              <p className="lp-step-copy">
-                Synchronisierte oder eingetragene Aktivitäten verbinden sich mit deiner Trainingswoche.
-              </p>
+            <div className="lp-slider-stage">
+              <button
+                type="button"
+                className="lp-slide-arrow"
+                onClick={() => changePlanSlide(-1)}
+                aria-label="Vorheriger Schritt"
+              >
+                ‹
+              </button>
+
+              <div
+                className="lp-slide"
+                onTouchStart={event =>
+                  setSlideTouchStart(event.touches?.[0]?.clientX ?? null)
+                }
+                onTouchEnd={handleSlideTouchEnd}
+              >
+                <div className="lp-step">{planSlides[planSlide].step}</div>
+                <div className="lp-slide-phone">
+                  <AppPhone variant={planSlides[planSlide].variant} />
+                </div>
+                <h3 className="lp-step-title">{planSlides[planSlide].title}</h3>
+                <p className="lp-step-copy">{planSlides[planSlide].text}</p>
+              </div>
+
+              <button
+                type="button"
+                className="lp-slide-arrow"
+                onClick={() => changePlanSlide(1)}
+                aria-label="Nächster Schritt"
+              >
+                ›
+              </button>
             </div>
 
-            <div className="lp-phone-card">
-              <div className="lp-step">03 · VERSTEHEN</div>
-              <AppPhone variant="coach" />
-              <h3 className="lp-step-title">Verstehen, bevor es weitergeht.</h3>
-              <p className="lp-step-copy">
-                Am Ende der Woche siehst du, was gut lief und worauf es als Nächstes ankommt.
-              </p>
-            </div>
-          </div>
-
-          <div className="lp-adapt">
-            <div className="lp-adapt-box">
-              <h3>↻ Anpassen</h3>
-              <p>
-                Wenn es sinnvoll ist, entwickelt sich dein Plan mit dir weiter –
-                statt starr an einer einmal erstellten Woche festzuhalten.
-              </p>
+            <div className="lp-slide-dots" aria-label="Schritte">
+              {planSlides.map((slide, index) => (
+                <button
+                  key={slide.step}
+                  type="button"
+                  className={`lp-slide-dot ${planSlide === index ? 'active' : ''}`}
+                  onClick={() => setPlanSlide(index)}
+                  aria-label={`Schritt ${index + 1}: ${slide.step}`}
+                />
+              ))}
             </div>
           </div>
         </section>
@@ -455,14 +630,207 @@ function LandingPage({ onLogin, onRegister }) {
           </div>
         </section>
 
-        <section className="lp-soon">
-          <div className="lp-eyebrow">DAS IST ERST DER ANFANG</div>
-          <h2>Dein Training an einem Ort.</h2>
-          <p>
-            Im nächsten Ausbau der Landingpage zeigen wir Entwicklung,
-            Erfolge, deinen sportlichen Weg und die Verbindung deiner Trainingsdaten.
-          </p>
-          <button className="lp-primary" onClick={onRegister}>Jetzt starten →</button>
+        <section id="entwicklung" className="lp-section lp-insight-section">
+          <div className="lp-section-head">
+            <div className="lp-eyebrow">DEINE ENTWICKLUNG</div>
+            <h2 className="lp-title">Nicht mehr Daten. Mehr Bedeutung.</h2>
+            <p className="lp-copy">
+              Sieh nicht nur, was du gemacht hast. Erkenne, wie sich dein Training
+              über Wochen und Monate verändert.
+            </p>
+          </div>
+
+          <div className="lp-insight-grid">
+            <div className="lp-insight-cards">
+              <div className="lp-insight-card">
+                <div className="lp-insight-label">Tempo & Effizienz</div>
+                <div className="lp-insight-value">↗ 12 Sek./km</div>
+                <div className="lp-insight-note">
+                  Deine durchschnittliche Laufpace entwickelt sich in die richtige Richtung.
+                </div>
+              </div>
+
+              <div className="lp-insight-card">
+                <div className="lp-insight-label">Umfang</div>
+                <div className="lp-insight-value">131,2 km</div>
+                <div className="lp-insight-note">
+                  Alle Sportarten in deinem ausgewählten Zeitraum zusammen.
+                </div>
+              </div>
+
+              <div className="lp-insight-card lp-insight-highlight">
+                <div className="lp-insight-label">Verstehen statt nur messen</div>
+                <div className="lp-insight-value" style={{fontSize:23}}>
+                  Gleiche Belastung. Besseres Tempo.
+                </div>
+                <div className="lp-insight-note" style={{fontSize:11}}>
+                  Fortschritt zeigt sich nicht nur in Bestzeiten. Auch Herzfrequenz,
+                  Trainingsumfang, Höhenmeter und Konstanz erzählen deine Entwicklung.
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div className="lp-eyebrow">IM BLICK</div>
+              <h3 className="lp-title" style={{fontSize:'clamp(31px,4vw,48px)',textAlign:'left'}}>
+                Erkenne, was sich wirklich verändert.
+              </h3>
+              <p className="lp-copy">
+                Tempo und Effizienz. Belastung und Umfang. Herzfrequenz und Höhenmeter.
+                Deine App bringt diese Perspektiven zusammen, ohne dich mit einzelnen
+                Kennzahlen allein zu lassen.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section className="lp-section lp-story-section">
+          <div className="lp-section-head">
+            <div className="lp-eyebrow">DEIN WEG</div>
+            <h2 className="lp-title">Jeder Fortschritt verdient einen Moment.</h2>
+            <p className="lp-copy">
+              Nicht nur Wettkämpfe zählen. Auch erste Male, neue Distanzen,
+              besondere Touren und deine persönliche Konstanz.
+            </p>
+          </div>
+
+          <div className="lp-story-grid">
+            <div className="lp-story-card">
+              <div className="lp-eyebrow">ERFOLGE & SAMMLUNGEN</div>
+              <h3>Sieh, was du geschafft hast.</h3>
+              <p>
+                Aus einzelnen Einheiten entstehen Meilensteine – vom ersten Training
+                bis zu langen Distanzen, Bestleistungen und besonderen Momenten.
+              </p>
+
+              <div className="lp-achievement-row">
+                <div className="lp-achievement-icon">🏅</div>
+                <div>
+                  <div style={{fontFamily:'sans-serif',fontSize:8,color:'#A78F82'}}>NEUER MEILENSTEIN</div>
+                  <div style={{fontSize:14,fontWeight:850,marginTop:3}}>100 Radkilometer</div>
+                  <div style={{fontFamily:'sans-serif',fontSize:9,color:palette.muted,marginTop:3}}>Erreicht auf deinem bisherigen Weg.</div>
+                </div>
+              </div>
+
+              <div className="lp-achievement-row" style={{background:'#F5F9F5',borderColor:'#DDEADF'}}>
+                <div className="lp-achievement-icon" style={{background:'#EAF5ED'}}>🌦️</div>
+                <div>
+                  <div style={{fontFamily:'sans-serif',fontSize:8,color:'#7D9B85'}}>SAMMLUNG</div>
+                  <div style={{fontSize:14,fontWeight:850,marginTop:3}}>Wetter · 3 von 6</div>
+                  <div style={{fontFamily:'sans-serif',fontSize:9,color:palette.muted,marginTop:3}}>Dein Sport kennt mehr als Sonnenschein.</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="lp-story-card" style={{background:'linear-gradient(180deg,#FFFFFF,#FBF8FC)'}}>
+              <div className="lp-eyebrow" style={{color:'#80699A'}}>MEIN SPORTLICHER WEG</div>
+              <h3>Aus Training wird Geschichte.</h3>
+              <p>
+                Deine besonderen Momente bleiben nicht zwischen Statistiken versteckt.
+                Sie werden Teil deiner persönlichen Timeline.
+              </p>
+
+              <div className="lp-timeline">
+                <div className="lp-timeline-item">
+                  <div className="lp-timeline-date">09. AUGUST</div>
+                  <div className="lp-timeline-title">🚴 100 Radkilometer</div>
+                </div>
+                <div className="lp-timeline-item">
+                  <div className="lp-timeline-date">09. AUGUST</div>
+                  <div className="lp-timeline-title">🌫️ Im Nebel unterwegs</div>
+                </div>
+                <div className="lp-timeline-item">
+                  <div className="lp-timeline-date">08. AUGUST</div>
+                  <div className="lp-timeline-title">☀️ Sonnenmoment</div>
+                </div>
+                <div className="lp-timeline-item">
+                  <div className="lp-timeline-date">07. AUGUST</div>
+                  <div className="lp-timeline-title">🏃 Neuer längster Lauf</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="lp-together">
+          <div>
+            <div className="lp-eyebrow" style={{color:'#80699A'}}>GEMEINSAME ZIELE · PERSPEKTIVISCH</div>
+            <h2 className="lp-title" style={{textAlign:'left'}}>
+              Manche Ziele sind gemeinsam noch besser.
+            </h2>
+            <p className="lp-copy">
+              Trainiert später gemeinsam für dasselbe Ziel und bleibt trotzdem
+              bei eurem eigenen Leistungsstand. Ein gemeinsames Ziel muss nicht
+              bedeuten, dass jede Einheit identisch ist.
+            </p>
+          </div>
+
+          <div className="lp-together-visual">
+            <div className="lp-goal-card">
+              <div style={{fontFamily:'sans-serif',fontSize:8,fontWeight:950,letterSpacing:1,color:'#80699A'}}>GEMEINSAMES ZIEL</div>
+              <div style={{fontFamily:'Georgia,serif',fontSize:24,fontWeight:850,marginTop:6}}>🥾 50-km-Marsch</div>
+              <div style={{fontFamily:'sans-serif',fontSize:9,color:palette.muted,marginTop:4}}>Noch 8 Wochen</div>
+
+              <div className="lp-person-progress">
+                <div className="lp-person-head"><strong>👩 Julia</strong><span>78 %</span></div>
+                <div className="lp-progress"><div style={{width:'78%'}} /></div>
+              </div>
+
+              <div className="lp-person-progress">
+                <div className="lp-person-head"><strong>👩 Freundin</strong><span>69 %</span></div>
+                <div className="lp-progress"><div style={{width:'69%'}} /></div>
+              </div>
+
+              <div style={{marginTop:15,padding:'11px 12px',borderRadius:14,background:'#F7F2FA',fontFamily:'sans-serif',fontSize:9,color:'#7B6684',lineHeight:1.45}}>
+                Dasselbe Ziel · individuelle Trainingsbelastung
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="lp-connect-section">
+          <div className="lp-connect-box">
+            <div className="lp-eyebrow" style={{color:'#5C9276'}}>VERBINDEN</div>
+            <h2 className="lp-title">Dein Training kommt mit.</h2>
+            <p className="lp-copy">
+              Synchronisiere Aktivitäten und finde sie direkt in deinem Training,
+              deiner Entwicklung und deinem sportlichen Weg wieder.
+            </p>
+
+            <div className="lp-provider-row">
+              <div className="lp-provider">
+                <strong>⌚ Polar</strong>
+                <span>bereits verfügbar</span>
+              </div>
+              <div className="lp-provider soon">
+                <strong>Strava</strong>
+                <span>geplant</span>
+              </div>
+              <div className="lp-provider soon">
+                <strong>Garmin</strong>
+                <span>geplant</span>
+              </div>
+              <div className="lp-provider soon">
+                <strong>Weitere</strong>
+                <span>folgen</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="lp-final">
+          <div className="lp-final-content">
+            <div className="lp-kicker">DEIN NÄCHSTER SCHRITT</div>
+            <h2>Bereit für deinen Weg?</h2>
+            <p>
+              Dein Ziel beginnt nicht irgendwann. Sondern dort, wo du heute stehst.
+              Starte mit deinem Training und mach deine Entwicklung sichtbar.
+            </p>
+            <div className="lp-actions">
+              <button className="lp-primary" onClick={onRegister}>Jetzt starten →</button>
+              <button className="lp-secondary" onClick={onLogin}>Anmelden</button>
+            </div>
+          </div>
         </section>
       </main>
     </div>
