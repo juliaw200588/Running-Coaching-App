@@ -315,6 +315,12 @@ function LandingPage({ onLogin, onRegister }) {
         .lp-insight-note { font-family:sans-serif; font-size:10px; line-height:1.45; color:${palette.muted}; margin-top:7px; }
         .lp-insight-highlight { grid-column:1/-1; background:linear-gradient(135deg,#FFF5EE,#F5F2FB); }
 
+        .lp-swim-break { max-width:1080px; min-height:420px; margin:0 auto 10px; border-radius:34px; overflow:hidden; position:relative; display:flex; align-items:flex-end; background-image:linear-gradient(180deg,rgba(12,28,34,.06),rgba(12,26,31,.62)),url("/hero/swimming/01.webp"); background-size:cover; background-position:center 48%; box-shadow:0 24px 60px rgba(33,57,62,.10); }
+        .lp-swim-break-content { position:relative; z-index:2; padding:38px 40px; color:#fff; max-width:700px; }
+        .lp-swim-break-content .lp-kicker { color:rgba(255,255,255,.88); }
+        .lp-swim-break-content h2 { font-family:Georgia,serif; font-size:clamp(38px,5vw,60px); line-height:1; letter-spacing:-1.4px; margin:9px 0 0; }
+        .lp-swim-break-wrap { padding:0 22px 90px; background:linear-gradient(180deg,#F6FBF7 0%,#FFFCF9 100%); }
+
         .lp-story-section { background:#FFFCF9; }
         .lp-story-grid { max-width:1080px; margin:0 auto; padding:0 22px; display:grid; grid-template-columns:1fr 1fr; gap:20px; }
         .lp-story-card { border:1px solid #E7DBD3; background:#fff; border-radius:26px; padding:24px; box-shadow:0 18px 44px rgba(67,47,36,.06); min-height:390px; }
@@ -378,6 +384,8 @@ function LandingPage({ onLogin, onRegister }) {
           .lp-break { min-height:62svh; background-position:58% center; }
           .lp-insight-grid { grid-template-columns:1fr; gap:36px; }
           .lp-story-grid { grid-template-columns:1fr; }
+          .lp-swim-break { min-height:360px; border-radius:26px; background-position:center 45%; }
+          .lp-swim-break-content { padding:30px 26px; }
           .lp-together { grid-template-columns:1fr; gap:32px; padding-top:72px; padding-bottom:72px; }
         }
         @media (max-width: 520px) {
@@ -406,6 +414,10 @@ function LandingPage({ onLogin, onRegister }) {
           .lp-slide-tabs { margin-left:-4px; margin-right:-4px; }
           .lp-slide-tab { padding:7px 9px; font-size:8px; }
           .lp-insight-grid, .lp-story-grid { padding:0 16px; }
+          .lp-swim-break-wrap { padding:0 16px 72px; }
+          .lp-swim-break { min-height:330px; border-radius:22px; background-position:58% center; }
+          .lp-swim-break-content { padding:25px 22px; }
+          .lp-swim-break-content h2 { font-size:39px; }
           .lp-insight-cards { grid-template-columns:1fr; }
           .lp-insight-highlight { grid-column:auto; }
           .lp-story-card { padding:20px; min-height:0; }
@@ -680,6 +692,15 @@ function LandingPage({ onLogin, onRegister }) {
                 Deine App bringt diese Perspektiven zusammen, ohne dich mit einzelnen
                 Kennzahlen allein zu lassen.
               </p>
+            </div>
+          </div>
+        </section>
+
+        <section className="lp-swim-break-wrap" aria-label="Sportlicher Entwicklungs-Moment">
+          <div className="lp-swim-break">
+            <div className="lp-swim-break-content">
+              <div className="lp-kicker">DEINE ENTWICKLUNG</div>
+              <h2>Fortschritt sieht für jeden anders aus.</h2>
             </div>
           </div>
         </section>
