@@ -130,7 +130,18 @@ function SchuhForm({ schuh, onSave, onCancel }) {
 
 export default function Profile({ user, plan, onOpenActivities }) {
   const [activeTab, setActiveTab] = useState('profil')
-  const [profile, setProfile] = useState({ name: '', wohnort: '', geburtsdatum: '', groesse: '', gewicht: '', max_hf: '', ruhe_hf: '', wochen_km: '' })
+  const [profile, setProfile] = useState({
+    name: '',
+    wohnort: '',
+    geburtsdatum: '',
+    groesse: '',
+    gewicht: '',
+    max_hf: '',
+    ruhe_hf: '',
+    wochen_km: '',
+    geschlecht: '',
+    sportarten: [],
+  })
   const [privacy, setPrivacy] = useState({ plan: 'freunde', fortschritt: 'freunde', logs: 'freunde', schuhe: 'freunde' })
   const [avatarUrl, setAvatarUrl] = useState(null)
   const [schuhe, setSchuhe] = useState([])
@@ -146,7 +157,18 @@ export default function Profile({ user, plan, onOpenActivities }) {
     const load = async () => {
       const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
       if (data) {
-        setProfile({ name: data.name || '', wohnort: data.wohnort || '', geburtsdatum: data.geburtsdatum || '', groesse: data.groesse || '', gewicht: data.gewicht || '', max_hf: data.max_hf || '', ruhe_hf: data.ruhe_hf || '', wochen_km: data.wochen_km || '' })
+        setProfile({
+          name: data.name || '',
+          wohnort: data.wohnort || '',
+          geburtsdatum: data.geburtsdatum || '',
+          groesse: data.groesse || '',
+          gewicht: data.gewicht || '',
+          max_hf: data.max_hf || '',
+          ruhe_hf: data.ruhe_hf || '',
+          wochen_km: data.wochen_km || '',
+          geschlecht: data.geschlecht || '',
+          sportarten: Array.isArray(data.sportarten) ? data.sportarten : [],
+        })
         if (data.avatar_url) setAvatarUrl(data.avatar_url)
         setPrivacy({ plan: data.privacy_plan || 'freunde', fortschritt: data.privacy_fortschritt || 'freunde', logs: data.privacy_logs || 'freunde', schuhe: data.privacy_schuhe || 'freunde' })
       }
@@ -185,6 +207,9 @@ export default function Profile({ user, plan, onOpenActivities }) {
       max_hf: profile.max_hf ? parseInt(profile.max_hf) : null,
       ruhe_hf: profile.ruhe_hf ? parseInt(profile.ruhe_hf) : null,
       wochen_km: profile.wochen_km ? parseFloat(profile.wochen_km) : null,
+      geschlecht: profile.geschlecht || null,
+      sportarten: profile.sportarten || [],
+      onboarding_completed: true,
       avatar_url: avatarUrl || null,
       privacy_plan: privacy.plan,
       privacy_fortschritt: privacy.fortschritt,
@@ -213,6 +238,15 @@ export default function Profile({ user, plan, onOpenActivities }) {
   const handleDeleteSchuh = async (id) => {
     await supabase.from('shoes').delete().eq('id', id)
     setSchuhe(prev => prev.filter(s => s.id !== id))
+  }
+
+  const toggleSportart = (sportId) => {
+    setProfile(current => ({
+      ...current,
+      sportarten: current.sportarten.includes(sportId)
+        ? current.sportarten.filter(id => id !== sportId)
+        : [...current.sportarten, sportId],
+    }))
   }
 
   const inputStyle = {
@@ -284,6 +318,77 @@ export default function Profile({ user, plan, onOpenActivities }) {
               <label style={labelStyle}>Name</label>
               <input style={inputStyle} placeholder="z.B. Julia Müller" value={profile.name} onChange={e => setProfile({ ...profile, name: e.target.value })} />
             </div>
+            <div style={{ marginBottom: 18 }}>
+              <label style={labelStyle}>Profil</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                {[
+                  { id: 'w', label: '♀ Weiblich' },
+                  { id: 'm', label: '♂ Männlich' },
+                  { id: 'd', label: '○ Neutral' },
+                ].map(option => {
+                  const selected = profile.geschlecht === option.id
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setProfile({ ...profile, geschlecht: option.id })}
+                      style={{
+                        padding: '10px 6px',
+                        borderRadius: 12,
+                        border: `2px solid ${selected ? '#FF8C69' : '#F0E0D0'}`,
+                        background: selected ? '#FFF5F0' : 'white',
+                        color: selected ? '#D8694F' : '#A88F80',
+                        fontSize: 11,
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        fontFamily: 'sans-serif',
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={labelStyle}>Meine Sportarten</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {[
+                  { id: 'running', icon: '🏃', label: 'Laufen' },
+                  { id: 'cycling', icon: '🚴', label: 'Radfahren' },
+                  { id: 'mountain_biking', icon: '🚵', label: 'MTB' },
+                  { id: 'hiking', icon: '🥾', label: 'Wandern & Marsch' },
+                  { id: 'swimming', icon: '🏊', label: 'Schwimmen' },
+                ].map(option => {
+                  const selected = profile.sportarten.includes(option.id)
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => toggleSportart(option.id)}
+                      style={{
+                        padding: '9px 11px',
+                        borderRadius: 12,
+                        border: `1.5px solid ${selected ? '#7EC8A4' : '#F0E0D0'}`,
+                        background: selected ? '#F0FAF4' : 'white',
+                        color: selected ? '#4F9677' : '#9A8477',
+                        fontSize: 11,
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        fontFamily: 'sans-serif',
+                      }}
+                    >
+                      {option.icon} {option.label}
+                    </button>
+                  )
+                })}
+              </div>
+              <div style={{ fontSize: 10.5, color: '#B6A397', fontFamily: 'sans-serif', marginTop: 7, lineHeight: 1.45 }}>
+                Mehrfachauswahl möglich. Diese Auswahl bestimmt, welche Sportarten dich in der App begleiten.
+              </div>
+            </div>
+
             <div style={{ marginBottom: 16 }}>
               <label style={labelStyle}>Wohnort <span style={optLabel}>optional</span></label>
               <input style={inputStyle} placeholder="z.B. München" value={profile.wohnort} onChange={e => setProfile({ ...profile, wohnort: e.target.value })} />
@@ -305,7 +410,7 @@ export default function Profile({ user, plan, onOpenActivities }) {
 
             <div style={{ marginBottom: 24 }}>
               <div style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'sans-serif', marginBottom: 12 }}>
-                🏃‍♀️ Laufwerte
+                ❤️ Trainingswerte
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
                 <div>

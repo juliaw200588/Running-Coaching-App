@@ -3,6 +3,7 @@ import { supabase } from './lib/supabase.js'
 import Auth from './components/Auth.jsx'
 import LandingPage from './components/LandingPage.jsx'
 import Onboarding from './components/Onboarding.jsx'
+import WelcomeOnboarding from './components/WelcomeOnboarding.jsx'
 import TrainingPlan from './components/TrainingPlan.jsx'
 import Profile from './components/Profile.jsx'
 import Laeufe from './components/Laeufe.jsx'
@@ -55,6 +56,8 @@ function App() {
   const [loadingAuth, setLoadingAuth] = useState(true)
   const [openWeekAnalysisWeek, setOpenWeekAnalysisWeek] = useState(null)
   const [authEntryMode, setAuthEntryMode] = useState(null)
+  const [profileSetupLoading, setProfileSetupLoading] = useState(false)
+  const [onboardingCompleted, setOnboardingCompleted] = useState(null)
   const weeklyCheckKeyRef = useRef(null)
 
   useEffect(() => {
@@ -73,6 +76,7 @@ function App() {
     if (user) {
       loadPlan(user.id)
       loadUnreadCount(user.id)
+      loadOnboardingStatus(user)
 
       const channel = supabase
         .channel('unread_notifications')
@@ -89,12 +93,45 @@ function App() {
       setPlan(null)
       setPlanId(null)
       setUnreadCount(0)
+      setOnboardingCompleted(null)
+      setProfileSetupLoading(false)
     }
   }, [user])
 
   const loadProfileName = async (userId) => {
     const { data } = await supabase.from('profiles').select('name').eq('id', userId).single()
     return data?.name || ''
+  }
+
+  const loadOnboardingStatus = async (currentUser) => {
+    if (!currentUser?.id) {
+      setOnboardingCompleted(null)
+      setProfileSetupLoading(false)
+      return
+    }
+
+    setProfileSetupLoading(true)
+
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('onboarding_completed')
+        .eq('id', currentUser.id)
+        .maybeSingle()
+
+      if (error) throw error
+
+      setOnboardingCompleted(data?.onboarding_completed === true)
+    } catch (error) {
+      console.error(
+        '[App] Onboarding-Status konnte nicht geladen werden:',
+        error
+      )
+      // Bei einem Lesefehler nicht versehentlich die App freigeben.
+      setOnboardingCompleted(false)
+    } finally {
+      setProfileSetupLoading(false)
+    }
   }
 
   const loadPlan = async (userId) => {
@@ -1013,6 +1050,23 @@ const handleOpenWeekAnalysisFromNotification = (weekNumber) => {
       <LandingPage
         onLogin={() => setAuthEntryMode('login')}
         onRegister={() => setAuthEntryMode('register')}
+      />
+    )
+  }
+
+  if (profileSetupLoading || onboardingCompleted === null) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 50%, #FFF0F5 100%)', fontFamily: 'sans-serif', color: '#C4A882', fontSize: 14 }}>
+        ⏳ Profil wird vorbereitet…
+      </div>
+    )
+  }
+
+  if (!onboardingCompleted) {
+    return (
+      <WelcomeOnboarding
+        user={user}
+        onCompleted={() => setOnboardingCompleted(true)}
       />
     )
   }
