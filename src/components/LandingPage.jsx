@@ -319,7 +319,7 @@ function LandingPage({ onLogin, onRegister }) {
         .lp-swim-break-content { position:relative; z-index:2; padding:38px 40px; color:#fff; max-width:700px; }
         .lp-swim-break-content .lp-kicker { color:rgba(255,255,255,.88); }
         .lp-swim-break-content h2 { font-family:Georgia,serif; font-size:clamp(38px,5vw,60px); line-height:1; letter-spacing:-1.4px; margin:9px 0 0; }
-        .lp-swim-break-wrap { padding:0 22px 90px; background:linear-gradient(180deg,#F6FBF7 0%,#FFFCF9 100%); }
+        .lp-swim-break-wrap { padding:0 22px 38px; background:linear-gradient(180deg,#F6FBF7 0%,#FFFCF9 100%); }
 
         .lp-story-section { background:#FFFCF9; }
         .lp-story-grid { max-width:1080px; margin:0 auto; padding:0 22px; display:grid; grid-template-columns:1fr 1fr; gap:20px; }
@@ -343,7 +343,7 @@ function LandingPage({ onLogin, onRegister }) {
         .lp-progress { height:8px; border-radius:99px; overflow:hidden; background:#EFE6E1; margin-top:7px; }
         .lp-progress > div { height:100%; border-radius:99px; background:linear-gradient(90deg,#FF9B73,#FF6F83); }
 
-        .lp-connect-section { background:#F7FAF7; padding:88px 22px; }
+        .lp-connect-section { background:#F7FAF7; padding:72px 22px; }
         .lp-connect-box { max-width:900px; margin:0 auto; text-align:center; }
         .lp-provider-row { display:flex; justify-content:center; flex-wrap:wrap; gap:12px; margin-top:28px; }
         .lp-provider { min-width:150px; padding:17px 20px; border-radius:20px; background:#fff; border:1px solid #DCE7DE; font-family:sans-serif; }
@@ -374,8 +374,8 @@ function LandingPage({ onLogin, onRegister }) {
           .lp-hero h1 { font-size:clamp(48px,14vw,66px); letter-spacing:-2px; }
           .lp-hero-lead { font-size:18px; max-width:560px; }
           .lp-hero-sub { font-size:12.5px; max-width:520px; }
-          .lp-section { padding:76px 0; }
-          .lp-section-head { margin-bottom:36px; }
+          .lp-section { padding:66px 0; }
+          .lp-section-head { margin-bottom:30px; }
           .lp-daily-grid { grid-template-columns:1fr; gap:45px; padding:0 18px; }
           .lp-feature-lines { max-width:520px; margin:0 auto; }
           .lp-slider-stage { grid-template-columns:1fr; }
@@ -386,7 +386,7 @@ function LandingPage({ onLogin, onRegister }) {
           .lp-story-grid { grid-template-columns:1fr; }
           .lp-swim-break { min-height:360px; border-radius:26px; background-position:center 45%; }
           .lp-swim-break-content { padding:30px 26px; }
-          .lp-together { grid-template-columns:1fr; gap:32px; padding-top:72px; padding-bottom:72px; }
+          .lp-together { grid-template-columns:1fr; gap:28px; padding-top:62px; padding-bottom:62px; }
         }
         @media (max-width: 520px) {
           .lp-nav { padding:15px 0; }
@@ -414,7 +414,7 @@ function LandingPage({ onLogin, onRegister }) {
           .lp-slide-tabs { margin-left:-4px; margin-right:-4px; }
           .lp-slide-tab { padding:7px 9px; font-size:8px; }
           .lp-insight-grid, .lp-story-grid { padding:0 16px; }
-          .lp-swim-break-wrap { padding:0 16px 72px; }
+          .lp-swim-break-wrap { padding:0 16px 28px; }
           .lp-swim-break { min-height:330px; border-radius:22px; background-position:58% center; }
           .lp-swim-break-content { padding:25px 22px; }
           .lp-swim-break-content h2 { font-size:39px; }
@@ -422,7 +422,7 @@ function LandingPage({ onLogin, onRegister }) {
           .lp-insight-highlight { grid-column:auto; }
           .lp-story-card { padding:20px; min-height:0; }
           .lp-together { padding-left:16px; padding-right:16px; }
-          .lp-connect-section { padding-left:16px; padding-right:16px; }
+          .lp-connect-section { padding:62px 16px; }
           .lp-provider { min-width:130px; }
           .lp-final { min-height:60svh; }
           .lp-final-content { padding:55px 18px 38px; }
@@ -688,9 +688,8 @@ function LandingPage({ onLogin, onRegister }) {
                 Erkenne, was sich wirklich verändert.
               </h3>
               <p className="lp-copy">
-                Tempo und Effizienz. Belastung und Umfang. Herzfrequenz und Höhenmeter.
-                Deine App bringt diese Perspektiven zusammen, ohne dich mit einzelnen
-                Kennzahlen allein zu lassen.
+                Pace, Belastung, Herzfrequenz, Höhenmeter und Konstanz ergeben
+                zusammen ein Bild deiner Entwicklung.
               </p>
             </div>
           </div>
@@ -699,7 +698,7 @@ function LandingPage({ onLogin, onRegister }) {
         <section className="lp-swim-break-wrap" aria-label="Sportlicher Entwicklungs-Moment">
           <div className="lp-swim-break">
             <div className="lp-swim-break-content">
-              <div className="lp-kicker">DEINE ENTWICKLUNG</div>
+              <div className="lp-kicker">DEIN MOMENT</div>
               <h2>Fortschritt sieht für jeden anders aus.</h2>
             </div>
           </div>
@@ -708,7 +707,7 @@ function LandingPage({ onLogin, onRegister }) {
         <section className="lp-section lp-story-section">
           <div className="lp-section-head">
             <div className="lp-eyebrow">DEIN WEG</div>
-            <h2 className="lp-title">Jeder Fortschritt verdient einen Moment.</h2>
+            <h2 className="lp-title">Was du erreichst, bleibt.</h2>
             <p className="lp-copy">
               Nicht nur Wettkämpfe zählen. Auch erste Male, neue Distanzen,
               besondere Touren und deine persönliche Konstanz.
@@ -761,10 +760,6 @@ function LandingPage({ onLogin, onRegister }) {
                   <div className="lp-timeline-title">🌫️ Im Nebel unterwegs</div>
                 </div>
                 <div className="lp-timeline-item">
-                  <div className="lp-timeline-date">08. AUGUST</div>
-                  <div className="lp-timeline-title">☀️ Sonnenmoment</div>
-                </div>
-                <div className="lp-timeline-item">
                   <div className="lp-timeline-date">07. AUGUST</div>
                   <div className="lp-timeline-title">🏃 Neuer längster Lauf</div>
                 </div>
@@ -793,12 +788,12 @@ function LandingPage({ onLogin, onRegister }) {
               <div style={{fontFamily:'sans-serif',fontSize:9,color:palette.muted,marginTop:4}}>Noch 8 Wochen</div>
 
               <div className="lp-person-progress">
-                <div className="lp-person-head"><strong>👩 Julia</strong><span>78 %</span></div>
+                <div className="lp-person-head"><strong>👩 Lea</strong><span>78 %</span></div>
                 <div className="lp-progress"><div style={{width:'78%'}} /></div>
               </div>
 
               <div className="lp-person-progress">
-                <div className="lp-person-head"><strong>👩 Freundin</strong><span>69 %</span></div>
+                <div className="lp-person-head"><strong>👩 Anna</strong><span>69 %</span></div>
                 <div className="lp-progress"><div style={{width:'69%'}} /></div>
               </div>
 
