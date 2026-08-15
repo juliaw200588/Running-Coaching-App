@@ -1,5 +1,4 @@
 import { buildTrainingAnalysis, secondsToPace } from '../src/lib/trainingAnalysis.js'
-import { generateHikingPlan } from '../src/lib/hikingPlanServer.js'
 
 const RESPONSE_SCHEMA = {
   type: 'object',
@@ -206,23 +205,6 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
-  }
-
-  // Eine bestehende Serverless Function übernimmt auf dem Hobby-Tarif
-  // zusätzlich die initiale Marsch-/Wander-Planerstellung.
-  // Die normale Wochenanalyse darunter bleibt unverändert.
-  if (req.body?.requestType === 'generate_hiking_plan') {
-    try {
-      const result = await generateHikingPlan(req.body?.payload || {})
-      return res.status(200).json(result)
-    } catch (error) {
-      console.error('[Hiking Plan] Erstellung fehlgeschlagen:', error)
-      return res.status(500).json({
-        error:
-          error?.message ||
-          'Der Trainingsplan konnte nicht erstellt werden.',
-      })
-    }
   }
 
   const {

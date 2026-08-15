@@ -1,9 +1,36 @@
+import { generateHikingPlan } from '../src/lib/hikingPlanServer.js'
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+
+  // Gemeinsamer Einstieg für alle Planarten.
+  // Laufen nutzt weiterhin exakt die bestehende Logik darunter.
+  // Weitere Sportarten werden hier später ergänzt.
+  const sportType = req.body?.sport_type || req.body?.sportType || 'running'
+
+  if (sportType === 'hiking') {
+    try {
+      const result = await generateHikingPlan(req.body || {})
+      return res.status(200).json(result)
+    } catch (error) {
+      console.error('[Generate Plan][Hiking] Erstellung fehlgeschlagen:', error)
+      return res.status(500).json({
+        error:
+          error?.message ||
+          'Der Marsch-/Wander-Trainingsplan konnte nicht erstellt werden.',
+      })
+    }
+  }
+
+  if (!['running', 'run'].includes(sportType)) {
+    return res.status(400).json({
+      error: `Diese Sportart wird für die Planerstellung noch nicht unterstützt: ${sportType}`,
+    })
+  }
 
   const { name, zielTyp, niveau, goal, goalTime, previousTime, startDate, weeksUntilRace, runsPerWeek, alter, aktuelleWochenKm, verletzungen, maxHF, ruheHF, geschlecht, wohnort } = req.body
 
