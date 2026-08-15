@@ -377,14 +377,49 @@ export default function Onboarding({ onPlanGenerated }) {
         >
           <div
             style={{
-              fontFamily: 'sans-serif',
-              fontSize: 10,
-              fontWeight: 900,
-              letterSpacing: 1.4,
-              opacity: 0.92,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
             }}
           >
-            DEIN TRAININGSPLAN
+            <div
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                background: 'rgba(255,248,240,.94)',
+                border: '1px solid rgba(255,255,255,.72)',
+                boxShadow: '0 4px 14px rgba(0,0,0,.16)',
+              }}
+            >
+              <img
+                src="/route-icon.png"
+                alt=""
+                aria-hidden="true"
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  display: 'block',
+                }}
+              />
+            </div>
+
+            <div
+              style={{
+                fontFamily: 'sans-serif',
+                fontSize: 10,
+                fontWeight: 900,
+                letterSpacing: 1.4,
+                opacity: 0.92,
+              }}
+            >
+              DEIN TRAININGSPLAN
+            </div>
           </div>
 
           <h1
