@@ -69,13 +69,26 @@ const card = {
   boxShadow:'0 6px 30px rgba(87,61,46,.08)',
 }
 
+const HIKING_DRAFT_KEY = 'hiking-onboarding-draft-v1'
+
+const loadHikingDraft = () => {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.sessionStorage.getItem(HIKING_DRAFT_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
 export default function HikingOnboarding({ onPlanGenerated }) {
-  const [step, setStep] = useState(1)
+  const savedDraft = loadHikingDraft()
+  const [step, setStep] = useState(savedDraft?.step || 1)
   const [loading, setLoading] = useState(false)
   const [profileLoading, setProfileLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState(() => ({
     name:'',
     goalType:'',
     level:'',
@@ -103,7 +116,8 @@ export default function HikingOnboarding({ onPlanGenerated }) {
     availableWeeks:null,
     unitsPerWeek:3,
     preferredDays:['Di','Do','Sa'],
-  })
+    ...(savedDraft?.form || {}),
+  }))
 
   useEffect(() => {
     let active = true
@@ -136,6 +150,18 @@ export default function HikingOnboarding({ onPlanGenerated }) {
     loadProfile()
     return () => { active = false }
   }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.sessionStorage.setItem(
+        HIKING_DRAFT_KEY,
+        JSON.stringify({ step, form })
+      )
+    } catch (e) {
+      console.warn('[HikingOnboarding] Entwurf konnte nicht zwischengespeichert werden:', e)
+    }
+  }, [step, form])
 
   const eventWeeks = useMemo(
     () => weeksBetween(form.startDate, form.eventDate),
@@ -240,11 +266,16 @@ export default function HikingOnboarding({ onPlanGenerated }) {
         throw new Error('Der Trainingsplan ist unvollständig.')
       }
 
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem(HIKING_DRAFT_KEY)
+      }
       onPlanGenerated(data.plan)
     } catch (e) {
       console.error('[HikingOnboarding] Plan konnte nicht erstellt werden:', e)
       setError(
-        'Dein Plan konnte gerade nicht erstellt werden. Bitte versuche es noch einmal.'
+        e?.message
+          ? `Dein Plan konnte gerade nicht erstellt werden: ${e.message}`
+          : 'Dein Plan konnte gerade nicht erstellt werden. Bitte versuche es noch einmal.'
       )
     } finally {
       setLoading(false)
