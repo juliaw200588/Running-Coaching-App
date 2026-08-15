@@ -1,5 +1,3 @@
-import { trainingFeedbackText } from './trainingFeedback.js'
-
 const parseJson = value => {
   if (value == null || value === '') return null
   if (Array.isArray(value) || typeof value === 'object') return value
@@ -97,12 +95,12 @@ const normalizeWorkoutType = value => {
   const text = String(value || '').toLowerCase()
 
   if (/intervall|interval|wiederholung|repetition/.test(text)) return 'interval'
-  if (/tempo|schwelle|threshold|treshold/.test(text)) return 'tempo'
-  if (/long|lang(?:er|e)?\s*lauf|dauerlauf lang/.test(text)) return 'long_run'
+  if (/tempo|schwelle|threshold|treshold|zügig/.test(text)) return 'tempo'
+  if (/long|lang(?:er|e)?\s*lauf|dauerlauf lang|lange\s*(wanderung|tour)|vorermüdungs-wanderung|entlastungs-wanderung/.test(text)) return 'long_run'
   if (/regeneration|recovery|locker|easy|zone\s*1/.test(text)) return 'easy'
   if (/zone\s*2|grundlage|ga1/.test(text)) return 'zone2'
   if (/progressiv|progression/.test(text)) return 'progression'
-  if (/berg|hill/.test(text)) return 'hills'
+  if (/berg|hill|zielspezifisch|anstieg|trepp|steigung/.test(text)) return 'hills'
   if (/wettkampf|race|halbmarathon|marathon|10\s*km|5\s*km/.test(text)) return 'race'
 
   return 'other'
@@ -379,7 +377,7 @@ const analyzeRun = (log, maxHr, restHr) => {
           elevationGainMeters: numeric(
             log?.elevation_gain ?? log?.hoehenmeter
           ),
-          feeling: trainingFeedbackText(log?.gefuehl) || null,
+          feeling: log?.gefuehl || null,
           trainingLoad: numeric(log?.training_load),
           recoveryTime: numeric(log?.recovery_time),
           note: log?.note || null,
@@ -582,7 +580,7 @@ const buildAllActivityChronology = ({ activityHistory = [], weekStart }) => {
       averageHr: numeric(activity.bpm),
       trainingLoad: numeric(activity.training_load),
       loadClass: activityLoadClass(activity),
-      note: activity.note || trainingFeedbackText(activity.gefuehl) || null,
+      note: activity.note || activity.gefuehl || null,
       isPlanLinked: Boolean(activity.day_key),
     }))
     .sort((a, b) => (dateValue(a.date) || 0) - (dateValue(b.date) || 0))
@@ -620,7 +618,7 @@ const buildPlanRealityPattern = historyRuns => {
 
 const buildSubjectiveObjectiveSignals = runs => {
   const subjectiveRegex =
-    /(müde|muede|schwer|sehr hart|fordernd|erschöpft|erschoepft|anstreng|kraftlos|schlapp|matt|frisch|leicht|locker|passend|normal|gut gefühlt|gut gefuehlt)/i
+    /(müde|muede|schwer|erschöpft|erschoepft|anstreng|kraftlos|schlapp|matt|frisch|leicht|locker|gut gefühlt|gut gefuehlt)/i
 
   return runs
     .filter(run => run.completed)

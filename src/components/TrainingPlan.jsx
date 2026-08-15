@@ -203,6 +203,7 @@ export default function TrainingPlan({
   openWeekAnalysis = null,
   onWeekAnalysisOpened,
 }) {
+  const isHikingPlan = plan?.sport_type === 'hiking' || plan?.plan_type === 'hiking_march'
   const [activePhase, setActivePhase] = useState(() => findCurrentPhaseWeek(plan).phaseIdx)
   const [showPauseModal, setShowPauseModal] = useState(false)
   const [pauseWeeks, setPauseWeeks] = useState(1)
@@ -687,7 +688,7 @@ if (user) {
   const saveLog = async () => {
     const key = logModal.key
     const oldLog = logs[key]
-    const nl = { ...logs, [key]: { ...(oldLog || {}), ...logInput } }
+    const nl = { ...logs, [key]: { ...(oldLog || {}), ...logInput, sport_type: isHikingPlan ? 'hiking' : (oldLog?.sport_type || 'running') } }
     await persistLogs(nl)
     await persistScreenshot(key, modalScreenshot, screenshots)
 
@@ -710,7 +711,8 @@ if (user) {
           km: logInput.km || null,
           bpm: logInput.bpm || null,
           note: logInput.note || null,
-          schuh_id: logInput.schuh_id || null,
+          schuh_id: isHikingPlan ? null : (logInput.schuh_id || null),
+          sport_type: isHikingPlan ? 'hiking' : (oldLog?.sport_type || 'running'),
         }, { onConflict: 'user_id,day_key' })
       } catch (e) { console.error('Log Supabase Fehler:', e) }
     }
@@ -853,7 +855,7 @@ if (user) {
             </div>
 
             {/* Schuh-Auswahl */}
-            {schuhe.length > 0 && (
+            {schuhe.length > 0 && !isHikingPlan && (
               <div style={{ marginBottom: 10 }}>
                 <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>Laufschuhe</label>
                 <select value={logInput.schuh_id} onChange={e => setLogInput(p => ({ ...p, schuh_id: e.target.value }))}
@@ -911,13 +913,13 @@ if (user) {
 
             {/(krank|erkält|erkalt|schnupfen|fieber|husten|grippe|infekt|hals)/i.test(skipReasonInput) && (
               <div style={{ padding: '10px 14px', background: '#F0FAF4', border: '1px solid #B8E4CC', borderRadius: 12, fontSize: 12, color: '#5BA88A', fontFamily: 'sans-serif', lineHeight: 1.6, marginBottom: 12 }}>
-                💡 <strong>Faustregel bei Erkältung:</strong> Nur Symptome oberhalb des Halses (Schnupfen, leichtes Halskratzen)? Lockeres Laufen ist meist okay – bei Verschlechterung sofort abbrechen. Symptome unterhalb des Halses (Fieber, Gliederschmerzen, Husten, Brustschmerzen)? Dann lieber ganz pausieren, bis es abklingt.
+                💡 <strong>Bei Erkältung:</strong> Bei Fieber, Gliederschmerzen, Husten, Brustbeschwerden oder deutlichem Krankheitsgefühl lieber pausieren. Bei leichten Symptomen Belastung bewusst reduzieren und bei Verschlechterung abbrechen.
               </div>
             )}
 
             {/(verletz|schmerz|zerrung|umgeknickt|knie|sehne|muskel|zerrissen|gerissen)/i.test(skipReasonInput) && (
               <div style={{ padding: '10px 14px', background: '#FFF5EE', border: '1px solid #FFE0CC', borderRadius: 12, fontSize: 12, color: '#C17A3A', fontFamily: 'sans-serif', lineHeight: 1.6, marginBottom: 12 }}>
-                💡 <strong>Bei einer Verletzung:</strong> Falls schmerzfrei möglich, kann Alternativtraining die Fitness erhalten, ohne die Stelle zu belasten – z.B. Schwimmen, Radfahren, Aquajogging (kein Aufprall). Bei akuten oder starken Schmerzen hat Ruhe und ggf. eine ärztliche Abklärung aber immer Vorrang.
+                💡 <strong>Bei einer Verletzung:</strong> Falls schmerzfrei möglich, kann Alternativtraining die Fitness erhalten, ohne die Stelle zu belasten – z. B. eine schmerzfreie, deutlich leichtere Alternative. Bei akuten, starken oder anhaltenden Schmerzen hat Ruhe und ggf. eine medizinische Abklärung Vorrang.
               </div>
             )}
 
@@ -955,7 +957,7 @@ if (user) {
                     <div style={{ padding: '40px 0', textAlign: 'center', color: '#B8A090', fontSize: 12, fontFamily: 'sans-serif', background: '#FFF8F5' }}>⏳ Karte wird geladen…</div>
                   )}
                   {!routeMapLoading && routeMapUrl && (
-                    <img src={routeMapUrl} alt="Laufstrecke" style={{ width: '100%', display: 'block' }} />
+                    <img src={routeMapUrl} alt={isHikingPlan ? "Route" : "Laufstrecke"} style={{ width: '100%', display: 'block' }} />
                   )}
                   {!routeMapLoading && !routeMapUrl && routeMapError && (
                     <div style={{ padding: '20px', textAlign: 'center', color: '#D4C4B8', fontSize: 11, fontFamily: 'sans-serif', background: '#FFF8F5' }}>Keine Route verfügbar</div>
@@ -972,7 +974,7 @@ if (user) {
                 maxHeartRate={d.hf_max ? `${d.hf_max} bpm` : null}
                 elevation={d.hoehenmeter ? `${d.hoehenmeter} m` : null}
                 cadence={d.cadence ? `${d.cadence} spm` : null}
-                runningIndex={d.running_index}
+                runningIndex={isHikingPlan ? null : d.running_index}
                 shoe={shoeName}
               />
 
@@ -1007,7 +1009,7 @@ if (user) {
       <StoryShareModal
         open={storyOpen}
         onClose={() => setStoryOpen(false)}
-        title={detailModal ? `${detailModal.tag} · ${detailModal.einheit}` : 'Laufeinheit'}
+        title={detailModal ? `${detailModal.tag} · ${detailModal.einheit}` : (isHikingPlan ? 'Wander-/Marscheinheit' : 'Laufeinheit')}
         date={null}
         routeMapUrl={routeMapUrl}
         distance={detailModal ? logs[detailModal.key]?.km : null}
@@ -1047,7 +1049,7 @@ if (user) {
               <div style={{ height: '100%', width: `${progress}%`, background: 'white', borderRadius: 8, transition: 'width 0.5s ease' }} />
             </div>
             <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, margin: '6px 0 0', fontFamily: 'sans-serif' }}>
-              {doneDays}/{totalDays} Läufe erledigt
+              {doneDays}/{totalDays} {isHikingPlan ? 'Einheiten' : 'Läufe'} erledigt
             </p>
           </div>
         </div>

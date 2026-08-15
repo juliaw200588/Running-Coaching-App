@@ -3,6 +3,8 @@ import { supabase } from './lib/supabase.js'
 import Auth from './components/Auth.jsx'
 import LandingPage from './components/LandingPage.jsx'
 import Onboarding from './components/Onboarding.jsx'
+import HikingOnboarding from './components/HikingOnboarding.jsx'
+import HikingWeeklyCheckIn from './components/HikingWeeklyCheckIn.jsx'
 import WelcomeOnboarding from './components/WelcomeOnboarding.jsx'
 import TrainingPlan from './components/TrainingPlan.jsx'
 import Profile from './components/Profile.jsx'
@@ -49,7 +51,7 @@ const formatLocalDate = (date) =>
 function PlanSportSelection({ onSelect }) {
   const sports = [
     { id: 'running', icon: '🏃', title: 'Laufen', text: 'Trainiere strukturiert auf deine Laufziele hin.', available: true },
-    { id: 'hiking', icon: '🥾', title: 'Marsch & Wandern', text: 'Baue Distanz und Ausdauer Schritt für Schritt auf.', available: false },
+    { id: 'hiking', icon: '🥾', title: 'Marsch & Wandern', text: 'Baue Distanz und Ausdauer Schritt für Schritt auf.', available: true },
     { id: 'cycling', icon: '🚴', title: 'Radfahren', text: 'Mehr Ausdauer für längere Touren und persönliche Ziele.', available: false },
     { id: 'mountain_biking', icon: '🚵', title: 'Mountainbike', text: 'Trainiere Ausdauer und Belastbarkeit fürs Gelände.', available: false },
     { id: 'swimming', icon: '🏊', title: 'Schwimmen', text: 'Entwickle Ausdauer, Technik und längere Distanzen.', available: false },
@@ -120,6 +122,8 @@ function App() {
   const [profileSetupLoading, setProfileSetupLoading] = useState(false)
   const [onboardingCompleted, setOnboardingCompleted] = useState(null)
   const [selectedPlanSport, setSelectedPlanSport] = useState(null)
+  const [pendingHikingCheckIn, setPendingHikingCheckIn] = useState(null)
+  const [weeklyCheckInRefresh, setWeeklyCheckInRefresh] = useState(0)
   const weeklyCheckKeyRef = useRef(null)
 
   useEffect(() => {
@@ -158,6 +162,7 @@ function App() {
       setOnboardingCompleted(null)
       setProfileSetupLoading(false)
       setSelectedPlanSport(null)
+      setPendingHikingCheckIn(null)
     }
   }, [user])
 
@@ -447,7 +452,7 @@ useEffect(() => {
     // blockiert werden.
     weeklyCheckKeyRef.current = null
   }
-}, [user, plan])
+}, [user, plan, weeklyCheckInRefresh])
 
   const getWeekNumber = (date) => {
     const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
@@ -784,8 +789,8 @@ if (unloggedCount > 0) {
       type: 'week_reminder',
       message:
         `⏰ Woche ${currentWeek.n}: Noch ${unloggedCount} ` +
-        `Lauf${unloggedCount > 1 ? 'e' : ''} nicht eingetragen – ` +
-        `trag ${unloggedCount > 1 ? 'sie' : 'ihn'} ein oder markiere ` +
+        `Einheit${unloggedCount > 1 ? 'en' : ''} nicht eingetragen – ` +
+        `trag ${unloggedCount > 1 ? 'sie' : 'sie'} ein oder markiere ` +
         `die Einheit als übersprungen, damit dein Wochen-Coach starten kann.`,
       from_user_id: user.id,
     })
@@ -811,7 +816,37 @@ if (unloggedCount > 0) {
 }
 
 
-// Die Woche ist vollständig. Noch VOR dem kostenpflichtigen API-Aufruf
+// Bei Marsch-/Wanderplänen kommt vor der Analyse ein kurzer Wochen-Check.
+let weekCheckIn = null
+if (String(plan?.sport_type || plan?.plan_type || '').includes('hiking')) {
+  const { data: checkInData, error: checkInError } = await supabase
+    .from('week_checkins')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('week_start', weekStartStr)
+    .maybeSingle()
+
+  if (checkInError) {
+    console.error('[WochenCoach] Hiking Wochen-Check konnte nicht geladen werden:', checkInError)
+    return
+  }
+
+  if (!checkInData) {
+    setPendingHikingCheckIn({
+      weekNumber: currentWeek.n,
+      weekStart: weekStartStr,
+    })
+    coachDebug('Warte auf Marsch-/Wander-Wochen-Check.', {
+      weekNumber: currentWeek.n,
+      weekStart: weekStartStr,
+    })
+    return
+  }
+
+  weekCheckIn = checkInData
+}
+
+// Die Woche ist vollständig. Noch VOR dem Analyse-Aufruf
 // gewinnt genau EIN Trigger/Tab/Gerät den atomaren Wochen-Claim.
 const claimAcquired = await claimWeekAnalysis({
   userId: user.id,
@@ -896,6 +931,7 @@ if (!claimAcquired) return
             label: currentPhase.label,
             description: currentPhase.description,
           },
+          weekCheckIn: weekCheckIn || null,
         })
       })
 
@@ -1066,6 +1102,7 @@ if (!claimAcquired) return
 
     localStorage.setItem(`runcoaching_plan_${user.id}`, JSON.stringify(newPlan))
     setPlan(newPlan)
+    setSelectedPlanSport(null)
     setShowTrainingPlan(false)
   }
 
@@ -1156,6 +1193,18 @@ const handleOpenWeekAnalysisFromNotification = (weekNumber) => {
         />
       )}
 
+      <HikingWeeklyCheckIn
+        open={Boolean(pendingHikingCheckIn)}
+        user={user}
+        weekNumber={pendingHikingCheckIn?.weekNumber}
+        weekStart={pendingHikingCheckIn?.weekStart}
+        onClose={() => setPendingHikingCheckIn(null)}
+        onSaved={() => {
+          setPendingHikingCheckIn(null)
+          setWeeklyCheckInRefresh(value => value + 1)
+        }}
+      />
+
       <div style={{ paddingBottom: 78 }}>
         {activeTab === 'training' && (
           showTrainingPlan
@@ -1190,6 +1239,19 @@ const handleOpenWeekAnalysisFromNotification = (weekNumber) => {
                       </button>
                     </div>
                     <Onboarding onPlanGenerated={handlePlanGenerated} />
+                  </div>
+                ) : selectedPlanSport === 'hiking' ? (
+                  <div>
+                    <div style={{ maxWidth:720, margin:'0 auto', padding:'4px 16px 0' }}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPlanSport(null)}
+                        style={{ border:'none', background:'transparent', color:'#B07A68', fontSize:11, fontWeight:800, cursor:'pointer', padding:'8px 0', fontFamily:'sans-serif' }}
+                      >
+                        ← Andere Sportart wählen
+                      </button>
+                    </div>
+                    <HikingOnboarding onPlanGenerated={handlePlanGenerated} />
                   </div>
                 ) : (
                   <PlanSportSelection onSelect={setSelectedPlanSport} />
