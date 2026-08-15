@@ -175,10 +175,14 @@ export const buildHikingPlanGuardrails = form => {
     },
 
     backToBack: {
-      appropriate: shouldUseBackToBack(form),
+      appropriate: shouldUseBackToBack(form) && form?.allowAdjacentDays === 'yes',
+      usefulForGoal: shouldUseBackToBack(form),
+      allowAdjacentDays: form?.allowAdjacentDays === 'yes',
       earliestPlanFraction: 0.55,
       rule:
-        'Back-to-back-Einheiten erst in der spezifischeren Planhälfte und nur bei guter Verträglichkeit einsetzen. Die zweite Einheit bleibt deutlich kürzer und locker.',
+        form?.allowAdjacentDays === 'yes'
+          ? 'Back-to-back-Einheiten erst in der spezifischeren Planhälfte und nur bei guter Verträglichkeit einsetzen. Beide Einheiten müssen an direkt aufeinanderfolgenden Kalendertagen liegen; die zweite bleibt deutlich kürzer und locker.'
+          : 'Kein Back-to-back einplanen. Die gewählten Trainingstage bleiben verbindlich; ersetze den Reiz durch eine passende lange Einzelbelastung und gute Erholungsbeobachtung.',
     },
 
     terrain,
@@ -187,10 +191,10 @@ export const buildHikingPlanGuardrails = form => {
       style: form?.movementStyle || 'walk',
       rule:
         form?.movementStyle === 'runwalk'
-          ? 'Laufanteile sind erlaubt, aber nicht verpflichtend und niemals Voraussetzung für das Erreichen des Wander-/Marschziels.'
+          ? 'Gehen bleibt die Basis; gezielte kurze Laufanteile sind möglich, aber nie Pflicht. Lockere und zügige Gehanteile dürfen kombiniert werden.'
           : form?.movementStyle === 'brisk'
-            ? 'Gezielte zügige Gehabschnitte sind möglich; keine Laufanteile einplanen.'
-            : 'Nur Gehen/Wandern einplanen; keine Laufanteile.',
+            ? 'Sportliches Gehen stärker gewichten: häufiger zügige Einheiten, aber weiterhin ausreichend lockere Einheiten. Keine Laufanteile.'
+            : 'Gehen/Wandern als Basis: überwiegend locker, mit gezielten zügigen Abschnitten. Keine Laufanteile.',
     },
 
     backpack: {

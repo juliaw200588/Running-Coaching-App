@@ -13,6 +13,22 @@ const RESPONSE_SCHEMA = {
     weeksUntilRace: { type: 'integer' },
     unitsPerWeek: { type: 'integer' },
     planCaution: { type: ['string', 'null'] },
+    event: {
+      anyOf: [
+        { type: 'null' },
+        {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            title: { type: 'string' },
+            date: { type: ['string', 'null'] },
+            distanceKm: { type: ['number', 'null'] },
+            details: { type: 'string' },
+          },
+          required: ['title','date','distanceKm','details'],
+        },
+      ],
+    },
     phases: {
       type: 'array',
       items: {
@@ -42,6 +58,10 @@ const RESPONSE_SCHEMA = {
                       tag: { type: 'string' },
                       einheit: { type: 'string' },
                       details: { type: 'string' },
+                      intensity: { type: ['string', 'null'] },
+                      paceGuidance: { type: ['string', 'null'] },
+                      nutritionTip: { type: ['string', 'null'] },
+                      strengthPrescription: { type: ['string', 'null'] },
                       optional: { type: 'boolean' },
                       sport_type: { type: 'string' },
                     },
@@ -49,6 +69,10 @@ const RESPONSE_SCHEMA = {
                       'tag',
                       'einheit',
                       'details',
+                      'intensity',
+                      'paceGuidance',
+                      'nutritionTip',
+                      'strengthPrescription',
                       'optional',
                       'sport_type',
                     ],
@@ -81,6 +105,7 @@ const RESPONSE_SCHEMA = {
     'weeksUntilRace',
     'unitsPerWeek',
     'planCaution',
+    'event',
     'phases',
   ],
 }
@@ -140,6 +165,7 @@ const sanitizeInput = body => ({
     ? body.trainingOptions.slice(0, 10)
     : [],
   movementStyle: body?.movementStyle || 'walk',
+  allowAdjacentDays: body?.allowAdjacentDays === 'yes' ? 'yes' : 'no',
   goalBackpack: body?.goalBackpack || 'no',
   backpackKg: safeNumber(body?.backpackKg),
   considerations: String(body?.considerations || '').slice(0, 600),
@@ -210,7 +236,13 @@ const validatePlan = (plan, input, guardrails) => {
       day.sport_type = 'hiking'
       day.tag = normalizeDay(day.tag)
 
-      if (!input.preferredDays.includes(day.tag)) {
+      const isBackToBack = /back[- ]?to[- ]?back/i.test(String(day.einheit || ''))
+      const allowedException =
+        input.allowAdjacentDays === 'yes' &&
+        guardrails.backToBack?.appropriate &&
+        isBackToBack
+
+      if (!input.preferredDays.includes(day.tag) && !allowedException) {
         throw new Error(
           `Woche ${week.n} nutzt den nicht ausgewählten Trainingstag ${day.tag}.`
         )
@@ -245,6 +277,7 @@ const validatePlan = (plan, input, guardrails) => {
       trainingTerrain: input.trainingTerrain,
       trainingOptions: input.trainingOptions,
       movementStyle: input.movementStyle,
+      allowAdjacentDays: input.allowAdjacentDays,
       longestRecentKm: input.longestRecentKm,
       currentWeeklyKm: input.currentWeeklyKm,
       currentFrequency: input.currentFrequency,
@@ -306,35 +339,60 @@ VERBINDLICHE FACHREGELN:
 4. Die in guardrails.peakLongKm angegebene Distanz ist eine OBERGRENZE für die längste reguläre Trainingseinheit. Sie muss nicht erreicht werden.
 5. Bei 50–100-km-Zielen niemals verlangen, die volle Zieldistanz vor dem Event im Training zu absolvieren.
 6. Bei Mehrtagestouren ist Belastbarkeit an aufeinanderfolgenden Tagen wichtiger als eine einzelne Maximaldistanz.
-7. Back-to-back-Einheiten nur verwenden, wenn guardrails.backToBack.appropriate=true. Frühestens ungefähr ab der in earliestPlanFraction angegebenen Planposition. Die zweite Einheit deutlich kürzer und locker.
+7. Back-to-back:
+   - Nur verwenden, wenn guardrails.backToBack.appropriate=true.
+   - Beide spezifischen Back-to-back-Einheiten MÜSSEN an direkt aufeinanderfolgenden Kalendertagen liegen.
+   - Wenn input.allowAdjacentDays="yes", darf NUR für diese Back-to-back-Kombination einmalig ein benachbarter Tag außerhalb preferredDays verwendet werden.
+   - Wenn input.allowAdjacentDays!="yes", niemals eine Einheit als Back-to-back bezeichnen.
+   - Frühestens ungefähr ab earliestPlanFraction; zweite Einheit deutlich kürzer und locker.
 8. Zielgelände und Trainingsumgebung strikt unterscheiden. Wenn guardrails.terrain.mismatch=true, keine nicht verfügbaren Höhenmeter-Möglichkeiten erfinden.
 9. Verwende ausschließlich Alternativen aus guardrails.terrain.allowedAlternatives. Ist die Liste leer, bleiben flache Einheiten vollständig valide.
-10. Keine Herzfrequenzzonen voraussetzen. Intensität verständlich über locker, zügig, kontrolliert, Zeit auf den Beinen und subjektive Belastung beschreiben.
-11. Bewegungstyp strikt beachten:
-    - walk: nur Gehen/Wandern, keine Laufanteile.
-    - brisk: zügiges Gehen möglich, keine Laufanteile.
-    - runwalk: kurze Laufanteile dürfen vorkommen, sind aber nie Pflicht.
-12. Rucksacktraining nur wenn backpack.requiredAtGoal=true. Gewicht konservativ aufbauen; Druckstellen haben Vorrang.
-13. Bei langen Einheiten in der spezifischen Phase sinnvoll Ausrüstung, Schuhe/Socken, Verpflegung und Pausenstrategie testen lassen.
-14. Bei knapper Vorbereitungszeit NIEMALS aggressiver steigern, nur um rechnerisch die Zieldistanz zu erreichen.
-15. Event-/Zielwoche: Tapering bzw. deutliche Entlastung. Das Event selbst NICHT als normale Trainingseinheit in den Wochenplan schreiben.
-16. Jede Pflichtwoche enthält EXAKT die vom Nutzer gewählte Anzahl Einheiten.
-17. Verwende AUSSCHLIESSLICH die ausgewählten preferredDays als tag.
-18. Alle Planeinheiten erhalten sport_type="hiking".
-19. Die Wochen müssen lückenlos mit 1 bis requestedWeeks nummeriert sein.
-20. Verwende die vier Designphasen Basis, Aufbau, Spezifisch und Zielphase. Bei kurzen Plänen darf eine Phase nur wenige Wochen enthalten, aber alle vier Phasen sollen vorhanden sein.
-21. Details sollen konkret genug sein, um die Einheit direkt auszuführen, aber nicht unnötig lang.
-22. Keine medizinischen Diagnosen und keine unrealistischen Erfolgsgarantien.
-23. Keine internen technischen Begriffe, Modelle, APIs oder Kosten erwähnen.
+10. INTENSITÄT: Nutzerseitig gibt es nur zwei Belastungsstufen: "locker" und "zügig". Verwende NICHT "sehr locker", "moderat", "kontrolliert" oder weitere Intensitätsstufen als intensity.
+    - locker = natürliches, entspanntes Gehen, über längere Zeit komfortabel haltbar.
+    - zügig = bewusst flotter, aber nicht maximal; über die vorgesehene Strecke kontrolliert haltbar.
+    - Bei Regeneration bleibt intensity="locker"; erkläre die Erholung über Einheitstitel und details.
+11. PACE: Gib bei Geh-/Marsch-/Wandereinheiten eine großzügige ungefähre Pace-Spanne als Orientierung in paceGuidance an, z. B. "ca. 9:30–11:00 min/km".
+    - Pace ist KEIN starres Ziel. Gelände, Untergrund, Wind, Rucksack und individuelle Gehgeschwindigkeit haben Vorrang.
+    - Bei deutlich hügeligem/bergigem Gelände oder wenn eine sinnvolle Pace nicht ableitbar ist, paceGuidance=null.
+    - Keine falsche Präzision. Lieber breite Range.
+    - Bei Krafttraining paceGuidance=null.
+12. Bewegungstyp:
+    - walk: Gehen & Wandern; überwiegend locker, gezielte zügige Abschnitte erlaubt; keine Laufanteile.
+    - brisk: sportliches Gehen stärker gewichten; häufiger zügig, aber weiterhin lockere Einheiten; keine Laufanteile.
+    - runwalk: Gehen bleibt Basis; kurze Laufanteile möglich, nie Pflicht.
+13. Rucksacktraining nur wenn backpack.requiredAtGoal=true. Gewicht konservativ aufbauen; Druckstellen haben Vorrang.
+14. VERPFLEGUNG: Bei längeren Einheiten ab ungefähr 2–2,5 Stunden soll nutritionTip konkret sagen, WAS heute getestet wird.
+    - Frühe lange Einheiten: einfacher Einstieg, ungefähr 30–40 g Kohlenhydrate pro Stunde als Orientierung; Beispiele wie Banane, Riegel, Gel, Brot oder Sportgetränk nennen.
+    - Spätere spezifische lange Einheiten: persönliche Eventstrategie testen (Rhythmus, Verträglichkeit, Getränke, Pausen).
+    - Nicht jede kurze Einheit mit Ernährungshinweisen überladen.
+15. KRAFT: Kraft-/Stabilitätseinheiten NUR wenn input.trainingOptions "gym" enthält.
+    - Dann strengthPrescription mit 4–5 Übungen, Sätzen und Wiederholungen ausgeben, z. B. Step-ups, Split Squats, Romanian Deadlift/Hüftbeuge, Wadenheben, Rumpfstabilität.
+    - Typisch 2–3 Sätze, meist 8–12 Wiederholungen; kontrolliert, nicht bis zum Muskelversagen.
+    - Keine pauschale Vorgabe "viele Wiederholungen".
+    - In Peak-/Zielphase Umfang reduzieren; keine schwere Kraftbelastung direkt vor der wichtigsten langen Einheit.
+    - Wenn kein "gym": KEINE Kraft-/Gym-Einheit erzeugen und strengthPrescription=null.
+16. Bei knapper Vorbereitungszeit NIEMALS aggressiver steigern, nur um rechnerisch die Zieldistanz zu erreichen.
+17. EVENT: Das Event/Ziel selbst NICHT als normale Trainingseinheit in phases/weeks/days schreiben.
+    - Wenn ein konkretes Event/Zieldatum vorliegt, event als separates Objekt ausgeben.
+    - Die letzte Planwoche enthält nur Taper-/Vorbereitungseinheiten.
+18. Jede Pflichtwoche enthält EXAKT die vom Nutzer gewählte Anzahl Trainingseinheiten; das separate event zählt NICHT dazu.
+19. Verwende grundsätzlich ausschließlich preferredDays als tag. Einzige Ausnahme ist die ausdrücklich erlaubte Back-to-back-Regel aus Punkt 7.
+20. Alle Planeinheiten erhalten sport_type="hiking".
+21. Die Wochen müssen lückenlos mit 1 bis requestedWeeks nummeriert sein.
+22. Verwende die vier Designphasen Basis, Aufbau, Spezifisch und Zielphase. Bei kurzen Plänen darf eine Phase nur wenige Wochen enthalten, aber alle vier Phasen sollen vorhanden sein.
+23. Details sollen konkret genug sein, um die Einheit direkt auszuführen, aber nicht unnötig lang.
+24. Keine medizinischen Diagnosen und keine unrealistischen Erfolgsgarantien.
+25. Keine internen technischen Begriffe, Modelle, APIs oder Kosten erwähnen.
 
 PLANCHARAKTER:
 - 2 Einheiten/Woche: lange Einheit + lockere/gezielte Grundlage.
 - 3 Einheiten/Woche: lange Einheit + lockere Grundlage + zügige/zielspezifische Einheit.
-- 4 Einheiten/Woche: zusätzlich sehr lockere bzw. kurze ergänzende Einheit.
+- 4 Einheiten/Woche: zusätzliche kurze lockere Einheit; keine künstliche dritte Intensitätsstufe.
 - 5 Einheiten/Woche: mehr Frequenz, aber nicht automatisch mehr harte Belastung.
 - Die lange Einheit ist der wichtigste spezifische Reiz.
 - Für Geländeziele ohne verfügbares Gelände eher Zeit auf den Beinen, kontrollierte Dauer und vorhandene Alternativen nutzen.
-- Bei Mehrtagestouren in der spezifischen Phase gelegentlich Back-to-back statt immer längerer Einzelstrecken einsetzen.
+- Bei geeigneten Langdistanz-/Mehrtagestielen und erlaubten benachbarten Tagen in der spezifischen Phase gelegentlich echtes Back-to-back einsetzen.
+- intensity, paceGuidance, nutritionTip und strengthPrescription sind strukturierte Coaching-Hinweise und sollen zur Einheit passen.
 
 AUSGABE:
 Gib ausschließlich das verlangte strukturierte JSON zurück.`

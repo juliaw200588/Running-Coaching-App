@@ -5,9 +5,6 @@ import PhaseTimeline from './PhaseTimeline.jsx'
 import PhaseCards from './PhaseCards.jsx'
 import SplitAccordion from './SplitAccordion.jsx'
 import StoryShareModal from './StoryShareModal.jsx'
-import WeeklyAnalysis from './WeeklyAnalysis.jsx'
-import TrainingFeedbackModal from './TrainingFeedbackModal.jsx'
-import { encodeTrainingFeedback, hasStructuredTrainingFeedback, trainingFeedbackSummary } from '../lib/trainingFeedback.js'
 
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
@@ -37,70 +34,35 @@ const parseJsonArray = (value) => {
 // da sonst Zahlen aus Pace-/HF-Bereichen fälschlich als Minuten gezählt würden.
 const estimateDayKm = (details) => {
   if (!details) return 0
+  const clean = details.replace(/\([^)]*\)/g, '')
 
-  // Klammerinhalte enthalten meistens Pace-/HF-Bereiche und keine Distanz.
-  let clean = String(details).replace(/\([^)]*\)/g, '')
-
-  // Wenn der Trainingstext mit einer Gesamtdistanz beginnt ("16 km Zone 2 ..."),
-  // ist diese Zahl maßgeblich. Spätere Angaben wie "ab km 8-10" oder Pace-Hinweise
-  // dürfen dann NICHT noch einmal addiert werden.
-  const leadingTotalKm = clean.match(
-    /^\s*(\d+(?:[.,]\d+)?)\s*km\b/i
-  )
-  if (leadingTotalKm) {
-    return parseFloat(leadingTotalKm[1].replace(',', '.'))
-  }
-
-  // Pace-Angaben VOR der Minutenauswertung entfernen.
-  // Sonst wurde z.B. "6:30 min/km" fälschlich als "30 min" gezählt –
-  // genau dadurch konnte das Wochensummary nach Coach-Anpassungen massiv steigen.
-  clean = clean
-    .replace(
-      /\b\d{1,2}:\d{2}\s*[-–]\s*\d{1,2}:\d{2}\s*min\/km\b/gi,
-      ''
-    )
-    .replace(
-      /\b\d{1,2}:\d{2}\s*min\/km\b/gi,
-      ''
-    )
+  // Erkennt ein führendes "NN km: ..." als GESAMT-Distanz des Tages (z.B.
+  // "16 km: 12 km Zone 2 + 4 km progressiv..."). Die folgenden km-Angaben sind dann nur
+  // eine Aufschlüsselung des Gesamtwerts, keine zusätzliche Distanz - nicht mit aufsummieren.
+  const totalMatch = clean.match(/^\s*(\d+(?:[.,]\d+)?)\s*km\s*:/)
+  if (totalMatch) return parseFloat(totalMatch[1].replace(',', '.'))
 
   let km = 0
 
-  // Wiederholungen zuerst erfassen, z.B. 5x800 m.
-  const repRegex =
-    /(\d+)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*(km|m)\b/gi
-
-  let match
-  while ((match = repRegex.exec(clean))) {
-    const reps = parseInt(match[1], 10)
-    let distance = parseFloat(match[2].replace(',', '.'))
-
-    if (match[3].toLowerCase() === 'm') {
-      distance /= 1000
-    }
-
-    km += reps * distance
+  const repRegex = /(\d+)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*(km|m)\b/gi
+  let m
+  while ((m = repRegex.exec(clean))) {
+    const reps = parseInt(m[1])
+    let dist = parseFloat(m[2].replace(',', '.'))
+    if (m[3].toLowerCase() === 'm') dist = dist / 1000
+    km += reps * dist
   }
-
   let rest = clean.replace(repRegex, '')
 
-  // Bereiche wie "km 8-10" / "ab 8-10 km" sind Positionsangaben,
-  // keine zusätzliche Trainingsdistanz.
-  rest = rest
-    .replace(/\b(?:ab\s+)?km\s*\d+(?:[.,]\d+)?\s*[-–]\s*\d+(?:[.,]\d+)?\b/gi, '')
-    .replace(/\b(?:ab\s+)?\d+(?:[.,]\d+)?\s*[-–]\s*\d+(?:[.,]\d+)?\s*km\b/gi, '')
-
-  // Verbleibende explizite Distanzen addieren.
-  const kmRegex = /(\d+(?:[.,]\d+)?)\s*km\b/gi
-  while ((match = kmRegex.exec(rest))) {
-    km += parseFloat(match[1].replace(',', '.'))
+  const kmRegex = /(\d+(?:[.,]\d+)?)\s*km\b/g
+  while ((m = kmRegex.exec(rest))) {
+    km += parseFloat(m[1].replace(',', '.'))
   }
   rest = rest.replace(kmRegex, '')
 
-  // Nur echte Dauern wie "10 min einlaufen" / "35 min locker".
-  const minRegex = /(\d+(?:[.,]\d+)?)\s*min\b/gi
-  while ((match = minRegex.exec(rest))) {
-    km += parseFloat(match[1].replace(',', '.')) / 8
+  const minRegex = /(\d+)\s*min\b/g
+  while ((m = minRegex.exec(rest))) {
+    km += parseInt(m[1]) / 8
   }
 
   return km
@@ -196,14 +158,7 @@ function findCurrentPhaseWeek(plan) {
   return { phaseIdx: 0, weekIdx: 0 }
 }
 
-export default function TrainingPlan({
-  plan,
-  onReset,
-  user,
-  openWeekAnalysis = null,
-  onWeekAnalysisOpened,
-}) {
-  const isHikingPlan = plan?.sport_type === 'hiking' || plan?.plan_type === 'hiking_march'
+export default function TrainingPlan({ plan, onReset, user }) {
   const [activePhase, setActivePhase] = useState(() => findCurrentPhaseWeek(plan).phaseIdx)
   const [showPauseModal, setShowPauseModal] = useState(false)
   const [pauseWeeks, setPauseWeeks] = useState(1)
@@ -224,32 +179,12 @@ export default function TrainingPlan({
   const [routeMapLoading, setRouteMapLoading] = useState(false)
   const [routeMapError, setRouteMapError] = useState(null)
   const [storyOpen, setStoryOpen] = useState(false)
-  const [weekAnalyses, setWeekAnalyses] = useState({})
-  const [analysisModal, setAnalysisModal] = useState(null)
-  const [feedbackModal, setFeedbackModal] = useState(null)
-  const [feedbackSaving, setFeedbackSaving] = useState(false)
-
-
-useEffect(() => {
-  if (openWeekAnalysis == null) return
-
-  const analysis = weekAnalyses[Number(openWeekAnalysis)]
-  if (!analysis) return
-
-  setAnalysisModal(analysis)
-
-  if (typeof onWeekAnalysisOpened === 'function') {
-    onWeekAnalysisOpened()
-  }
-}, [
-  openWeekAnalysis,
-  weekAnalyses,
-  onWeekAnalysisOpened,
-])
   const [skipReasonInput, setSkipReasonInput] = useState('')
   const fileRef = useRef()
 
   const phases = plan.phases || []
+  const isHikingPlan = plan?.sport_type === 'hiking' || plan?.plan_type === 'hiking_march'
+  const planHeroImage = isHikingPlan ? '/hero/hiking/03.webp' : null
 
   const handlePausePlan = async () => {
     // Alle Datumsangaben im Plan um pauseWeeks Wochen verschieben
@@ -354,28 +289,6 @@ useEffect(() => {
       } else {
         try { const l = await window.storage.get('laufplan_logs'); if (l) setLogs(JSON.parse(l.value)) } catch {}
       }
-
-
-// Wochenanalysen dauerhaft am Trainingsplan anzeigen
-if (user) {
-  try {
-    const { data: analysisRows } = await supabase
-      .from('week_analyses')
-      .select(
-        'id, week_number, week_start, analysis, recommendation, next_week_adjustment, analysis_data'
-      )
-      .eq('user_id', user.id)
-      .order('week_number', { ascending: true })
-
-    const analysisMap = {}
-    ;(analysisRows || []).forEach(row => {
-      analysisMap[row.week_number] = row
-    })
-    setWeekAnalyses(analysisMap)
-  } catch (error) {
-    console.error('Wochenanalysen laden fehlgeschlagen:', error)
-  }
-}
 
       // Screenshots: zuerst aus Supabase, dann localStorage als Fallback
       if (user) {
@@ -590,56 +503,6 @@ if (user) {
     }
   }
 
-  const openFeedback = (key, tag, einheit) => {
-    const existing = logs[key] || {}
-    setFeedbackModal({
-      key,
-      tag,
-      einheit,
-      feeling: existing.gefuehl || '',
-      note: existing.note || '',
-    })
-  }
-
-  const saveTrainingFeedback = async ({ effort, recovery, note }) => {
-    if (!feedbackModal?.key) return
-
-    const key = feedbackModal.key
-    const existing = logs[key] || {}
-    const gefuehl = encodeTrainingFeedback(
-      { effort, recovery },
-      existing.gefuehl || feedbackModal.feeling || null
-    )
-
-    setFeedbackSaving(true)
-    try {
-      const nextLog = {
-        ...existing,
-        gefuehl,
-        note: note || '',
-      }
-
-      await persistLogs({ ...logs, [key]: nextLog })
-
-      if (user) {
-        const { error } = await supabase.from('logs').upsert({
-          user_id: user.id,
-          day_key: key,
-          gefuehl,
-          note: note || null,
-        }, { onConflict: 'user_id,day_key' })
-
-        if (error) throw error
-      }
-
-      setFeedbackModal(null)
-    } catch (error) {
-      console.error('Trainingsfeedback konnte nicht gespeichert werden:', error)
-    } finally {
-      setFeedbackSaving(false)
-    }
-  }
-
   const openLog = (key, tag, einheit) => {
     const ex = logs[key] || {}
     setLogInput({ pace: ex.pace || '', km: ex.km || '', bpm: ex.bpm || '', note: ex.note || '', schuh_id: ex.schuh_id || '' })
@@ -688,7 +551,7 @@ if (user) {
   const saveLog = async () => {
     const key = logModal.key
     const oldLog = logs[key]
-    const nl = { ...logs, [key]: { ...(oldLog || {}), ...logInput, sport_type: isHikingPlan ? 'hiking' : (oldLog?.sport_type || 'running') } }
+    const nl = { ...logs, [key]: { ...logInput } }
     await persistLogs(nl)
     await persistScreenshot(key, modalScreenshot, screenshots)
 
@@ -711,8 +574,7 @@ if (user) {
           km: logInput.km || null,
           bpm: logInput.bpm || null,
           note: logInput.note || null,
-          schuh_id: isHikingPlan ? null : (logInput.schuh_id || null),
-          sport_type: isHikingPlan ? 'hiking' : (oldLog?.sport_type || 'running'),
+          schuh_id: logInput.schuh_id || null,
         }, { onConflict: 'user_id,day_key' })
       } catch (e) { console.error('Log Supabase Fehler:', e) }
     }
@@ -741,18 +603,7 @@ if (user) {
       }
     }
 
-    const shouldAskFeedback = !hasStructuredTrainingFeedback(oldLog?.gefuehl)
     setLogModal(null); setModalScreenshot(null); setModalPreview(null)
-
-    if (shouldAskFeedback) {
-      setFeedbackModal({
-        key,
-        tag: logModal.tag,
-        einheit: logModal.einheit,
-        feeling: oldLog?.gefuehl || '',
-        note: logInput.note || '',
-      })
-    }
   }
 
   const deleteLog = async (key) => {
@@ -855,7 +706,7 @@ if (user) {
             </div>
 
             {/* Schuh-Auswahl */}
-            {schuhe.length > 0 && !isHikingPlan && (
+            {schuhe.length > 0 && (
               <div style={{ marginBottom: 10 }}>
                 <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>Laufschuhe</label>
                 <select value={logInput.schuh_id} onChange={e => setLogInput(p => ({ ...p, schuh_id: e.target.value }))}
@@ -887,15 +738,6 @@ if (user) {
         </div>
       )}
 
-      <TrainingFeedbackModal
-        open={feedbackModal}
-        feeling={feedbackModal?.feeling}
-        note={feedbackModal?.note}
-        saving={feedbackSaving}
-        onClose={() => setFeedbackModal(null)}
-        onSave={saveTrainingFeedback}
-      />
-
       {/* Skip Modal */}
       {skipModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(60,30,20,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
@@ -913,13 +755,13 @@ if (user) {
 
             {/(krank|erkält|erkalt|schnupfen|fieber|husten|grippe|infekt|hals)/i.test(skipReasonInput) && (
               <div style={{ padding: '10px 14px', background: '#F0FAF4', border: '1px solid #B8E4CC', borderRadius: 12, fontSize: 12, color: '#5BA88A', fontFamily: 'sans-serif', lineHeight: 1.6, marginBottom: 12 }}>
-                💡 <strong>Bei Erkältung:</strong> Bei Fieber, Gliederschmerzen, Husten, Brustbeschwerden oder deutlichem Krankheitsgefühl lieber pausieren. Bei leichten Symptomen Belastung bewusst reduzieren und bei Verschlechterung abbrechen.
+                💡 <strong>Faustregel bei Erkältung:</strong> Nur Symptome oberhalb des Halses (Schnupfen, leichtes Halskratzen)? Lockeres Laufen ist meist okay – bei Verschlechterung sofort abbrechen. Symptome unterhalb des Halses (Fieber, Gliederschmerzen, Husten, Brustschmerzen)? Dann lieber ganz pausieren, bis es abklingt.
               </div>
             )}
 
             {/(verletz|schmerz|zerrung|umgeknickt|knie|sehne|muskel|zerrissen|gerissen)/i.test(skipReasonInput) && (
               <div style={{ padding: '10px 14px', background: '#FFF5EE', border: '1px solid #FFE0CC', borderRadius: 12, fontSize: 12, color: '#C17A3A', fontFamily: 'sans-serif', lineHeight: 1.6, marginBottom: 12 }}>
-                💡 <strong>Bei einer Verletzung:</strong> Falls schmerzfrei möglich, kann Alternativtraining die Fitness erhalten, ohne die Stelle zu belasten – z. B. eine schmerzfreie, deutlich leichtere Alternative. Bei akuten, starken oder anhaltenden Schmerzen hat Ruhe und ggf. eine medizinische Abklärung Vorrang.
+                💡 <strong>Bei einer Verletzung:</strong> Falls schmerzfrei möglich, kann Alternativtraining die Fitness erhalten, ohne die Stelle zu belasten – z.B. Schwimmen, Radfahren, Aquajogging (kein Aufprall). Bei akuten oder starken Schmerzen hat Ruhe und ggf. eine ärztliche Abklärung aber immer Vorrang.
               </div>
             )}
 
@@ -945,8 +787,19 @@ if (user) {
           : null
 
         return (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(60,30,20,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-            <div style={{ background: 'white', borderRadius: '28px 28px 0 0', padding: '24px 24px 44px', width: '100%', maxWidth: 520, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 -8px 40px rgba(255,140,105,0.2)' }}>
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(60,30,20,0.45)', zIndex: 300, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+            <div style={{
+              background: 'white',
+              borderRadius: '28px 28px 0 0',
+              padding: '24px 24px max(118px, calc(env(safe-area-inset-bottom) + 104px))',
+              width: '100%',
+              maxWidth: 520,
+              maxHeight: 'calc(100dvh - 72px)',
+              overflowY: 'auto',
+              WebkitOverflowScrolling: 'touch',
+              boxShadow: '0 -8px 40px rgba(255,140,105,0.2)',
+              boxSizing: 'border-box',
+            }}>
               <div style={{ width: 36, height: 4, background: '#F0E8E0', borderRadius: 99, margin: '0 auto 18px' }} />
               <div style={{ fontSize: 11, color: '#C4A882', marginBottom: 2, fontFamily: 'sans-serif' }}>{detailModal.tag}</div>
               <h3 style={{ fontSize: 18, fontWeight: 'bold', color: '#3D2B1F', marginBottom: 18 }}>{detailModal.einheit}</h3>
@@ -957,7 +810,7 @@ if (user) {
                     <div style={{ padding: '40px 0', textAlign: 'center', color: '#B8A090', fontSize: 12, fontFamily: 'sans-serif', background: '#FFF8F5' }}>⏳ Karte wird geladen…</div>
                   )}
                   {!routeMapLoading && routeMapUrl && (
-                    <img src={routeMapUrl} alt={isHikingPlan ? "Route" : "Laufstrecke"} style={{ width: '100%', display: 'block' }} />
+                    <img src={routeMapUrl} alt="Laufstrecke" style={{ width: '100%', display: 'block' }} />
                   )}
                   {!routeMapLoading && !routeMapUrl && routeMapError && (
                     <div style={{ padding: '20px', textAlign: 'center', color: '#D4C4B8', fontSize: 11, fontFamily: 'sans-serif', background: '#FFF8F5' }}>Keine Route verfügbar</div>
@@ -974,7 +827,7 @@ if (user) {
                 maxHeartRate={d.hf_max ? `${d.hf_max} bpm` : null}
                 elevation={d.hoehenmeter ? `${d.hoehenmeter} m` : null}
                 cadence={d.cadence ? `${d.cadence} spm` : null}
-                runningIndex={isHikingPlan ? null : d.running_index}
+                runningIndex={d.running_index}
                 shoe={shoeName}
               />
 
@@ -993,12 +846,58 @@ if (user) {
                 </div>
               )}
 
-              <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-                <button onClick={() => setDetailModal(null)} style={{ flex: 1, padding: 14, borderRadius: 16, border: '1.5px solid #F0E8E0', background: 'white', color: '#B8A090', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+              <div
+                style={{
+                  position: 'sticky',
+                  bottom: 0,
+                  zIndex: 5,
+                  display: 'flex',
+                  gap: 8,
+                  margin: '20px -24px -90px',
+                  padding: '12px 24px max(16px, env(safe-area-inset-bottom))',
+                  background: 'linear-gradient(to bottom, rgba(255,255,255,0.82), white 24%)',
+                  backdropFilter: 'blur(10px)',
+                  WebkitBackdropFilter: 'blur(10px)',
+                  borderTop: '1px solid #F5EDE8',
+                }}
+              >
+                <button
+                  onClick={() => {
+                    setDetailModal(null)
+                    setStoryOpen(false)
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: 14,
+                    borderRadius: 16,
+                    border: '1.5px solid #F0E8E0',
+                    background: 'white',
+                    color: '#B8A090',
+                    fontSize: 14,
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    fontFamily: 'sans-serif',
+                  }}
+                >
                   Schließen
                 </button>
-                <button onClick={() => setStoryOpen(true)} style={{ flex: 1.4, padding: 14, borderRadius: 16, border: 'none', background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)', color: 'white', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
-                  📸 Story-Bild
+
+                <button
+                  onClick={() => setStoryOpen(true)}
+                  style={{
+                    flex: 1.4,
+                    padding: 14,
+                    borderRadius: 16,
+                    border: 'none',
+                    background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)',
+                    color: 'white',
+                    fontSize: 14,
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    fontFamily: 'sans-serif',
+                  }}
+                >
+                  📸 Story erstellen
                 </button>
               </div>
             </div>
@@ -1009,25 +908,53 @@ if (user) {
       <StoryShareModal
         open={storyOpen}
         onClose={() => setStoryOpen(false)}
-        title={detailModal ? `${detailModal.tag} · ${detailModal.einheit}` : (isHikingPlan ? 'Wander-/Marscheinheit' : 'Laufeinheit')}
+        title={detailModal ? `${detailModal.tag} · ${detailModal.einheit}` : 'Laufeinheit'}
         date={null}
         routeMapUrl={routeMapUrl}
         distance={detailModal ? logs[detailModal.key]?.km : null}
         pace={detailModal ? logs[detailModal.key]?.pace : null}
         heartRate={detailModal ? logs[detailModal.key]?.bpm : null}
+        calories={detailModal && logs[detailModal.key]?.kalorien ? `${logs[detailModal.key].kalorien} kcal` : null}
         phases={detailModal ? logs[detailModal.key]?.run_segments || [] : []}
+        runningIndex={detailModal ? logs[detailModal.key]?.running_index : null}
+        elevation={detailModal && logs[detailModal.key]?.hoehenmeter ? `${logs[detailModal.key].hoehenmeter} m` : null}
+        logoSrc="/route-icon.png"
       />
 
-
-{analysisModal && (
-  <WeeklyAnalysis
-    analysis={analysisModal}
-    weekNumber={analysisModal.week_number}
-    onClose={() => setAnalysisModal(null)}
-  />
-)}
-
       {/* Header */}
+      {isHikingPlan ? (
+        <div style={{ position:'relative', overflow:'hidden', minHeight:300, boxShadow:'0 8px 32px rgba(55,45,35,.18)' }}>
+          <div aria-hidden="true" style={{position:'absolute',inset:0,backgroundImage:`url("${planHeroImage}")`,backgroundSize:'cover',backgroundPosition:'center 52%'}} />
+          <div aria-hidden="true" style={{position:'absolute',inset:0,background:'linear-gradient(90deg,rgba(20,24,18,.78) 0%,rgba(20,24,18,.58) 48%,rgba(20,24,18,.24) 100%)'}} />
+          <div style={{position:'relative',zIndex:2,maxWidth:580,margin:'0 auto',padding:'42px 20px 30px'}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+              <div style={{width:46,height:46,borderRadius:'50%',background:'rgba(255,248,240,.94)',border:'3px solid rgba(255,255,255,.7)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 5px 18px rgba(0,0,0,.18)'}}>
+                <img src="/route-icon.png" alt="" style={{width:31,height:31,borderRadius:'50%'}} />
+              </div>
+              <div style={{fontFamily:'sans-serif',fontSize:11,fontWeight:900,letterSpacing:1.8,color:'rgba(255,255,255,.9)',textTransform:'uppercase'}}>Dein Trainingsplan</div>
+            </div>
+            <p style={{color:'rgba(255,255,255,.82)',fontSize:11,letterSpacing:3,textTransform:'uppercase',margin:'0 0 5px',fontFamily:'sans-serif'}}>
+              {plan.goal ? `Ziel: ${plan.goal}` : 'Marsch & Wandern'}
+            </p>
+            <h1 style={{color:'white',fontSize:30,fontWeight:'bold',margin:'0 0 4px',textShadow:'0 2px 12px rgba(0,0,0,.28)'}}>
+              {plan.title || 'Trainingsplan'}
+            </h1>
+            {plan.name && <p style={{color:'rgba(255,255,255,.84)',fontSize:12,margin:'0 0 20px',fontFamily:'sans-serif'}}>Für {plan.name}</p>}
+            <div style={{background:'rgba(255,255,255,.16)',border:'1px solid rgba(255,255,255,.22)',borderRadius:18,padding:'14px 18px',backdropFilter:'blur(10px)'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                <span style={{color:'white',fontSize:13,fontFamily:'sans-serif'}}>Fortschritt</span>
+                <span style={{color:'white',fontWeight:'bold',fontSize:20}}>{progress}%</span>
+              </div>
+              <div style={{background:'rgba(255,255,255,.3)',borderRadius:8,height:8,overflow:'hidden'}}>
+                <div style={{height:'100%',width:`${progress}%`,background:'white',borderRadius:8,transition:'width .5s ease'}} />
+              </div>
+              <p style={{color:'rgba(255,255,255,.82)',fontSize:11,margin:'6px 0 0',fontFamily:'sans-serif'}}>
+                {doneDays}/{totalDays} Einheiten erledigt
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : (
       <div style={{ background: 'linear-gradient(135deg, #FF8C69 0%, #FFB347 50%, #FF6B9D 100%)', padding: '36px 20px 28px', borderRadius: '0 0 32px 32px', boxShadow: '0 8px 32px rgba(255,140,105,0.3)', position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', top: -20, right: -20, width: 120, height: 120, background: 'rgba(255,255,255,0.1)', borderRadius: '50%' }} />
         <div style={{ position: 'absolute', bottom: -30, left: 40, width: 80, height: 80, background: 'rgba(255,255,255,0.08)', borderRadius: '50%' }} />
@@ -1049,12 +976,13 @@ if (user) {
               <div style={{ height: '100%', width: `${progress}%`, background: 'white', borderRadius: 8, transition: 'width 0.5s ease' }} />
             </div>
             <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, margin: '6px 0 0', fontFamily: 'sans-serif' }}>
-              {doneDays}/{totalDays} {isHikingPlan ? 'Einheiten' : 'Läufe'} erledigt
+              {doneDays}/{totalDays} Läufe erledigt
             </p>
           </div>
         </div>
       </div>
 
+      )}
       <div style={{ maxWidth: 580, margin: '0 auto' }}>
         {/* Phase Tabs */}
         <div style={{ padding: '20px 16px 8px', overflowX: 'auto' }}>
@@ -1145,6 +1073,22 @@ if (user) {
                               {day.adjusted && <span style={{ fontSize: 9, background: '#FFF5EE', color: '#FF8C69', padding: '2px 7px', borderRadius: 99, fontWeight: 'bold', border: '1px solid #FFE0CC', fontFamily: 'sans-serif' }}>✏️ Angepasst</span>}
                             </div>
                             <div style={{ color: isDone ? '#A8D8C0' : isSkipped ? '#B8AC9E' : '#B8A090', fontSize: 11, fontFamily: 'sans-serif', marginTop: 3, lineHeight: 1.5 }}>{day.details}</div>
+                            {isHikingPlan && (day.intensity || day.paceGuidance) && (
+                              <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:7}}>
+                                {day.intensity && <span style={{fontSize:9.5,background:'#F3F8F5',color:'#4F806B',padding:'3px 8px',borderRadius:99,fontWeight:800,fontFamily:'sans-serif',border:'1px solid #D7E8DF'}}>Tempo: {day.intensity}</span>}
+                                {day.paceGuidance && <span style={{fontSize:9.5,background:'#FFF7EF',color:'#A46C43',padding:'3px 8px',borderRadius:99,fontWeight:800,fontFamily:'sans-serif',border:'1px solid #F1DDCC'}}>Orientierung: {day.paceGuidance}</span>}
+                              </div>
+                            )}
+                            {isHikingPlan && day.nutritionTip && (
+                              <div style={{marginTop:8,padding:'9px 10px',borderRadius:11,background:'#FFF9E9',border:'1px solid #F0E2B9',fontSize:10.5,lineHeight:1.45,color:'#806A3D',fontFamily:'sans-serif'}}>
+                                🍌 <strong>Verpflegung testen:</strong> {day.nutritionTip}
+                              </div>
+                            )}
+                            {isHikingPlan && day.strengthPrescription && (
+                              <div style={{marginTop:8,padding:'9px 10px',borderRadius:11,background:'#F5F1FA',border:'1px solid #E2D8EC',fontSize:10.5,lineHeight:1.5,color:'#705E7D',fontFamily:'sans-serif',whiteSpace:'pre-line'}}>
+                                💪 <strong>Kraft & Stabilität:</strong> {day.strengthPrescription}
+                              </div>
+                            )}
                             {day.adjusted && day.adjustmentReason && (
                               <div style={{ fontSize: 10, color: '#FF8C69', fontFamily: 'sans-serif', marginTop: 3, fontStyle: 'italic' }}>
                                 Grund: {day.adjustmentReason}
@@ -1165,15 +1109,6 @@ if (user) {
                                 {logs[key]?.cadence && <span style={{ fontSize: 10, background: '#E8F5EF', color: '#3D8B6E', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>👣 {logs[key].cadence} spm</span>}
                                 {loggedSchuh && <span style={{ fontSize: 10, background: '#FFF5EE', color: '#C17A3A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>👟 {loggedSchuh.marke} {loggedSchuh.modell}</span>}
                                 {logs[key]?.note && <span style={{ fontSize: 10, background: '#F5EDE8', color: '#8B6B5A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>💬 {logs[key].note.slice(0, 30)}{logs[key].note.length > 30 ? '…' : ''}</span>}
-                                {hasStructuredTrainingFeedback(logs[key]?.gefuehl) ? (
-                                  <button onClick={() => openFeedback(key, day.tag, day.einheit)} style={{ fontSize: 10, background: '#FFF3EC', border: '1px solid #FFD8C7', color: '#B8674E', padding: '3px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif', cursor: 'pointer' }}>
-                                    {trainingFeedbackSummary(logs[key]?.gefuehl)}
-                                  </button>
-                                ) : (
-                                  <button onClick={() => openFeedback(key, day.tag, day.einheit)} style={{ fontSize: 10, background: '#FFF3EC', border: '1px solid #FFD8C7', color: '#C56D52', padding: '3px 9px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif', cursor: 'pointer' }}>
-                                    🙂 Wie war's?
-                                  </button>
-                                )}
                                 <button onClick={() => setDetailModal({ key, tag: day.tag, einheit: day.einheit })} style={{ fontSize: 10, background: 'none', border: 'none', color: '#B8A090', fontWeight: 'bold', fontFamily: 'sans-serif', cursor: 'pointer', textDecoration: 'underline', padding: '2px 4px' }}>
                                   Details →
                                 </button>
@@ -1202,39 +1137,6 @@ if (user) {
                         </div>
                       )
                     })}
-
-                    {weekAnalyses[week.n] && (
-                      <button
-                        type="button"
-                        onClick={() => setAnalysisModal(weekAnalyses[week.n])}
-                        style={{
-                          width: '100%',
-                          marginTop: 10,
-                          padding: '12px 13px',
-                          borderRadius: 14,
-                          border: '1.5px solid #DDE9E2',
-                          background: 'linear-gradient(135deg,#F3FBF7,#FFF8F1)',
-                          color: '#527E67',
-                          fontSize: 11,
-                          fontWeight: 'bold',
-                          fontFamily: 'sans-serif',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 10,
-                        }}
-                      >
-                        <span>
-                          📊 Coach-Rückblick ansehen
-                          {weekAnalyses[week.n]?.analysis_data?.coach?.nextWeekFocus?.title
-                            ? ` · Woche ${Number(week.n) + 1}: ${weekAnalyses[week.n].analysis_data.coach.nextWeekFocus.title}`
-                            : ''}
-                        </span>
-                        <span style={{ color: '#94AA9D' }}>→</span>
-                      </button>
-                    )}
                   </div>
                 )}
               </div>
@@ -1242,13 +1144,29 @@ if (user) {
           })}
         </div>
 
+        {isHikingPlan && plan.event && (
+          <div style={{margin:'8px 16px 16px',padding:'18px',borderRadius:20,background:'linear-gradient(135deg,#FFF7EF,#F7F2FA)',border:'1.5px solid #E8D8CF',boxShadow:'0 5px 22px rgba(70,50,40,.07)'}}>
+            <div style={{fontFamily:'sans-serif',fontSize:10,fontWeight:900,letterSpacing:1.4,textTransform:'uppercase',color:'#A77B5D',marginBottom:7}}>Dein Ziel</div>
+            <div style={{display:'flex',gap:12,alignItems:'flex-start'}}>
+              <div style={{fontSize:27}}>🏁</div>
+              <div>
+                <div style={{fontSize:17,fontWeight:'bold',color:'#4B3528'}}>{plan.event.title}</div>
+                <div style={{fontFamily:'sans-serif',fontSize:11,color:'#9B8273',marginTop:3}}>
+                  {[plan.event.date, plan.event.distanceKm ? `${plan.event.distanceKm} km` : null].filter(Boolean).join(' · ')}
+                </div>
+                {plan.event.details && <div style={{fontFamily:'sans-serif',fontSize:11,lineHeight:1.5,color:'#806E63',marginTop:8}}>{plan.event.details}</div>}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div style={{ padding: '8px 16px' }}>
           <button onClick={() => setShowPauseModal(true)}
             style={{ width: '100%', background: 'white', border: '1.5px solid #F0E0D0', borderRadius: 20, padding: '14px', fontSize: 14, cursor: 'pointer', fontFamily: 'sans-serif', fontWeight: 'bold', color: '#C4A882', marginBottom: 10 }}>
             ⏸ Plan pausieren
           </button>
           <button onClick={onReset} style={{ width: '100%', background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)', color: 'white', border: 'none', borderRadius: 20, padding: '16px', fontSize: 15, cursor: 'pointer', fontFamily: 'sans-serif', fontWeight: 'bold', boxShadow: '0 8px 24px rgba(255,107,157,0.4)', letterSpacing: 0.5 }}>
-            🏃‍♀️ Neuen Plan erstellen
+            {isHikingPlan ? '🥾 Neuen Plan erstellen' : '🏃‍♀️ Neuen Plan erstellen'}
           </button>
         </div>
 

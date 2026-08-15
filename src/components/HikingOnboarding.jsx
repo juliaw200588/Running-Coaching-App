@@ -107,6 +107,7 @@ export default function HikingOnboarding({ onPlanGenerated }) {
     trainingTerrain:'flat',
     trainingOptions:[],
     movementStyle:'walk',
+    allowAdjacentDays:'no',
     goalBackpack:'no',
     backpackKg:'',
     considerations:'',
@@ -520,15 +521,65 @@ export default function HikingOnboarding({ onPlanGenerated }) {
 
             <div style={{marginBottom:22}}>
               <div style={labelStyle}>Wie möchtest du dein Ziel absolvieren?</div>
-              <div style={{display:'grid',gap:7}}>
-                {[['walk','Gehen / Wandern'],['brisk','Zügiges Gehen'],['runwalk','Gehen + Laufanteile']].map(([id,label]) => (
+              <div style={{display:'grid',gap:8}}>
+                {[
+                  ['walk','Gehen & Wandern','Überwiegend entspannt, mit gezielten zügigen Abschnitten.'],
+                  ['brisk','Sportliches Gehen','Häufiger bewusst zügig, aber weiterhin mit lockeren Einheiten.'],
+                  ['runwalk','Gehen + Laufanteile','Gezielte Run-Walk-Abschnitte sind möglich, aber kein Muss.'],
+                ].map(([id,label,sub]) => (
                   <button key={id} type="button" onClick={() => setForm(current => ({...current,movementStyle:id}))}
-                    style={{padding:'11px 12px',borderRadius:12,border:`2px solid ${form.movementStyle===id?'#E6A66A':'#EEE3DC'}`,background:form.movementStyle===id?'#FFF7EF':'#fff',color:'#826E61',fontFamily:'sans-serif',fontSize:11,fontWeight:850,cursor:'pointer'}}>
-                    {label}
+                    style={{padding:'12px 13px',borderRadius:14,border:`2px solid ${form.movementStyle===id?'#E6A66A':'#EEE3DC'}`,background:form.movementStyle===id?'#FFF7EF':'#fff',color:'#826E61',fontFamily:'sans-serif',cursor:'pointer',textAlign:'left'}}>
+                    <div style={{fontSize:11.5,fontWeight:900,color:form.movementStyle===id?'#9A6338':'#6F5D52'}}>{label}</div>
+                    <div style={{fontSize:10,lineHeight:1.45,color:'#A58F82',marginTop:3,fontWeight:600}}>{sub}</div>
                   </button>
                 ))}
               </div>
+              <div style={{fontFamily:'sans-serif',fontSize:10,lineHeight:1.45,color:'#A58F82',marginTop:8}}>
+                Dein Plan kombiniert passende lockere und zügige Einheiten. Die Auswahl bestimmt vor allem deren Gewichtung.
+              </div>
             </div>
+
+            <div style={{marginBottom:22}}>
+              <div style={labelStyle}>Kannst du ergänzend Krafttraining machen? <span style={optional}>optional</span></div>
+              <div style={{display:'flex',gap:7}}>
+                {[['no','Nein'],['yes','Ja']].map(([id,label]) => {
+                  const selected = id === 'yes' ? form.trainingOptions.includes('gym') : !form.trainingOptions.includes('gym')
+                  return (
+                    <button key={id} type="button"
+                      onClick={() => setForm(current => ({
+                        ...current,
+                        trainingOptions: id === 'yes'
+                          ? Array.from(new Set([...current.trainingOptions, 'gym']))
+                          : current.trainingOptions.filter(item => item !== 'gym')
+                      }))}
+                      style={{flex:1,padding:10,borderRadius:12,border:`2px solid ${selected?'#E6A66A':'#EEE3DC'}`,background:selected?'#FFF7EF':'#fff',color:'#826E61',fontFamily:'sans-serif',fontSize:11,fontWeight:850,cursor:'pointer'}}>
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+              <div style={{fontFamily:'sans-serif',fontSize:10,lineHeight:1.45,color:'#A58F82',marginTop:8}}>
+                Wenn ja, kann der Plan kurze Kraft- und Stabilitätseinheiten mit konkreten Übungen, Sätzen und Wiederholungen enthalten.
+              </div>
+            </div>
+
+            {(form.goalType === 'tour' || (['march','distance'].includes(form.goalType) && Number(form.targetDistanceKm) >= 50)) && (
+              <div style={{marginBottom:22,padding:'15px',borderRadius:16,background:'#F7F5FA',border:'1px solid #E8DFEC'}}>
+                <div style={{...labelStyle,color:'#80699A'}}>Dürfen einzelne lange Trainingswochen zwei aufeinanderfolgende Tage enthalten?</div>
+                <div style={{display:'flex',gap:7}}>
+                  {[['no','Nein'],['yes','Ja']].map(([id,label]) => (
+                    <button key={id} type="button"
+                      onClick={() => setForm(current => ({...current,allowAdjacentDays:id}))}
+                      style={{flex:1,padding:10,borderRadius:12,border:`2px solid ${form.allowAdjacentDays===id?'#A98BC1':'#DDD3E3'}`,background:form.allowAdjacentDays===id?'#F1EAF6':'#fff',color:'#77647F',fontFamily:'sans-serif',fontSize:11,fontWeight:850,cursor:'pointer'}}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{fontFamily:'sans-serif',fontSize:10,lineHeight:1.45,color:'#96879D',marginTop:9}}>
+                  Nur wenn du „Ja“ wählst, darf der Plan für einzelne Back-to-back-Wochen ausnahmsweise einen benachbarten Tag außerhalb deiner normalen Trainingstage nutzen.
+                </div>
+              </div>
+            )}
 
             <div style={{marginBottom:22}}>
               <div style={labelStyle}>Wirst du dein Ziel mit Rucksack absolvieren?</div>
