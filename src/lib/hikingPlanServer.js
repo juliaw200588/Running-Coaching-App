@@ -250,6 +250,30 @@ const validatePlan = (plan, input, guardrails) => {
     }
   }
 
+  // Krafttraining erhält keine Geh-/Marsch-Tempoangabe.
+  // Der erste Kraftblock bekommt einmalig eine kurze Belastungsorientierung.
+  const strengthDays = weeks
+    .flatMap(week => week.days || [])
+    .filter(day =>
+      Boolean(day.strengthPrescription) ||
+      /kraft|stabilität|strength/i.test(String(day.einheit || ''))
+    )
+
+  strengthDays.forEach(day => {
+    day.intensity = null
+    day.paceGuidance = null
+  })
+
+  if (strengthDays.length > 0) {
+    const firstStrength = strengthDays[0]
+    const loadHint =
+      'Gewicht so wählen, dass die letzten Wiederholungen fordernd sind, aber technisch sauber bleiben. Nicht bis zum Muskelversagen trainieren.'
+
+    if (!String(firstStrength.strengthPrescription || '').toLowerCase().includes('muskelversagen')) {
+      firstStrength.strengthPrescription = `${firstStrength.strengthPrescription || ''}${firstStrength.strengthPrescription ? ' ' : ''}${loadHint}`
+    }
+  }
+
   // Die Peak-Grenze ist im Prompt verbindlich. Eine beliebige im Beschreibungstext
   // erwähnte Kilometerzahl (z. B. die Zieldistanz) darf den gesamten Plan nicht
   // fälschlich als ungültig verwerfen.
@@ -353,6 +377,8 @@ VERBINDLICHE FACHREGELN:
     - Bei Regeneration bleibt intensity="locker"; erkläre die Erholung über Einheitstitel und details.
 11. PACE: Gib bei Geh-/Marsch-/Wandereinheiten eine großzügige ungefähre Pace-Spanne als Orientierung in paceGuidance an, z. B. "ca. 9:30–11:00 min/km".
     - Pace ist KEIN starres Ziel. Gelände, Untergrund, Wind, Rucksack und individuelle Gehgeschwindigkeit haben Vorrang.
+    - Eine lockere Pace wird im Plan NICHT automatisch von Woche zu Woche schneller. Die Progression entsteht primär über Distanz, Zeit auf den Beinen und gezielte zügige Abschnitte.
+    - Pace-Spannen für vergleichbare lockere Einheiten möglichst stabil halten. Nur verändern, wenn Einheitentyp, Gelände oder Nutzerdaten einen echten Grund liefern.
     - Bei deutlich hügeligem/bergigem Gelände oder wenn eine sinnvolle Pace nicht ableitbar ist, paceGuidance=null.
     - Keine falsche Präzision. Lieber breite Range.
     - Bei Krafttraining paceGuidance=null.
@@ -368,6 +394,9 @@ VERBINDLICHE FACHREGELN:
 15. KRAFT: Kraft-/Stabilitätseinheiten NUR wenn input.trainingOptions "gym" enthält.
     - Dann strengthPrescription mit 4–5 Übungen, Sätzen und Wiederholungen ausgeben, z. B. Step-ups, Split Squats, Romanian Deadlift/Hüftbeuge, Wadenheben, Rumpfstabilität.
     - Typisch 2–3 Sätze, meist 8–12 Wiederholungen; kontrolliert, nicht bis zum Muskelversagen.
+    - Bei der ERSTEN Kraft-/Stabilitätseinheit des Plans einmalig ergänzen: Gewicht so wählen, dass die letzten Wiederholungen fordernd sind, aber technisch sauber bleiben; nicht bis zum Muskelversagen trainieren.
+    - Diesen Belastungshinweis in späteren Kraftwochen nicht ständig wiederholen.
+    - Bei Krafttraining intensity=null und paceGuidance=null.
     - Keine pauschale Vorgabe "viele Wiederholungen".
     - In Peak-/Zielphase Umfang reduzieren; keine schwere Kraftbelastung direkt vor der wichtigsten langen Einheit.
     - Wenn kein "gym": KEINE Kraft-/Gym-Einheit erzeugen und strengthPrescription=null.

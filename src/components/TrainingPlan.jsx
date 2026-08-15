@@ -1073,7 +1073,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
                               {day.adjusted && <span style={{ fontSize: 9, background: '#FFF5EE', color: '#FF8C69', padding: '2px 7px', borderRadius: 99, fontWeight: 'bold', border: '1px solid #FFE0CC', fontFamily: 'sans-serif' }}>✏️ Angepasst</span>}
                             </div>
                             <div style={{ color: isDone ? '#A8D8C0' : isSkipped ? '#B8AC9E' : '#B8A090', fontSize: 11, fontFamily: 'sans-serif', marginTop: 3, lineHeight: 1.5 }}>{day.details}</div>
-                            {isHikingPlan && (day.intensity || day.paceGuidance) && (
+                            {isHikingPlan && !day.strengthPrescription && (day.intensity || day.paceGuidance) && (
                               <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:7}}>
                                 {day.intensity && <span style={{fontSize:9.5,background:'#F3F8F5',color:'#4F806B',padding:'3px 8px',borderRadius:99,fontWeight:800,fontFamily:'sans-serif',border:'1px solid #D7E8DF'}}>Tempo: {day.intensity}</span>}
                                 {day.paceGuidance && <span style={{fontSize:9.5,background:'#FFF7EF',color:'#A46C43',padding:'3px 8px',borderRadius:99,fontWeight:800,fontFamily:'sans-serif',border:'1px solid #F1DDCC'}}>Orientierung: {day.paceGuidance}</span>}
