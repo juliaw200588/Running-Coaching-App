@@ -510,7 +510,7 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
 
   const openHero = () => {
     if (hero?.type === 'analysis' && hero.analysis?.week_number) onOpenWeekAnalysis?.(hero.analysis.week_number)
-    else if (['today','open','already','before','completedPlan'].includes(hero?.type)) onOpenTraining?.()
+    else if (['today','open','already','rest','before','completedPlan'].includes(hero?.type)) onOpenTraining?.()
     else if (['trained','extra'].includes(hero?.type) && hero.log) onOpenActivities?.()
     else if (hero?.type === 'new') onOpenTraining?.()
     else if (hero?.type === 'free') onOpenActivities?.()
