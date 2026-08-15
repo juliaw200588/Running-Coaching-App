@@ -1,4 +1,5 @@
 import { generateHikingPlan } from '../src/lib/hikingPlanServer.js'
+import { generateCyclingPlan } from '../src/lib/cyclingPlanServer.js'
 
 const RUNNING_PLAN_SCHEMA = {
   type: 'object',
@@ -93,6 +94,20 @@ export default async function handler(req, res) {
         error:
           error?.message ||
           'Der Marsch-/Wander-Trainingsplan konnte nicht erstellt werden.',
+      })
+    }
+  }
+
+  if (sportType === 'cycling') {
+    try {
+      const result = await generateCyclingPlan(req.body || {})
+      return res.status(200).json(result)
+    } catch (error) {
+      console.error('[Generate Plan][Cycling] Erstellung fehlgeschlagen:', error)
+      return res.status(500).json({
+        error:
+          error?.message ||
+          'Der Rad-Trainingsplan konnte nicht erstellt werden.',
       })
     }
   }

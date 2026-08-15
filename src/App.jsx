@@ -4,6 +4,7 @@ import Auth from './components/Auth.jsx'
 import LandingPage from './components/LandingPage.jsx'
 import Onboarding from './components/Onboarding.jsx'
 import HikingOnboarding from './components/HikingOnboarding.jsx'
+import CyclingOnboarding from './components/CyclingOnboarding.jsx'
 import HikingWeeklyCheckIn from './components/HikingWeeklyCheckIn.jsx'
 import WelcomeOnboarding from './components/WelcomeOnboarding.jsx'
 import TrainingPlan from './components/TrainingPlan.jsx'
@@ -52,7 +53,7 @@ function PlanSportSelection({ onSelect }) {
   const sports = [
     { id: 'running', icon: '🏃', title: 'Laufen', text: 'Trainiere strukturiert auf deine Laufziele hin.', available: true },
     { id: 'hiking', icon: '🥾', title: 'Marsch & Wandern', text: 'Baue Distanz und Ausdauer Schritt für Schritt auf.', available: true },
-    { id: 'cycling', icon: '🚴', title: 'Radfahren', text: 'Mehr Ausdauer für längere Touren und persönliche Ziele.', available: false },
+    { id: 'cycling', icon: '🚴', title: 'Radfahren', text: 'Mehr Ausdauer für längere Touren und persönliche Ziele.', available: true },
     { id: 'mountain_biking', icon: '🚵', title: 'Mountainbike', text: 'Trainiere Ausdauer und Belastbarkeit fürs Gelände.', available: false },
     { id: 'swimming', icon: '🏊', title: 'Schwimmen', text: 'Entwickle Ausdauer, Technik und längere Distanzen.', available: false },
   ]
@@ -1252,6 +1253,19 @@ const handleOpenWeekAnalysisFromNotification = (weekNumber) => {
                       </button>
                     </div>
                     <HikingOnboarding onPlanGenerated={handlePlanGenerated} />
+                  </div>
+                ) : selectedPlanSport === 'cycling' ? (
+                  <div>
+                    <div style={{ maxWidth:720, margin:'0 auto', padding:'4px 16px 0' }}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPlanSport(null)}
+                        style={{ border:'none', background:'transparent', color:'#B07A68', fontSize:11, fontWeight:800, cursor:'pointer', padding:'8px 0', fontFamily:'sans-serif' }}
+                      >
+                        ← Andere Sportart wählen
+                      </button>
+                    </div>
+                    <CyclingOnboarding onPlanGenerated={handlePlanGenerated} />
                   </div>
                 ) : (
                   <PlanSportSelection onSelect={setSelectedPlanSport} />

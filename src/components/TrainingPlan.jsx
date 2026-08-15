@@ -184,7 +184,8 @@ export default function TrainingPlan({ plan, onReset, user }) {
 
   const phases = plan.phases || []
   const isHikingPlan = plan?.sport_type === 'hiking' || plan?.plan_type === 'hiking_march'
-  const isRunningPlan = !isHikingPlan && (
+  const isCyclingPlan = plan?.sport_type === 'cycling' || plan?.plan_type === 'cycling_endurance'
+  const isRunningPlan = !isHikingPlan && !isCyclingPlan && (
     !plan?.sport_type ||
     plan?.sport_type === 'running' ||
     plan?.plan_type === 'running'
@@ -194,12 +195,17 @@ export default function TrainingPlan({ plan, onReset, user }) {
   // Neue Sportarten bekommen später nur ihr eigenes Bild in dieser Zuordnung.
   const planHeroImage = isHikingPlan
     ? '/hero/hiking/03.webp'
-    : isRunningPlan
-      ? '/hero/running/easy/02.webp'
+    : isCyclingPlan
+      ? '/hero/cycling/03.webp'
       : '/hero/running/easy/02.webp'
 
-  const planSportLabel = isHikingPlan ? 'Marsch & Wandern' : 'Laufen'
-  const progressUnitLabel = isHikingPlan ? 'Einheiten' : 'Läufe'
+  const planSportLabel = isHikingPlan
+    ? 'Marsch & Wandern'
+    : isCyclingPlan
+      ? 'Radfahren'
+      : 'Laufen'
+
+  const progressUnitLabel = isRunningPlan ? 'Läufe' : 'Einheiten'
 
   const handlePausePlan = async () => {
     // Alle Datumsangaben im Plan um pauseWeeks Wochen verschieben
@@ -1102,7 +1108,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
             const allDone = weekDone === weekTotal && weekTotal > 0
             const isOpen = !!openWeeks[wi]
             const phaseColor = phase.accent || phaseTabColors[activePhase] || '#FF8C69'
-            const weekKm = estimateWeekKm(week)
+            const weekKm = isCyclingPlan ? 0 : estimateWeekKm(week)
 
             return (
               <div key={week.n} style={{ background: 'white', borderRadius: 20, marginBottom: 12, overflow: 'hidden', boxShadow: isOpen ? '0 8px 32px rgba(255,140,105,0.15)' : '0 2px 12px rgba(0,0,0,0.06)', border: isOpen ? '2px solid #FFD4C0' : '2px solid transparent', transition: 'all 0.3s ease' }}>
@@ -1171,6 +1177,37 @@ export default function TrainingPlan({ plan, onReset, user }) {
                                 💪 <strong>Kraft & Stabilität:</strong> {day.strengthPrescription}
                               </div>
                             )}
+                            {isCyclingPlan && !day.strengthPrescription && (day.intensity || day.loadGuidance || day.distanceGuidance) && (
+                              <>
+                                <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:7}}>
+                                  {day.intensity && (
+                                    <span style={{fontSize:9.5,background:'#F0F7F4',color:'#4E7C6D',padding:'3px 8px',borderRadius:99,fontWeight:800,fontFamily:'sans-serif',border:'1px solid #D7E7DF'}}>
+                                      Belastung: {day.intensity}
+                                    </span>
+                                  )}
+                                  {day.loadGuidance && (
+                                    <span style={{fontSize:9.5,background:'#F5F2FA',color:'#6F6384',padding:'3px 8px',borderRadius:99,fontWeight:800,fontFamily:'sans-serif',border:'1px solid #E2DAEC'}}>
+                                      {day.loadGuidance}
+                                    </span>
+                                  )}
+                                </div>
+                                {day.distanceGuidance && (
+                                  <div style={{marginTop:7,fontSize:10.2,lineHeight:1.45,color:'#9A765F',fontFamily:'sans-serif',background:'#FFF8F1',border:'1px solid #F0E0D2',borderRadius:10,padding:'7px 9px'}}>
+                                    🚴 {day.distanceGuidance}
+                                  </div>
+                                )}
+                              </>
+                            )}
+                            {isCyclingPlan && day.nutritionTip && (
+                              <div style={{marginTop:8,padding:'9px 10px',borderRadius:11,background:'#FFF9E9',border:'1px solid #F0E2B9',fontSize:10.5,lineHeight:1.45,color:'#806A3D',fontFamily:'sans-serif'}}>
+                                🍌 <strong>Verpflegung testen:</strong> {day.nutritionTip}
+                              </div>
+                            )}
+                            {isCyclingPlan && day.strengthPrescription && (
+                              <div style={{marginTop:8,padding:'9px 10px',borderRadius:11,background:'#F5F1FA',border:'1px solid #E2D8EC',fontSize:10.5,lineHeight:1.5,color:'#705E7D',fontFamily:'sans-serif',whiteSpace:'pre-line'}}>
+                                💪 <strong>Kraft & Stabilität:</strong> {day.strengthPrescription}
+                              </div>
+                            )}
                             {day.adjusted && day.adjustmentReason && (
                               <div style={{ fontSize: 10, color: '#FF8C69', fontFamily: 'sans-serif', marginTop: 3, fontStyle: 'italic' }}>
                                 Grund: {day.adjustmentReason}
@@ -1226,7 +1263,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
           })}
         </div>
 
-        {isHikingPlan && plan.event && (
+        {(isHikingPlan || isCyclingPlan) && plan.event && (
           <div style={{margin:'8px 16px 16px',padding:'18px',borderRadius:20,background:'linear-gradient(135deg,#FFF7EF,#F7F2FA)',border:'1.5px solid #E8D8CF',boxShadow:'0 5px 22px rgba(70,50,40,.07)'}}>
             <div style={{fontFamily:'sans-serif',fontSize:10,fontWeight:900,letterSpacing:1.4,textTransform:'uppercase',color:'#A77B5D',marginBottom:7}}>Dein Ziel</div>
             <div style={{display:'flex',gap:12,alignItems:'flex-start'}}>
@@ -1248,7 +1285,11 @@ export default function TrainingPlan({ plan, onReset, user }) {
             ⏸ Plan pausieren
           </button>
           <button onClick={onReset} style={{ width: '100%', background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)', color: 'white', border: 'none', borderRadius: 20, padding: '16px', fontSize: 15, cursor: 'pointer', fontFamily: 'sans-serif', fontWeight: 'bold', boxShadow: '0 8px 24px rgba(255,107,157,0.4)', letterSpacing: 0.5 }}>
-            {isHikingPlan ? '🥾 Neuen Plan erstellen' : '🏃‍♀️ Neuen Plan erstellen'}
+            {isHikingPlan
+              ? '🥾 Neuen Plan erstellen'
+              : isCyclingPlan
+                ? '🚴 Neuen Plan erstellen'
+                : '🏃‍♀️ Neuen Plan erstellen'}
           </button>
         </div>
 
