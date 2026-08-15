@@ -231,7 +231,7 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
       const [profileRes, logsRes, skippedRes, analysisRes] = await Promise.all([
         supabase
           .from('profiles')
-          .select('name')
+          .select('name,sportarten')
           .eq('id', user.id)
           .single(),
         supabase
@@ -520,7 +520,38 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
 
   const heroImage = useMemo(
     () => {
-      if (hero?.type === 'new') return '/hero/running/easy/02.webp'
+      if (hero?.type === 'new') {
+        const selectedSports = Array.isArray(profile?.sportarten)
+          ? profile.sportarten.filter(sport =>
+              ['running', 'cycling', 'mountain_biking', 'hiking', 'swimming'].includes(sport)
+            )
+          : []
+
+        const fallbackSports = ['running', 'cycling', 'hiking', 'swimming', 'mountain_biking']
+        const availableSports = selectedSports.length ? selectedSports : fallbackSports
+
+        const seedText = `${user?.id || 'anonymous'}|${todayStr || 'today'}`
+        let hash = 0
+        for (let i = 0; i < seedText.length; i += 1) {
+          hash = ((hash << 5) - hash + seedText.charCodeAt(i)) | 0
+        }
+
+        const index = Math.abs(hash) % availableSports.length
+        const selectedSport = availableSports[index]
+
+        return getHeroImageForDashboard({
+          hero: {
+            ...hero,
+            plannedDay: {
+              ...(hero?.plannedDay || {}),
+              sport_type: selectedSport,
+            },
+          },
+          userId: user?.id,
+          dateKey: todayStr,
+          weekNumber: context?.week?.n,
+        })
+      }
 
       return getHeroImageForDashboard({
         hero,
@@ -537,6 +568,7 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
       hero?.log?.sport_type,
       hero?.plannedDay?.key,
       hero?.plannedDay?.einheit,
+      profile?.sportarten,
       user?.id,
       todayStr,
       context?.week?.n,
