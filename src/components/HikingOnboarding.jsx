@@ -216,14 +216,17 @@ export default function HikingOnboarding({ onPlanGenerated }) {
     try {
       const guardrails = buildHikingPlanGuardrails(form)
 
-      const response = await fetch('/api/generate-hiking-plan', {
+      const response = await fetch('/api/analyze-week', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...form,
-          sport_type: 'hiking',
-          plan_type: 'hiking_march',
-          guardrails,
+          requestType: 'generate_hiking_plan',
+          payload: {
+            ...form,
+            sport_type: 'hiking',
+            plan_type: 'hiking_march',
+            guardrails,
+          },
         }),
       })
 
