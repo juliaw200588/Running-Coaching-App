@@ -103,7 +103,7 @@ export default async function handler(req, res) {
     })
   }
 
-  const { name, zielTyp, niveau, goal, goalTime, previousTime, startDate, weeksUntilRace, runsPerWeek, alter, aktuelleWochenKm, verletzungen, maxHF, ruheHF, geschlecht, wohnort } = req.body
+  const { name, zielTyp, niveau, goal, goalTime, previousTime, startDate, weeksUntilRace, runsPerWeek, preferredDays, alter, aktuelleWochenKm, verletzungen, maxHF, ruheHF, geschlecht, wohnort } = req.body
 
   const zielBeschreibung = {
     rennen: 'hat ein bevorstehendes Rennen und möchte sich gezielt darauf vorbereiten',
@@ -239,11 +239,20 @@ WICHTIG:
   const verletzungsInfo = verletzungen ? `Verletzungsgeschichte: ${verletzungen} – bitte besonders vorsichtig steigern und extra Regeneration einplanen` : 'Keine bekannten Verletzungen'
   const umfangInfo = aktuelleWochenKm ? `Aktuelle Wochenkilometer: ${aktuelleWochenKm} km – davon ausgehend steigern` : 'Ausgangsumfang unbekannt – konservativ starten'
 
-  const wochenstruktur = {
-    3: 'Di=Qualität (Intervalle/Tempo), Do=Locker (Zone 2), Sa=Langer Lauf (Zone 2)',
-    4: 'Di=Qualität, Mi=Locker (Zone 2), Fr=Qualität, Sa=Langer Lauf (Zone 2)',
-    5: 'Di=Qualität, Mi=Locker, Do=Qualität, Sa=Langer Lauf, So=Sehr locker (Zone 1)',
-  }[runsPerWeek] || 'Di=Qualität, Do=Locker, Sa=Langer Lauf'
+  const selectedDays = Array.isArray(preferredDays) && preferredDays.length
+    ? preferredDays
+    : ({ 3: ['Di','Do','So'], 4: ['Di','Do','Sa','So'], 5: ['Di','Mi','Do','Sa','So'] }[runsPerWeek] || ['Di','Do','So'])
+
+  const wochenstruktur = `
+AUSGEWÄHLTE TRAININGSTAGE: ${selectedDays.join(', ')}.
+- Nutze für alle Pflicht-Laufeinheiten ausschließlich diese Tage.
+- Die Anzahl der Pflicht-Laufeinheiten pro Woche beträgt exakt ${runsPerWeek}.
+- Verteile Qualität, lockere Läufe und langen Lauf trainingsphysiologisch sinnvoll auf diese Tage.
+- Intensive Einheiten möglichst nicht direkt hintereinander.
+- Der lange Lauf soll ausreichend Abstand zur wichtigsten Qualitätseinheit haben, soweit die ausgewählten Tage das zulassen.
+- Wenn die Tagesauswahl enge Folgen erzwingt (z.B. Fr/Sa/So), reduziere die Intensität angrenzender Läufe, statt mehrere harte Reize aneinanderzureihen.
+- Erfinde keine zusätzlichen Pflicht-Lauftage außerhalb der ausgewählten Tage.
+- Optionale Kraft-/Mobilitätseinheiten dürfen nur als optional=true ausgegeben werden und müssen nicht auf einen ausgewählten Lauftag fallen.`
 
   // Rennstrategie berechnen
   const rennstrategie = goalTime
@@ -273,6 +282,16 @@ WICHTIG:
   const carbLoadingHinweis = (goal === 'Marathon' || goal === 'Halbmarathon')
     ? 'In den letzten 2 Tagen vor dem Rennen: bewusst kohlenhydratreicher essen (Nudeln, Reis, Brot), dabei Ballaststoffe und Fett etwas reduzieren, um am Renntag Magen-Darm-Probleme zu vermeiden.'
     : null
+
+  const concreteTempoInstruction = (prevMin || goalMin)
+    ? `TEMPOEINHEITEN: Wenn du eine Tempo-/Schwelleneinheit planst, MUSS im Hauptteil die konkrete berechnete Pace-Spanne ${fmt(tempoLow)}-${fmt(tempoHigh)} min/km stehen. Formulierungen wie "etwas zügiger", "zügiger als gewohnt" oder "kontrolliert schneller" dürfen nur ERGÄNZEND zur Pace stehen, niemals anstelle der Pace.`
+    : 'TEMPOEINHEITEN: Da keine verlässliche bisherige Zeit oder Zielzeit vorliegt, keine Pace erfinden. Tempo über verständliches Belastungsgefühl und ggf. vorhandene HF-Zonen steuern.'
+
+  const concreteRacePaceInstruction = goalMin
+    ? `RENNTEMPO: Jede Einheit mit "Renntempo", "Wettkampftempo", "HM-Pace", "10-km-Pace", "Marathon-Pace" oder vergleichbarer Bezeichnung MUSS die konkrete Zielpace ca. ${fmt(raceLow)}-${fmt(raceHigh)} min/km direkt im Hauptteil nennen. Niemals nur "im geplanten Renntempo" schreiben.`
+    : prevMin
+      ? 'RENNTEMPO: Es wurde keine Zielzeit angegeben. Bezeichne keine Pace als festes Ziel-Renntempo. Nutze stattdessen eine spezifische kontrollierte Einheit auf Basis der aktuellen Leistungsdaten.'
+      : 'RENNTEMPO: Ohne Zielzeit und ohne bisherige Zeit keine konkrete Renntempo-Pace erfinden.'
 
   const systemPrompt = `Du bist ein professioneller Lauftrainer mit tiefem Wissen in Sportphysiologie, Periodisierung und Verletzungsprävention. Erstelle einen wissenschaftlich fundierten, personalisierten Trainingsplan als JSON.
 
@@ -356,7 +375,10 @@ TAPERING (letzte 2-3 Wochen):
 TRAININGSPHILOSOPHIE – STRIKT EINHALTEN
 ═══════════════════════════════════════
 
-0. PACE-VORGABEN STRIKT EINHALTEN: Nutze die berechneten Trainingspaces exakt – Zone 2 ist IMMER deutlich langsamer als die Wettkampfpace. Nie schneller als angegeben für lockere Läufe! Die Intervall- und Tempopace sind bewusst NICHT von der Zieldistanz-Pace abgeleitet, sondern von der 5-km- bzw. Halbmarathon-äquivalenten Pace – bei HM-/Marathon-Zielen sind Intervalle daher deutlich schneller als die Zieldistanz-Wettkampfpace. Das ist korrekt so, nicht anpassen!${hfMax ? `
+0. PACE-VORGABEN STRIKT EINHALTEN: Nutze die berechneten Trainingspaces exakt – Zone 2 ist IMMER deutlich langsamer als die Wettkampfpace. Nie schneller als angegeben für lockere Läufe! Die Intervall- und Tempopace sind bewusst NICHT von der Zieldistanz-Pace abgeleitet, sondern von der 5-km- bzw. Halbmarathon-äquivalenten Pace – bei HM-/Marathon-Zielen sind Intervalle daher deutlich schneller als die Zieldistanz-Wettkampfpace. Das ist korrekt so, nicht anpassen!
+   ${concreteTempoInstruction}
+   ${concreteRacePaceInstruction}
+   WICHTIG ZUR DARSTELLUNG: Eine konkrete Pace gehört in die Details des jeweiligen Hauptteils. Der Nutzer soll die Einheit ohne eigenes Umrechnen direkt ausführen können.${hfMax ? `
    HF-ZONEN IN DEN DETAILS: Da HF-Zonen berechnet wurden (siehe unten), schreibe bei JEDER Einheit mit einer Zone-Angabe (Zone 1-5) IMMER Pace UND HF-Bereich zusammen in die Klammer, Format "Zone X (Pace-Bereich min/km, HF-Bereich bpm)". Beispiel: "Zone 2 (7:44-8:14 min/km, 129-143 bpm)" statt nur "Zone 2 (7:44-8:14 min/km)". Nutze exakt die unten berechneten HF-Zonengrenzen, nicht selbst schätzen.` : ''}
 
 1. 80/20 REGEL: 80% Zone 1-2, maximal 20% Zone 4-5. Keine Zone 3 als eigenständige Einheit.
@@ -510,6 +532,7 @@ ${hfInfo}
 ${umfangInfo}
 ${verletzungsInfo}
 Läufe pro Woche: ${runsPerWeek}
+Bevorzugte Lauftage: ${selectedDays.join(', ')}
 Startdatum: ${startDate}
 Wohnort: ${wohnort || 'nicht angegeben'}
 
@@ -518,7 +541,9 @@ WICHTIG FÜR DIE AUSGABE:
 - Jede normale Laufeinheit hat optional=false.
 - Nur echte optionale Zusatz-/Krafteinheiten haben optional=true.
 - Jede Woche enthält regen=true nur wenn es sich um eine geplante Entlastungswoche handelt, sonst regen=false.
-- Formuliere Details kompakt und konkret; vermeide Wiederholungen.`
+- Formuliere Details kompakt und konkret; vermeide Wiederholungen.
+- Bei Tempoeinheiten mit vorhandener Zeitbasis die berechnete Tempo-Pace immer konkret nennen.
+- Bei Renntempoeinheiten mit Zielzeit die konkrete Zielpace immer direkt nennen; niemals nur "im Renntempo".`
         }]
       })
     })
@@ -540,6 +565,23 @@ WICHTIG FÜR DIE AUSGABE:
 
     const plan = JSON.parse(responseText)
     const generatedWeeks = (plan?.phases || []).flatMap(phase => phase?.weeks || [])
+
+    for (const week of generatedWeeks) {
+      const requiredDays = (week?.days || []).filter(day => !day.optional)
+
+      if (requiredDays.length !== Number(runsPerWeek)) {
+        return res.status(500).json({
+          error: `Woche ${week?.n ?? '?'} enthält ${requiredDays.length} statt ${runsPerWeek} Pflichtläufe.`,
+        })
+      }
+
+      const invalidDay = requiredDays.find(day => !selectedDays.includes(day.tag))
+      if (invalidDay) {
+        return res.status(500).json({
+          error: `Woche ${week?.n ?? '?'} nutzt mit ${invalidDay.tag} einen nicht ausgewählten Lauftag.`,
+        })
+      }
+    }
 
     if (generatedWeeks.length !== Number(weeksUntilRace)) {
       console.error(

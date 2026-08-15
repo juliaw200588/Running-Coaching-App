@@ -184,7 +184,22 @@ export default function TrainingPlan({ plan, onReset, user }) {
 
   const phases = plan.phases || []
   const isHikingPlan = plan?.sport_type === 'hiking' || plan?.plan_type === 'hiking_march'
-  const planHeroImage = isHikingPlan ? '/hero/hiking/03.webp' : null
+  const isRunningPlan = !isHikingPlan && (
+    !plan?.sport_type ||
+    plan?.sport_type === 'running' ||
+    plan?.plan_type === 'running'
+  )
+
+  // Einheitliches Hero-Muster für alle Trainingspläne.
+  // Neue Sportarten bekommen später nur ihr eigenes Bild in dieser Zuordnung.
+  const planHeroImage = isHikingPlan
+    ? '/hero/hiking/03.webp'
+    : isRunningPlan
+      ? '/hero/running/easy/02.webp'
+      : '/hero/running/easy/02.webp'
+
+  const planSportLabel = isHikingPlan ? 'Marsch & Wandern' : 'Laufen'
+  const progressUnitLabel = isHikingPlan ? 'Einheiten' : 'Läufe'
 
   const handlePausePlan = async () => {
     // Alle Datumsangaben im Plan um pauseWeeks Wochen verschieben
@@ -921,68 +936,135 @@ export default function TrainingPlan({ plan, onReset, user }) {
         logoSrc="/route-icon.png"
       />
 
-      {/* Header */}
-      {isHikingPlan ? (
-        <div style={{ position:'relative', overflow:'hidden', minHeight:300, boxShadow:'0 8px 32px rgba(55,45,35,.18)' }}>
-          <div aria-hidden="true" style={{position:'absolute',inset:0,backgroundImage:`url("${planHeroImage}")`,backgroundSize:'cover',backgroundPosition:'center 52%'}} />
-          <div aria-hidden="true" style={{position:'absolute',inset:0,background:'linear-gradient(90deg,rgba(20,24,18,.78) 0%,rgba(20,24,18,.58) 48%,rgba(20,24,18,.24) 100%)'}} />
-          <div style={{position:'relative',zIndex:2,maxWidth:580,margin:'0 auto',padding:'42px 20px 30px'}}>
-            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
-              <div style={{width:46,height:46,borderRadius:'50%',background:'rgba(255,248,240,.94)',border:'3px solid rgba(255,255,255,.7)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 5px 18px rgba(0,0,0,.18)'}}>
-                <img src="/route-icon.png" alt="" style={{width:31,height:31,borderRadius:'50%'}} />
-              </div>
-              <div style={{fontFamily:'sans-serif',fontSize:11,fontWeight:900,letterSpacing:1.8,color:'rgba(255,255,255,.9)',textTransform:'uppercase'}}>Dein Trainingsplan</div>
+      {/* Einheitlicher Trainingsplan-Hero */}
+      <div style={{ position:'relative', overflow:'hidden', minHeight:300, boxShadow:'0 8px 32px rgba(55,45,35,.18)' }}>
+        <div
+          aria-hidden="true"
+          style={{
+            position:'absolute',
+            inset:0,
+            backgroundImage:`url("${planHeroImage}")`,
+            backgroundSize:'cover',
+            backgroundPosition: isRunningPlan ? 'center 56%' : 'center 52%',
+          }}
+        />
+        <div
+          aria-hidden="true"
+          style={{
+            position:'absolute',
+            inset:0,
+            background:'linear-gradient(90deg,rgba(20,24,18,.80) 0%,rgba(20,24,18,.58) 48%,rgba(20,24,18,.24) 100%)',
+          }}
+        />
+
+        <div style={{position:'relative',zIndex:2,maxWidth:580,margin:'0 auto',padding:'42px 20px 30px'}}>
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+            <div
+              style={{
+                width:46,
+                height:46,
+                borderRadius:'50%',
+                background:'rgba(255,248,240,.94)',
+                border:'3px solid rgba(255,255,255,.7)',
+                display:'flex',
+                alignItems:'center',
+                justifyContent:'center',
+                boxShadow:'0 5px 18px rgba(0,0,0,.18)',
+              }}
+            >
+              <img src="/route-icon.png" alt="" style={{width:31,height:31,borderRadius:'50%'}} />
             </div>
-            <p style={{color:'rgba(255,255,255,.82)',fontSize:11,letterSpacing:3,textTransform:'uppercase',margin:'0 0 5px',fontFamily:'sans-serif'}}>
-              {plan.goal ? `Ziel: ${plan.goal}` : 'Marsch & Wandern'}
-            </p>
-            <h1 style={{color:'white',fontSize:30,fontWeight:'bold',margin:'0 0 4px',textShadow:'0 2px 12px rgba(0,0,0,.28)'}}>
-              {plan.title || 'Trainingsplan'}
-            </h1>
-            {plan.name && <p style={{color:'rgba(255,255,255,.84)',fontSize:12,margin:'0 0 20px',fontFamily:'sans-serif'}}>Für {plan.name}</p>}
-            <div style={{background:'rgba(255,255,255,.16)',border:'1px solid rgba(255,255,255,.22)',borderRadius:18,padding:'14px 18px',backdropFilter:'blur(10px)'}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                <span style={{color:'white',fontSize:13,fontFamily:'sans-serif'}}>Fortschritt</span>
-                <span style={{color:'white',fontWeight:'bold',fontSize:20}}>{progress}%</span>
-              </div>
-              <div style={{background:'rgba(255,255,255,.3)',borderRadius:8,height:8,overflow:'hidden'}}>
-                <div style={{height:'100%',width:`${progress}%`,background:'white',borderRadius:8,transition:'width .5s ease'}} />
-              </div>
-              <p style={{color:'rgba(255,255,255,.82)',fontSize:11,margin:'6px 0 0',fontFamily:'sans-serif'}}>
-                {doneDays}/{totalDays} Einheiten erledigt
-              </p>
+            <div
+              style={{
+                fontFamily:'sans-serif',
+                fontSize:11,
+                fontWeight:900,
+                letterSpacing:1.8,
+                color:'rgba(255,255,255,.9)',
+                textTransform:'uppercase',
+              }}
+            >
+              Dein Trainingsplan
             </div>
           </div>
-        </div>
-      ) : (
-      <div style={{ background: 'linear-gradient(135deg, #FF8C69 0%, #FFB347 50%, #FF6B9D 100%)', padding: '36px 20px 28px', borderRadius: '0 0 32px 32px', boxShadow: '0 8px 32px rgba(255,140,105,0.3)', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', top: -20, right: -20, width: 120, height: 120, background: 'rgba(255,255,255,0.1)', borderRadius: '50%' }} />
-        <div style={{ position: 'absolute', bottom: -30, left: 40, width: 80, height: 80, background: 'rgba(255,255,255,0.08)', borderRadius: '50%' }} />
-        <div style={{ maxWidth: 580, margin: '0 auto' }}>
-          <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', margin: '0 0 4px', fontFamily: 'sans-serif' }}>
-            {plan.goal ? `Ziel: ${plan.goal}` : 'Trainingsplan'}
-          </p>
-          <h1 style={{ color: 'white', fontSize: 24, fontWeight: 'bold', margin: '0 0 4px' }}>
-            {plan.title || 'Trainingsplan'}
-          </h1>
-          {plan.name && <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, margin: '0 0 20px', fontFamily: 'sans-serif' }}>Für {plan.name}</p>}
 
-          <div style={{ background: 'rgba(255,255,255,0.2)', borderRadius: 16, padding: '14px 18px', backdropFilter: 'blur(10px)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <span style={{ color: 'white', fontSize: 13, fontFamily: 'sans-serif' }}>Fortschritt</span>
-              <span style={{ color: 'white', fontWeight: 'bold', fontSize: 20 }}>{progress}%</span>
+          <p
+            style={{
+              color:'rgba(255,255,255,.82)',
+              fontSize:11,
+              letterSpacing:3,
+              textTransform:'uppercase',
+              margin:'0 0 5px',
+              fontFamily:'sans-serif',
+            }}
+          >
+            {plan.goal ? `Ziel: ${plan.goal}` : planSportLabel}
+          </p>
+
+          <h1
+            style={{
+              color:'white',
+              fontSize:30,
+              lineHeight:1.08,
+              fontWeight:'bold',
+              margin:'0 0 4px',
+              textShadow:'0 2px 12px rgba(0,0,0,.28)',
+            }}
+          >
+            {plan.title || `${planSportLabel}-Trainingsplan`}
+          </h1>
+
+          {plan.name && (
+            <p
+              style={{
+                color:'rgba(255,255,255,.84)',
+                fontSize:12,
+                margin:'0 0 20px',
+                fontFamily:'sans-serif',
+              }}
+            >
+              Für {plan.name}
+            </p>
+          )}
+
+          <div
+            style={{
+              background:'rgba(255,255,255,.16)',
+              border:'1px solid rgba(255,255,255,.22)',
+              borderRadius:18,
+              padding:'14px 18px',
+              backdropFilter:'blur(10px)',
+            }}
+          >
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+              <span style={{color:'white',fontSize:13,fontFamily:'sans-serif'}}>Fortschritt</span>
+              <span style={{color:'white',fontWeight:'bold',fontSize:20}}>{progress}%</span>
             </div>
-            <div style={{ background: 'rgba(255,255,255,0.3)', borderRadius: 8, height: 8, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${progress}%`, background: 'white', borderRadius: 8, transition: 'width 0.5s ease' }} />
+            <div style={{background:'rgba(255,255,255,.3)',borderRadius:8,height:8,overflow:'hidden'}}>
+              <div
+                style={{
+                  height:'100%',
+                  width:`${progress}%`,
+                  background:'white',
+                  borderRadius:8,
+                  transition:'width .5s ease',
+                }}
+              />
             </div>
-            <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, margin: '6px 0 0', fontFamily: 'sans-serif' }}>
-              {doneDays}/{totalDays} Läufe erledigt
+            <p
+              style={{
+                color:'rgba(255,255,255,.82)',
+                fontSize:11,
+                margin:'6px 0 0',
+                fontFamily:'sans-serif',
+              }}
+            >
+              {doneDays}/{totalDays} {progressUnitLabel} erledigt
             </p>
           </div>
         </div>
       </div>
 
-      )}
       <div style={{ maxWidth: 580, margin: '0 auto' }}>
         {/* Phase Tabs */}
         <div style={{ padding: '20px 16px 8px', overflowX: 'auto' }}>
