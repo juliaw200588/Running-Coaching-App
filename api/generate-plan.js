@@ -1,5 +1,76 @@
 import { generateHikingPlan } from '../src/lib/hikingPlanServer.js'
 
+const RUNNING_PLAN_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    title: { type: 'string' },
+    goal: { type: 'string' },
+    startDate: { type: 'string' },
+    name: { type: 'string' },
+    phases: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'string' },
+          label: { type: 'string' },
+          sub: { type: 'string' },
+          icon: { type: 'string' },
+          dateRange: { type: 'string' },
+          description: { type: 'string' },
+          accent: { type: 'string' },
+          light: { type: 'string' },
+          mid: { type: 'string' },
+          soft: { type: 'string' },
+          weeks: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                n: { type: 'integer' },
+                dateRange: { type: 'string' },
+                regen: { type: 'boolean' },
+                days: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                      tag: { type: 'string' },
+                      einheit: { type: 'string' },
+                      details: { type: 'string' },
+                      optional: { type: 'boolean' },
+                    },
+                    required: ['tag', 'einheit', 'details', 'optional'],
+                  },
+                },
+              },
+              required: ['n', 'dateRange', 'regen', 'days'],
+            },
+          },
+        },
+        required: [
+          'id',
+          'label',
+          'sub',
+          'icon',
+          'dateRange',
+          'description',
+          'accent',
+          'light',
+          'mid',
+          'soft',
+          'weeks',
+        ],
+      },
+    },
+  },
+  required: ['title', 'goal', 'startDate', 'name', 'phases'],
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -229,10 +300,11 @@ Das JSON muss exakt diesem Schema folgen:
         {
           "n": 1,
           "dateRange": "08.06. – 14.06.",
+          "regen": false,
           "days": [
-            { "tag": "Di", "einheit": "Locker + Strides", "details": "35 min Zone 2 (Unterhaltungstempo) + 6×80m Strides locker – Ziel: Laufökonomie & aerobe Basis" },
-            { "tag": "Do", "einheit": "Locker", "details": "30 min Zone 2 – Ziel: aktive Erholung & Fettstoffwechsel" },
-            { "tag": "Sa", "einheit": "Langer Lauf", "details": "12 km Zone 2 – Ziel: Grundlagenausdauer aufbauen, nie schneller als Unterhaltungstempo" },
+            { "tag": "Di", "einheit": "Locker + Strides", "details": "35 min Zone 2 (Unterhaltungstempo) + 6×80m Strides locker – Ziel: Laufökonomie & aerobe Basis", "optional": false },
+            { "tag": "Do", "einheit": "Locker", "details": "30 min Zone 2 – Ziel: aktive Erholung & Fettstoffwechsel", "optional": false },
+            { "tag": "Sa", "einheit": "Langer Lauf", "details": "12 km Zone 2 – Ziel: Grundlagenausdauer aufbauen, nie schneller als Unterhaltungstempo", "optional": false },
             { "tag": "So", "einheit": "Kraft & Mobilität", "details": "20 min: Einbeinige Kniebeugen 3×10, Calf Raises 3×15, Hüftkreisen, Ausfallschritte – optional", "optional": true }
           ]
         }
@@ -414,8 +486,16 @@ Tapering:
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-5',
-        max_tokens: 8000,
+        // Lange Pläne (z. B. 20–25 Wochen) brauchen mehr Ausgaberaum.
+        // Structured Output verhindert syntaktisch kaputtes JSON.
+        max_tokens: 14000,
         system: systemPrompt,
+        output_config: {
+          format: {
+            type: 'json_schema',
+            schema: RUNNING_PLAN_SCHEMA,
+          },
+        },
         messages: [{
           role: 'user',
           content: `Erstelle einen ${weeksUntilRace}-wöchigen Trainingsplan.
@@ -431,7 +511,14 @@ ${umfangInfo}
 ${verletzungsInfo}
 Läufe pro Woche: ${runsPerWeek}
 Startdatum: ${startDate}
-Wohnort: ${wohnort || 'nicht angegeben'}`
+Wohnort: ${wohnort || 'nicht angegeben'}
+
+WICHTIG FÜR DIE AUSGABE:
+- Gib exakt ${weeksUntilRace} Wochen zurück.
+- Jede normale Laufeinheit hat optional=false.
+- Nur echte optionale Zusatz-/Krafteinheiten haben optional=true.
+- Jede Woche enthält regen=true nur wenn es sich um eine geplante Entlastungswoche handelt, sonst regen=false.
+- Formuliere Details kompakt und konkret; vermeide Wiederholungen.`
         }]
       })
     })
@@ -439,9 +526,29 @@ Wohnort: ${wohnort || 'nicht angegeben'}`
     const data = await response.json()
     if (!response.ok) return res.status(response.status).json({ error: data.error?.message || 'API Fehler' })
 
-    const text = data.content[0].text
-    const clean = text.replace(/```json|```/g, '').trim()
-    const plan = JSON.parse(clean)
+    if (data.stop_reason === 'max_tokens') {
+      console.error('[Generate Plan][Running] Ausgabe wurde wegen Tokenlimit beendet.')
+      return res.status(500).json({
+        error: 'Der Trainingsplan war für die Ausgabe zu umfangreich. Bitte erneut versuchen.',
+      })
+    }
+
+    const responseText = data?.content?.find(item => item?.type === 'text')?.text
+    if (!responseText) {
+      return res.status(500).json({ error: 'Es wurde kein Trainingsplan zurückgegeben.' })
+    }
+
+    const plan = JSON.parse(responseText)
+    const generatedWeeks = (plan?.phases || []).flatMap(phase => phase?.weeks || [])
+
+    if (generatedWeeks.length !== Number(weeksUntilRace)) {
+      console.error(
+        `[Generate Plan][Running] ${generatedWeeks.length} statt ${weeksUntilRace} Wochen erhalten.`
+      )
+      return res.status(500).json({
+        error: `Der Trainingsplan wurde unvollständig erstellt (${generatedWeeks.length}/${weeksUntilRace} Wochen). Bitte erneut versuchen.`,
+      })
+    }
 
     res.status(200).json({ plan })
   } catch (e) {
