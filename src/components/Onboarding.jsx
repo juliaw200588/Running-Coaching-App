@@ -1,337 +1,1413 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '../lib/supabase.js'
 
 const zeitenConfig = {
   '5 km': {
-    'Anfänger':        { zielzeit: 'z.B. 0:40', bisherige: 'z.B. 0:50' },
-    'Fortgeschritten': { zielzeit: 'z.B. 0:28', bisherige: 'z.B. 0:32' },
-    'Erfahren':        { zielzeit: 'z.B. 0:22', bisherige: 'z.B. 0:25' },
+    'Anfänger':        { zielzeit: 'z. B. 0:40', bisherige: 'z. B. 0:50' },
+    'Fortgeschritten': { zielzeit: 'z. B. 0:28', bisherige: 'z. B. 0:32' },
+    'Erfahren':        { zielzeit: 'z. B. 0:22', bisherige: 'z. B. 0:25' },
   },
   '10 km': {
-    'Anfänger':        { zielzeit: 'z.B. 1:20', bisherige: 'z.B. 1:35' },
-    'Fortgeschritten': { zielzeit: 'z.B. 0:58', bisherige: 'z.B. 1:08' },
-    'Erfahren':        { zielzeit: 'z.B. 0:46', bisherige: 'z.B. 0:52' },
+    'Anfänger':        { zielzeit: 'z. B. 1:20', bisherige: 'z. B. 1:35' },
+    'Fortgeschritten': { zielzeit: 'z. B. 0:58', bisherige: 'z. B. 1:08' },
+    'Erfahren':        { zielzeit: 'z. B. 0:46', bisherige: 'z. B. 0:52' },
   },
   'Halbmarathon': {
-    'Anfänger':        { zielzeit: 'z.B. 2:45', bisherige: 'z.B. 3:00' },
-    'Fortgeschritten': { zielzeit: 'z.B. 2:05', bisherige: 'z.B. 2:20' },
-    'Erfahren':        { zielzeit: 'z.B. 1:45', bisherige: 'z.B. 1:55' },
+    'Anfänger':        { zielzeit: 'z. B. 2:45', bisherige: 'z. B. 3:00' },
+    'Fortgeschritten': { zielzeit: 'z. B. 2:05', bisherige: 'z. B. 2:20' },
+    'Erfahren':        { zielzeit: 'z. B. 1:45', bisherige: 'z. B. 1:55' },
   },
   'Marathon': {
-    'Anfänger':        { zielzeit: 'z.B. 5:30', bisherige: 'z.B. 6:00' },
-    'Fortgeschritten': { zielzeit: 'z.B. 4:15', bisherige: 'z.B. 4:45' },
-    'Erfahren':        { zielzeit: 'z.B. 3:30', bisherige: 'z.B. 3:50' },
+    'Anfänger':        { zielzeit: 'z. B. 5:30', bisherige: 'z. B. 6:00' },
+    'Fortgeschritten': { zielzeit: 'z. B. 4:15', bisherige: 'z. B. 4:45' },
+    'Erfahren':        { zielzeit: 'z. B. 3:30', bisherige: 'z. B. 3:50' },
   },
 }
 
 const zielOptionen = [
-  { id: 'rennen', icon: '🏁', label: 'Ich habe ein Rennen', sub: 'Gezielt auf ein Event vorbereiten' },
-  { id: 'distanz', icon: '🎯', label: 'Eine Distanz schaffen', sub: 'Ein persönliches Ziel erreichen' },
-  { id: 'starten', icon: '🌱', label: 'Mit Laufen anfangen', sub: 'Einfach loslegen & dranbleiben' },
+  {
+    id: 'rennen',
+    icon: '🏁',
+    label: 'Ich trainiere für ein Rennen',
+    sub: 'Gezielt auf deinen Wettkampf vorbereiten',
+  },
+  {
+    id: 'distanz',
+    icon: '🎯',
+    label: 'Ich möchte eine Distanz schaffen',
+    sub: 'Dein persönliches Distanzziel erreichen',
+  },
+  {
+    id: 'starten',
+    icon: '🌱',
+    label: 'Ich möchte mit Laufen anfangen',
+    sub: 'Schritt für Schritt ins Laufen einsteigen',
+  },
 ]
 
 const niveauOptionen = [
-  { id: 'Anfänger', icon: '🐢', label: 'Anfänger', sub: 'Ich laufe selten oder gar nicht' },
-  { id: 'Fortgeschritten', icon: '🏃', label: 'Fortgeschritten', sub: 'Ich laufe regelmäßig' },
-  { id: 'Erfahren', icon: '⚡', label: 'Erfahren', sub: 'Ich nehme an Wettkämpfen teil' },
+  {
+    id: 'Anfänger',
+    icon: '🌱',
+    label: 'Ich starte gerade',
+    sub: 'Ich laufe selten oder noch nicht regelmäßig',
+  },
+  {
+    id: 'Fortgeschritten',
+    icon: '📈',
+    label: 'Ich laufe regelmäßig',
+    sub: 'Laufen gehört bereits zu meiner Woche',
+  },
+  {
+    id: 'Erfahren',
+    icon: '⚡',
+    label: 'Ich trainiere ambitioniert',
+    sub: 'Ich kenne strukturierte Einheiten oder Wettkampftraining',
+  },
 ]
+
+const haeufigkeitOptionen = [
+  { id: '0', label: 'Noch gar nicht' },
+  { id: '1', label: '1× pro Woche' },
+  { id: '2', label: '2× pro Woche' },
+  { id: '3', label: '3× pro Woche' },
+  { id: '4plus', label: '4× oder häufiger' },
+]
+
+const DISTANCES = ['5 km', '10 km', 'Halbmarathon', 'Marathon']
+
+const todayIso = () => new Date().toISOString().split('T')[0]
+
+const weeksBetween = (startValue, endValue) => {
+  if (!startValue || !endValue) return null
+  const start = new Date(`${startValue}T12:00:00`)
+  const end = new Date(`${endValue}T12:00:00`)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
+  const days = Math.floor((end - start) / 86400000)
+  if (days < 7) return 0
+  return Math.floor(days / 7)
+}
+
+const recommendedWeeks = form => {
+  if (form.zielTyp === 'starten') return 8
+
+  const byGoal = {
+    '5 km': form.niveau === 'Anfänger' ? 12 : 8,
+    '10 km': 12,
+    'Halbmarathon': form.niveau === 'Erfahren' ? 12 : 16,
+    'Marathon': 20,
+  }
+
+  return byGoal[form.goal] || 12
+}
 
 export default function Onboarding({ onPlanGenerated }) {
   const [step, setStep] = useState(1)
   const [form, setForm] = useState({
-    name: '', zielTyp: '', niveau: '',
-    goal: '', goalTime: '', previousTime: '',
-    startDate: new Date().toISOString().split('T')[0],
-    weeksUntilRace: 12, runsPerWeek: 3,
-    alter: '', aktuelleWochenKm: '', verletzungen: '', maxHF: '', ruheHF: '', geschlecht: '', wohnort: '',
+    name: '',
+    zielTyp: '',
+    niveau: '',
+    goal: '',
+    goalTime: '',
+    previousTime: '',
+    raceDate: '',
+    startDate: todayIso(),
+    weeksUntilRace: 12,
+    runsPerWeek: 3,
+    currentRunsPerWeek: '',
+    alter: '',
+    aktuelleWochenKm: '',
+    verletzungen: '',
+    hasConsiderations: 'nein',
+    maxHF: '',
+    ruheHF: '',
+    geschlecht: '',
+    wohnort: '',
   })
   const [loading, setLoading] = useState(false)
+  const [profileLoading, setProfileLoading] = useState(true)
   const [error, setError] = useState(null)
+
+  useEffect(() => {
+    let active = true
+
+    const loadProfile = async () => {
+      try {
+        const { data: authData } = await supabase.auth.getUser()
+        const user = authData?.user
+        if (!user?.id) return
+
+        const { data } = await supabase
+          .from('profiles')
+          .select('name,geschlecht,geburtsdatum,wohnort,max_hf,ruhe_hf,wochen_km')
+          .eq('id', user.id)
+          .maybeSingle()
+
+        if (!active) return
+
+        const birthDate = data?.geburtsdatum ? new Date(`${data.geburtsdatum}T12:00:00`) : null
+        const age = birthDate && !Number.isNaN(birthDate.getTime())
+          ? Math.max(
+              0,
+              new Date().getFullYear() -
+                birthDate.getFullYear() -
+                (new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()) <
+                new Date(new Date().getFullYear(), birthDate.getMonth(), birthDate.getDate())
+                  ? 1
+                  : 0)
+            )
+          : ''
+
+        setForm(current => ({
+          ...current,
+          name: data?.name || user.user_metadata?.name || current.name,
+          geschlecht: data?.geschlecht || current.geschlecht,
+          wohnort: data?.wohnort || current.wohnort,
+          alter: age || current.alter,
+          maxHF: data?.max_hf ? String(data.max_hf) : current.maxHF,
+          ruheHF: data?.ruhe_hf ? String(data.ruhe_hf) : current.ruheHF,
+          aktuelleWochenKm: data?.wochen_km ? String(data.wochen_km) : current.aktuelleWochenKm,
+        }))
+      } catch (profileError) {
+        console.warn('[RunningOnboarding] Profildaten konnten nicht vorgeladen werden:', profileError)
+      } finally {
+        if (active) setProfileLoading(false)
+      }
+    }
+
+    loadProfile()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const showDistanz = form.zielTyp !== 'starten'
+  const showZeiten = showDistanz && Boolean(form.goal)
+  const zeiten =
+    zeitenConfig[form.goal]?.[form.niveau] ||
+    { zielzeit: 'z. B. 2:05', bisherige: 'z. B. 2:20' }
+
+  const estimatedMaxHF = useMemo(() => {
+    const age = Number(form.alter)
+    if (!Number.isFinite(age) || age <= 0) return null
+    return Math.round(220 - age)
+  }, [form.alter])
+
+  const raceWeeks = useMemo(
+    () => weeksBetween(form.startDate, form.raceDate),
+    [form.startDate, form.raceDate]
+  )
+
+  const recommendation = useMemo(() => recommendedWeeks(form), [
+    form.zielTyp,
+    form.goal,
+    form.niveau,
+  ])
+
+  useEffect(() => {
+    if (form.zielTyp === 'rennen' && raceWeeks != null && raceWeeks > 0) {
+      setForm(current =>
+        current.weeksUntilRace === raceWeeks
+          ? current
+          : { ...current, weeksUntilRace: raceWeeks }
+      )
+    }
+  }, [form.zielTyp, raceWeeks])
+
+  useEffect(() => {
+    if (!form.zielTyp || form.zielTyp === 'rennen') return
+
+    const nextWeeks = recommendedWeeks(form)
+    setForm(current =>
+      current.weeksUntilRace === nextWeeks
+        ? current
+        : { ...current, weeksUntilRace: nextWeeks }
+    )
+  }, [form.zielTyp, form.goal, form.niveau])
+
+  const handleGoalType = zielTyp => {
+    setForm(current => ({
+      ...current,
+      zielTyp,
+      goal: zielTyp === 'starten' ? '' : current.goal,
+      goalTime: zielTyp === 'starten' ? '' : current.goalTime,
+      previousTime: zielTyp === 'starten' ? '' : current.previousTime,
+      raceDate: zielTyp === 'rennen' ? current.raceDate : '',
+      weeksUntilRace: zielTyp === 'starten' ? 8 : current.weeksUntilRace,
+    }))
+  }
 
   const handleGenerate = async () => {
     setLoading(true)
     setError(null)
+
     try {
       const response = await fetch('/api/generate-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form)
+        body: JSON.stringify(form),
       })
+
       const data = await response.json()
       if (data.error) throw new Error(data.error)
+
       onPlanGenerated(data.plan)
     } catch (e) {
       setError('Fehler: ' + e.message)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   const inputStyle = {
-    width: '100%', padding: '13px 16px', borderRadius: 14,
-    border: '1.5px solid #F0E0D0', fontSize: 16, color: '#3D2B1F',
-    outline: 'none', boxSizing: 'border-box', background: '#FFF8F5',
+    width: '100%',
+    padding: '13px 16px',
+    borderRadius: 14,
+    border: '1.5px solid #F0E0D0',
+    fontSize: 16,
+    color: '#3D2B1F',
+    outline: 'none',
+    boxSizing: 'border-box',
+    background: '#FFF8F5',
     fontFamily: 'sans-serif',
   }
+
   const labelStyle = {
-    fontSize: 11, fontWeight: 'bold', color: '#B8A090',
-    textTransform: 'uppercase', letterSpacing: 1,
-    display: 'block', marginBottom: 6, fontFamily: 'sans-serif',
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#A98D7E',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    display: 'block',
+    marginBottom: 7,
+    fontFamily: 'sans-serif',
   }
-  const optLabel = { fontSize: 10, color: '#D4C4B8', fontWeight: 'normal', letterSpacing: 0, textTransform: 'none', marginLeft: 6 }
 
-  const canProceedStep1 = form.zielTyp && form.niveau
-  const showDistanz = form.zielTyp !== 'starten'
-  const showZeiten = form.zielTyp !== 'starten' && form.goal
-  const zeiten = zeitenConfig[form.goal]?.[form.niveau] || { zielzeit: 'z.B. 2:05', bisherige: 'z.B. 2:20' }
+  const optLabel = {
+    fontSize: 10,
+    color: '#D4C4B8',
+    fontWeight: 'normal',
+    letterSpacing: 0,
+    textTransform: 'none',
+    marginLeft: 6,
+  }
 
-  const berechneteHF = form.alter
-    ? form.geschlecht === 'w'
-      ? Math.round(206 - 0.88 * parseInt(form.alter))
-      : form.geschlecht === 'm'
-        ? Math.round(220 - parseInt(form.alter))
-        : Math.round(208 - 0.7 * parseInt(form.alter))
-    : null
+  const panelStyle = {
+    background: 'white',
+    borderRadius: 24,
+    padding: 24,
+    boxShadow: '0 6px 30px rgba(87,61,46,0.08)',
+    border: '1px solid #EEE1D8',
+  }
+
+  const canProceedStep1 =
+    Boolean(form.zielTyp) &&
+    Boolean(form.niveau) &&
+    (!showDistanz || Boolean(form.goal)) &&
+    (form.zielTyp !== 'rennen' || (Boolean(form.raceDate) && raceWeeks > 0))
+
+  const canProceedStep2 =
+    Boolean(form.currentRunsPerWeek)
+
+  const canGenerate =
+    Boolean(form.startDate) &&
+    Boolean(form.runsPerWeek) &&
+    (form.zielTyp !== 'rennen' || (raceWeeks != null && raceWeeks > 0))
+
+  const progress = [
+    { n: 1, label: 'Ziel' },
+    { n: 2, label: 'Training' },
+    { n: 3, label: 'Plan' },
+  ]
+
+  const selectedGoal = zielOptionen.find(option => option.id === form.zielTyp)
+  const selectedLevel = niveauOptionen.find(option => option.id === form.niveau)
 
   return (
-    <div style={{ fontFamily: "'Georgia', 'Times New Roman', serif", background: 'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 50%, #FFF0F5 100%)', minHeight: '100vh' }}>
+    <div
+      style={{
+        fontFamily: "'Georgia', 'Times New Roman', serif",
+        background:
+          'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 50%, #FFF0F5 100%)',
+        minHeight: '100vh',
+      }}
+    >
+      <header
+        style={{
+          minHeight: 238,
+          position: 'relative',
+          overflow: 'hidden',
+          display: 'flex',
+          alignItems: 'flex-end',
+          background: '#5F7568',
+        }}
+      >
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            backgroundImage: 'url("/hero/running/easy/02.webp")',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center 56%',
+          }}
+        />
 
-      <div style={{ background: 'linear-gradient(135deg, #FF8C69 0%, #FFB347 50%, #FF6B9D 100%)', padding: '44px 24px 36px', borderRadius: '0 0 40px 40px', boxShadow: '0 8px 32px rgba(255,140,105,0.3)', position: 'relative', overflow: 'hidden', textAlign: 'center' }}>
-        <div style={{ position: 'absolute', top: -30, right: -30, width: 160, height: 160, background: 'rgba(255,255,255,0.08)', borderRadius: '50%' }} />
-        <div style={{ position: 'absolute', bottom: -40, left: 20, width: 100, height: 100, background: 'rgba(255,255,255,0.06)', borderRadius: '50%' }} />
-        <img src="/route-icon.png" alt="Route" style={{ width: 72, height: 72, borderRadius: '50%', marginBottom: 10 }} />
-        <h1 style={{ color: 'white', fontSize: 26, fontWeight: 'bold', margin: '0 0 4px', textShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>Run Coaching</h1>
-        <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, margin: '0 0 16px', fontFamily: 'sans-serif' }}>Dein persönlicher Trainingsplan</p>
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background:
+              'linear-gradient(90deg,rgba(23,27,24,.72) 0%,rgba(25,25,22,.40) 52%,rgba(22,21,19,.12) 78%), linear-gradient(180deg,rgba(18,20,18,.06),rgba(22,20,18,.64))',
+          }}
+        />
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-          <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'white', color: '#FF8C69', fontSize: 13, fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'sans-serif' }}>1</div>
-          <div style={{ width: 40, height: 2, background: step === 2 ? 'white' : 'rgba(255,255,255,0.3)', borderRadius: 1, transition: 'background 0.3s' }} />
-          <div style={{ width: 28, height: 28, borderRadius: '50%', background: step === 2 ? 'white' : 'rgba(255,255,255,0.3)', color: step === 2 ? '#FF8C69' : 'white', fontSize: 13, fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'sans-serif' }}>2</div>
+        <div
+          style={{
+            position: 'relative',
+            zIndex: 1,
+            width: '100%',
+            maxWidth: 720,
+            margin: '0 auto',
+            boxSizing: 'border-box',
+            padding: '34px 20px 24px',
+            color: '#fff',
+          }}
+        >
+          <div
+            style={{
+              fontFamily: 'sans-serif',
+              fontSize: 10,
+              fontWeight: 900,
+              letterSpacing: 1.4,
+              opacity: 0.92,
+            }}
+          >
+            DEIN TRAININGSPLAN
+          </div>
+
+          <h1
+            style={{
+              margin: '7px 0 4px',
+              fontSize: 31,
+              lineHeight: 1.06,
+            }}
+          >
+            Laufen
+          </h1>
+
+          <p
+            style={{
+              margin: 0,
+              fontFamily: 'sans-serif',
+              fontSize: 12,
+              lineHeight: 1.5,
+              opacity: 0.9,
+            }}
+          >
+            Wir bauen deinen Plan passend zu deinem Ziel und deinem aktuellen Training.
+          </p>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: 8,
+              marginTop: 18,
+              maxWidth: 390,
+            }}
+          >
+            {progress.map(item => {
+              const active = step === item.n
+              const done = step > item.n
+
+              return (
+                <div key={item.n}>
+                  <div
+                    style={{
+                      height: 4,
+                      borderRadius: 99,
+                      background:
+                        active || done
+                          ? '#FFFFFF'
+                          : 'rgba(255,255,255,.28)',
+                    }}
+                  />
+                  <div
+                    style={{
+                      marginTop: 6,
+                      fontFamily: 'sans-serif',
+                      fontSize: 9.5,
+                      fontWeight: active ? 900 : 700,
+                      opacity: active || done ? 1 : 0.7,
+                    }}
+                  >
+                    {item.n} · {item.label}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
-      </div>
+      </header>
 
-      <div style={{ maxWidth: 460, margin: '0 auto', padding: '24px 20px 40px' }}>
-
-        {step === 1 && (
-          <div style={{ background: 'white', borderRadius: 24, padding: 24, boxShadow: '0 4px 32px rgba(255,140,105,0.12)', border: '1px solid #FFE8D8' }}>
-
-            <div style={{ marginBottom: 22 }}>
-              <label style={labelStyle}>Was ist dein Ziel?</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {zielOptionen.map(z => (
-                  <button key={z.id} onClick={() => setForm({ ...form, zielTyp: z.id, goal: z.id === 'starten' ? '' : form.goal })}
-                    style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', borderRadius: 14, border: `2px solid ${form.zielTyp === z.id ? '#FF8C69' : '#F0E8E0'}`, background: form.zielTyp === z.id ? '#FFF5F0' : 'white', cursor: 'pointer', textAlign: 'left', transition: 'all 0.2s', boxShadow: form.zielTyp === z.id ? '0 4px 14px rgba(255,140,105,0.2)' : 'none' }}>
-                    <span style={{ fontSize: 24, flexShrink: 0 }}>{z.icon}</span>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 'bold', color: form.zielTyp === z.id ? '#FF8C69' : '#3D2B1F', fontFamily: 'sans-serif' }}>{z.label}</div>
-                      <div style={{ fontSize: 11, color: '#B8A090', fontFamily: 'sans-serif', marginTop: 2 }}>{z.sub}</div>
-                    </div>
-                    {form.zielTyp === z.id && <span style={{ marginLeft: 'auto', color: '#FF8C69', fontSize: 18 }}>✓</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ marginBottom: 26 }}>
-              <label style={labelStyle}>Dein Laufniveau</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {niveauOptionen.map(n => (
-                  <button key={n.id} onClick={() => setForm({ ...form, niveau: n.id })}
-                    style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', borderRadius: 14, border: `2px solid ${form.niveau === n.id ? '#7EC8A4' : '#F0E8E0'}`, background: form.niveau === n.id ? '#F0FAF4' : 'white', cursor: 'pointer', textAlign: 'left', transition: 'all 0.2s', boxShadow: form.niveau === n.id ? '0 4px 14px rgba(126,200,164,0.2)' : 'none' }}>
-                    <span style={{ fontSize: 24, flexShrink: 0 }}>{n.icon}</span>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 'bold', color: form.niveau === n.id ? '#5BA88A' : '#3D2B1F', fontFamily: 'sans-serif' }}>{n.label}</div>
-                      <div style={{ fontSize: 11, color: '#B8A090', fontFamily: 'sans-serif', marginTop: 2 }}>{n.sub}</div>
-                    </div>
-                    {form.niveau === n.id && <span style={{ marginLeft: 'auto', color: '#7EC8A4', fontSize: 18 }}>✓</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <button onClick={() => setStep(2)} disabled={!canProceedStep1}
-              style={{ width: '100%', padding: '17px', borderRadius: 18, border: 'none', background: canProceedStep1 ? 'linear-gradient(135deg,#FF8C69,#FF6B9D)' : '#F0E8E0', color: canProceedStep1 ? 'white' : '#C4A882', fontSize: 16, fontWeight: 'bold', cursor: canProceedStep1 ? 'pointer' : 'default', fontFamily: 'sans-serif', boxShadow: canProceedStep1 ? '0 8px 24px rgba(255,107,157,0.4)' : 'none', transition: 'all 0.2s' }}>
-              Weiter →
-            </button>
+      <main
+        style={{
+          maxWidth: 520,
+          margin: '0 auto',
+          padding: '24px 18px 42px',
+        }}
+      >
+        {profileLoading && (
+          <div
+            style={{
+              fontFamily: 'sans-serif',
+              fontSize: 11,
+              color: '#A88F80',
+              marginBottom: 12,
+            }}
+          >
+            Profil wird übernommen…
           </div>
         )}
 
-        {step === 2 && (
-          <div style={{ background: 'white', borderRadius: 24, padding: 24, boxShadow: '0 4px 32px rgba(255,140,105,0.12)', border: '1px solid #FFE8D8' }}>
+        {step === 1 && (
+          <section style={panelStyle}>
+            <div style={{ marginBottom: 24 }}>
+              <div style={labelStyle}>Was ist dein Ziel?</div>
 
-            <div style={{ marginBottom: 22, padding: '12px 16px', background: '#FFF5F0', borderRadius: 14, border: '1px solid #FFE0CC', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ fontFamily: 'sans-serif', fontSize: 13, color: '#8B6B5A' }}>
-                <span style={{ fontWeight: 'bold', color: '#FF8C69' }}>{form.name}</span>
-                {' · '}{zielOptionen.find(z => z.id === form.zielTyp)?.icon}
-                {' '}{zielOptionen.find(z => z.id === form.zielTyp)?.label}
-                {' · '}{niveauOptionen.find(n => n.id === form.niveau)?.icon} {form.niveau}
+              <div style={{ display: 'grid', gap: 10 }}>
+                {zielOptionen.map(option => {
+                  const selected = form.zielTyp === option.id
+
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => handleGoalType(option.id)}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '42px 1fr 24px',
+                        alignItems: 'center',
+                        gap: 12,
+                        padding: '14px 15px',
+                        borderRadius: 16,
+                        border: `2px solid ${selected ? '#FF8C69' : '#EEE4DE'}`,
+                        background: selected ? '#FFF5F0' : '#fff',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <span style={{ fontSize: 23 }}>{option.icon}</span>
+
+                      <span>
+                        <span
+                          style={{
+                            display: 'block',
+                            fontFamily: 'sans-serif',
+                            fontSize: 13.5,
+                            fontWeight: 850,
+                            color: selected ? '#D96D51' : '#3D2B1F',
+                          }}
+                        >
+                          {option.label}
+                        </span>
+                        <span
+                          style={{
+                            display: 'block',
+                            fontFamily: 'sans-serif',
+                            fontSize: 10.5,
+                            color: '#AE9587',
+                            marginTop: 3,
+                            lineHeight: 1.4,
+                          }}
+                        >
+                          {option.sub}
+                        </span>
+                      </span>
+
+                      <span
+                        style={{
+                          color: selected ? '#FF8C69' : '#E1D5CE',
+                          fontFamily: 'sans-serif',
+                          fontWeight: 900,
+                        }}
+                      >
+                        {selected ? '✓' : ''}
+                      </span>
+                    </button>
+                  )
+                })}
               </div>
-              <button onClick={() => setStep(1)} style={{ background: 'none', border: 'none', color: '#C4A882', cursor: 'pointer', fontSize: 12, fontFamily: 'sans-serif' }}>✏️</button>
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <div style={labelStyle}>Wo stehst du gerade?</div>
+
+              <div style={{ display: 'grid', gap: 9 }}>
+                {niveauOptionen.map(option => {
+                  const selected = form.niveau === option.id
+
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() =>
+                        setForm(current => ({ ...current, niveau: option.id }))
+                      }
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '42px 1fr 24px',
+                        alignItems: 'center',
+                        gap: 12,
+                        padding: '13px 15px',
+                        borderRadius: 16,
+                        border: `2px solid ${selected ? '#7EC8A4' : '#EEE4DE'}`,
+                        background: selected ? '#F2FAF5' : '#fff',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <span style={{ fontSize: 22 }}>{option.icon}</span>
+
+                      <span>
+                        <span
+                          style={{
+                            display: 'block',
+                            fontFamily: 'sans-serif',
+                            fontSize: 13,
+                            fontWeight: 850,
+                            color: selected ? '#4E9877' : '#3D2B1F',
+                          }}
+                        >
+                          {option.label}
+                        </span>
+                        <span
+                          style={{
+                            display: 'block',
+                            fontFamily: 'sans-serif',
+                            fontSize: 10.5,
+                            color: '#AE9587',
+                            marginTop: 2,
+                            lineHeight: 1.4,
+                          }}
+                        >
+                          {option.sub}
+                        </span>
+                      </span>
+
+                      <span style={{ color: '#65AF8A', fontWeight: 900 }}>
+                        {selected ? '✓' : ''}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
 
             {showDistanz && (
-              <div style={{ marginBottom: 18 }}>
-                <label style={labelStyle}>Renndistanz</label>
+              <div style={{ marginBottom: 22 }}>
+                <div style={labelStyle}>
+                  {form.zielTyp === 'rennen' ? 'Renndistanz' : 'Deine Zieldistanz'}
+                </div>
+
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {['5 km', '10 km', 'Halbmarathon', 'Marathon'].map(g => (
-                    <button key={g} onClick={() => setForm({ ...form, goal: g, goalTime: '', previousTime: '' })}
-                      style={{ background: form.goal === g ? '#FF8C69' : 'white', color: form.goal === g ? 'white' : '#8B7355', border: `2px solid ${form.goal === g ? '#FF8C69' : '#F0E8E0'}`, borderRadius: 12, padding: '10px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'sans-serif', fontWeight: 'bold', transition: 'all 0.2s', boxShadow: form.goal === g ? '0 4px 14px rgba(255,140,105,0.4)' : 'none' }}>
-                      {g}
-                    </button>
-                  ))}
+                  {DISTANCES.map(distance => {
+                    const selected = form.goal === distance
+
+                    return (
+                      <button
+                        key={distance}
+                        type="button"
+                        onClick={() =>
+                          setForm(current => ({
+                            ...current,
+                            goal: distance,
+                            goalTime: '',
+                            previousTime: '',
+                          }))
+                        }
+                        style={{
+                          background: selected ? '#FF8C69' : '#fff',
+                          color: selected ? '#fff' : '#8B735F',
+                          border: `2px solid ${selected ? '#FF8C69' : '#EEE3DC'}`,
+                          borderRadius: 12,
+                          padding: '10px 13px',
+                          fontSize: 12,
+                          cursor: 'pointer',
+                          fontFamily: 'sans-serif',
+                          fontWeight: 850,
+                        }}
+                      >
+                        {distance}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             )}
 
+            {form.zielTyp === 'rennen' && (
+              <div style={{ marginBottom: 22 }}>
+                <label style={labelStyle}>Wann ist dein Rennen?</label>
+                <input
+                  type="date"
+                  min={form.startDate || todayIso()}
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                  value={form.raceDate}
+                  onChange={event =>
+                    setForm(current => ({
+                      ...current,
+                      raceDate: event.target.value,
+                    }))
+                  }
+                />
+
+                {form.raceDate && raceWeeks === 0 && (
+                  <div
+                    style={{
+                      marginTop: 7,
+                      fontFamily: 'sans-serif',
+                      fontSize: 10.5,
+                      color: '#B8674E',
+                    }}
+                  >
+                    Zwischen Planstart und Rennen sollte mindestens eine Trainingswoche liegen.
+                  </div>
+                )}
+              </div>
+            )}
+
             {showZeiten && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 18 }}>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: 12,
+                  marginBottom: 22,
+                }}
+              >
                 <div>
-                  <label style={labelStyle}>Zielzeit <span style={optLabel}>optional</span></label>
-                  <input style={inputStyle} placeholder={zeiten.zielzeit} value={form.goalTime}
-                    onChange={e => setForm({ ...form, goalTime: e.target.value })} />
+                  <label style={labelStyle}>
+                    Zielzeit <span style={optLabel}>optional</span>
+                  </label>
+                  <input
+                    style={inputStyle}
+                    placeholder={zeiten.zielzeit}
+                    value={form.goalTime}
+                    onChange={event =>
+                      setForm(current => ({
+                        ...current,
+                        goalTime: event.target.value,
+                      }))
+                    }
+                  />
                 </div>
+
                 <div>
-                  <label style={labelStyle}>Bisherige Zeit <span style={optLabel}>optional</span></label>
-                  <input style={inputStyle} placeholder={zeiten.bisherige} value={form.previousTime}
-                    onChange={e => setForm({ ...form, previousTime: e.target.value })} />
+                  <label style={labelStyle}>
+                    Bisherige Zeit <span style={optLabel}>optional</span>
+                  </label>
+                  <input
+                    style={inputStyle}
+                    placeholder={zeiten.bisherige}
+                    value={form.previousTime}
+                    onChange={event =>
+                      setForm(current => ({
+                        ...current,
+                        previousTime: event.target.value,
+                      }))
+                    }
+                  />
                 </div>
               </div>
             )}
 
             {showZeiten && !form.goalTime && !form.previousTime && (
-              <div style={{ marginBottom: 18, padding: '10px 14px', background: '#F0FAF4', border: '1px solid #B8E4CC', borderRadius: 12, fontSize: 12, color: '#5BA88A', fontFamily: 'sans-serif' }}>
-                💡 Ohne Zeitangabe wird ein Finisher-Plan erstellt.
+              <div
+                style={{
+                  marginBottom: 22,
+                  padding: '10px 13px',
+                  background: '#F2FAF5',
+                  border: '1px solid #CFE9D9',
+                  borderRadius: 12,
+                  fontSize: 11,
+                  color: '#5A9275',
+                  fontFamily: 'sans-serif',
+                  lineHeight: 1.5,
+                }}
+              >
+                Ohne Zeitangabe liegt der Fokus auf dem sicheren Erreichen deiner Distanz.
               </div>
             )}
 
-            <div style={{ marginBottom: 18 }}>
-              <label style={labelStyle}>Geschlecht <span style={optLabel}>optional</span></label>
+            <button
+              type="button"
+              onClick={() => setStep(2)}
+              disabled={!canProceedStep1}
+              style={{
+                width: '100%',
+                padding: 16,
+                borderRadius: 17,
+                border: 'none',
+                background: canProceedStep1
+                  ? 'linear-gradient(135deg,#FF8C69,#FF6B9D)'
+                  : '#EEE7E2',
+                color: canProceedStep1 ? '#fff' : '#BCA99D',
+                fontFamily: 'sans-serif',
+                fontSize: 14,
+                fontWeight: 900,
+                cursor: canProceedStep1 ? 'pointer' : 'default',
+              }}
+            >
+              Weiter zu deinem Training →
+            </button>
+          </section>
+        )}
+
+        {step === 2 && (
+          <section style={panelStyle}>
+            <div
+              style={{
+                marginBottom: 22,
+                padding: '11px 13px',
+                borderRadius: 13,
+                background: '#FFF7F2',
+                fontFamily: 'sans-serif',
+                fontSize: 10.5,
+                color: '#8B7467',
+                lineHeight: 1.5,
+              }}
+            >
+              <strong style={{ color: '#D76C51' }}>
+                {selectedGoal?.icon} {selectedGoal?.label}
+              </strong>
+              {form.goal ? ` · ${form.goal}` : ''}
+              {selectedLevel ? ` · ${selectedLevel.label}` : ''}
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <div style={labelStyle}>Wie oft läufst du aktuell?</div>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, minmax(0,1fr))',
+                  gap: 8,
+                }}
+              >
+                {haeufigkeitOptionen.map(option => {
+                  const selected = form.currentRunsPerWeek === option.id
+
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() =>
+                        setForm(current => ({
+                          ...current,
+                          currentRunsPerWeek: option.id,
+                        }))
+                      }
+                      style={{
+                        padding: '11px 9px',
+                        borderRadius: 12,
+                        border: `2px solid ${selected ? '#7EC8A4' : '#EFE4DD'}`,
+                        background: selected ? '#F2FAF5' : '#fff',
+                        color: selected ? '#4F9576' : '#8D776A',
+                        fontFamily: 'sans-serif',
+                        fontSize: 11,
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <label style={labelStyle}>
+                Aktuelle Wochenkilometer <span style={optLabel}>optional</span>
+              </label>
+              <input
+                style={inputStyle}
+                type="number"
+                min="0"
+                placeholder="z. B. 20"
+                value={form.aktuelleWochenKm}
+                onChange={event =>
+                  setForm(current => ({
+                    ...current,
+                    aktuelleWochenKm: event.target.value,
+                  }))
+                }
+              />
+              <div
+                style={{
+                  marginTop: 6,
+                  fontFamily: 'sans-serif',
+                  fontSize: 10.5,
+                  color: '#B4A095',
+                }}
+              >
+                Ein ungefährer Durchschnitt der letzten Wochen reicht.
+              </div>
+            </div>
+
+            <div
+              style={{
+                margin: '0 -4px 24px',
+                padding: '18px 16px',
+                borderRadius: 18,
+                background: '#F7FAF8',
+                border: '1px solid #DDEAE2',
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: 'sans-serif',
+                  fontSize: 10,
+                  fontWeight: 900,
+                  color: '#5B8B70',
+                  letterSpacing: 1,
+                  marginBottom: 13,
+                }}
+              >
+                DEINE TRAININGSINTENSITÄT
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>
+                  Alter <span style={optLabel}>optional</span>
+                </label>
+                <input
+                  style={inputStyle}
+                  type="number"
+                  min="14"
+                  max="100"
+                  placeholder="z. B. 38"
+                  value={form.alter}
+                  onChange={event =>
+                    setForm(current => ({
+                      ...current,
+                      alter: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>
+                  Maximale Herzfrequenz (bpm) <span style={optLabel}>optional</span>
+                </label>
+                <input
+                  style={inputStyle}
+                  type="number"
+                  min="80"
+                  max="240"
+                  placeholder={
+                    estimatedMaxHF
+                      ? `Falls unbekannt: grob ca. ${estimatedMaxHF}`
+                      : 'z. B. 192'
+                  }
+                  value={form.maxHF}
+                  onChange={event =>
+                    setForm(current => ({
+                      ...current,
+                      maxHF: event.target.value,
+                    }))
+                  }
+                />
+                <div
+                  style={{
+                    marginTop: 6,
+                    fontFamily: 'sans-serif',
+                    fontSize: 10.5,
+                    lineHeight: 1.45,
+                    color: '#A99387',
+                  }}
+                >
+                  Wenn du deinen individuellen Wert kennst, trage ihn ein. Andernfalls kann er nur grob anhand deines Alters geschätzt werden.
+                </div>
+              </div>
+
+              <div>
+                <label style={labelStyle}>
+                  Ruheherzfrequenz (bpm) <span style={optLabel}>optional</span>
+                </label>
+                <input
+                  style={inputStyle}
+                  type="number"
+                  min="30"
+                  max="130"
+                  placeholder="z. B. 47"
+                  value={form.ruheHF}
+                  onChange={event =>
+                    setForm(current => ({
+                      ...current,
+                      ruheHF: event.target.value,
+                    }))
+                  }
+                />
+                <div
+                  style={{
+                    marginTop: 6,
+                    fontFamily: 'sans-serif',
+                    fontSize: 10.5,
+                    lineHeight: 1.45,
+                    color: '#A99387',
+                  }}
+                >
+                  Am besten in Ruhe, zum Beispiel morgens vor dem Aufstehen, gemessen.
+                </div>
+              </div>
+
+              <div
+                style={{
+                  marginTop: 14,
+                  paddingTop: 12,
+                  borderTop: '1px solid #E1EBE5',
+                  fontFamily: 'sans-serif',
+                  fontSize: 10.5,
+                  lineHeight: 1.5,
+                  color: '#6D8175',
+                }}
+              >
+                Die Angaben sind freiwillig. Je mehr verlässliche Herzfrequenzdaten vorliegen, desto individueller können die Trainingsbereiche eingeordnet werden.
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <div style={labelStyle}>
+                Gibt es etwas, das wir berücksichtigen sollen?{' '}
+                <span style={optLabel}>optional</span>
+              </div>
+
               <div style={{ display: 'flex', gap: 8 }}>
                 {[
-                  { id: 'w', label: '♀ Weiblich' },
-                  { id: 'm', label: '♂ Männlich' },
-                  { id: 'd', label: '⚧ Divers' },
-                ].map(g => (
-                  <button key={g.id} onClick={() => setForm({ ...form, geschlecht: g.id })}
-                    style={{ flex: 1, padding: '11px 0', borderRadius: 12, border: `2px solid ${form.geschlecht === g.id ? '#FF8C69' : '#F0E0D0'}`, background: form.geschlecht === g.id ? '#FFF5F0' : 'white', color: form.geschlecht === g.id ? '#FF8C69' : '#C4A882', fontSize: 13, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', transition: 'all 0.2s' }}>
-                    {g.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+                  { id: 'nein', label: 'Nein' },
+                  { id: 'ja', label: 'Ja' },
+                ].map(option => {
+                  const selected = form.hasConsiderations === option.id
 
-            <div style={{ marginBottom: 18 }}>
-              <label style={labelStyle}>Alter <span style={optLabel}>optional</span></label>
-              <input style={inputStyle} type="number" placeholder="z.B. 32" value={form.alter}
-                onChange={e => setForm({ ...form, alter: e.target.value, maxHF: '' })} />
-              {berechneteHF && (
-                <div style={{ fontSize: 11, color: '#7EC8A4', fontFamily: 'sans-serif', marginTop: 6 }}>
-                  → Maximale Herzfrequenz wird automatisch berechnet: ca. <strong>{berechneteHF} bpm</strong>
-                </div>
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() =>
+                        setForm(current => ({
+                          ...current,
+                          hasConsiderations: option.id,
+                          verletzungen:
+                            option.id === 'nein' ? '' : current.verletzungen,
+                        }))
+                      }
+                      style={{
+                        flex: 1,
+                        padding: 11,
+                        borderRadius: 12,
+                        border: `2px solid ${selected ? '#FFB079' : '#EFE3DC'}`,
+                        background: selected ? '#FFF7EF' : '#fff',
+                        color: selected ? '#B97042' : '#9A8377',
+                        fontFamily: 'sans-serif',
+                        fontSize: 12,
+                        fontWeight: 850,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {form.hasConsiderations === 'ja' && (
+                <textarea
+                  style={{
+                    ...inputStyle,
+                    minHeight: 82,
+                    resize: 'vertical',
+                    marginTop: 10,
+                    lineHeight: 1.45,
+                  }}
+                  placeholder="z. B. wiederkehrende Beschwerden oder etwas, das deine Trainingsplanung beeinflusst"
+                  value={form.verletzungen}
+                  onChange={event =>
+                    setForm(current => ({
+                      ...current,
+                      verletzungen: event.target.value,
+                    }))
+                  }
+                />
               )}
-              {!form.alter && (
-                <div style={{ fontSize: 11, color: '#D4C4B8', fontFamily: 'sans-serif', marginTop: 6 }}>
-                  Die maximale Herzfrequenz wird automatisch aus deinem Alter berechnet (220 minus Alter)
-                </div>
-              )}
             </div>
 
-            {(form.niveau === 'Fortgeschritten' || form.niveau === 'Erfahren') && (
-              <div style={{ marginBottom: 18 }}>
-                <label style={labelStyle}>Max. HF (bpm) <span style={optLabel}>optional</span></label>
-                <input style={inputStyle} type="number" placeholder={berechneteHF ? `Berechnet: ca. ${berechneteHF} bpm` : 'z.B. 185'} value={form.maxHF}
-                  onChange={e => setForm({ ...form, maxHF: e.target.value })} />
-                <div style={{ fontSize: 11, color: '#D4C4B8', fontFamily: 'sans-serif', marginTop: 6 }}>
-                  Du kennst deinen genauen Wert z.B. aus einem Leistungstest? Trag ihn hier ein.
-                </div>
-              </div>
-            )}
+            <div style={{ display: 'flex', gap: 9 }}>
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                style={{
+                  flex: 1,
+                  padding: 15,
+                  borderRadius: 16,
+                  border: '1.5px solid #E8DDD6',
+                  background: '#fff',
+                  color: '#A18B7E',
+                  fontFamily: 'sans-serif',
+                  fontWeight: 850,
+                  cursor: 'pointer',
+                }}
+              >
+                ← Zurück
+              </button>
 
-            <div style={{ marginBottom: 18 }}>
-              <label style={labelStyle}>Ruhe-Herzfrequenz (bpm) <span style={optLabel}>optional</span></label>
-              <input style={inputStyle} type="number" placeholder="z.B. 55" value={form.ruheHF}
-                onChange={e => setForm({ ...form, ruheHF: e.target.value })} />
-              <div style={{ fontSize: 11, color: '#D4C4B8', fontFamily: 'sans-serif', marginTop: 6 }}>
-                Direkt nach dem Aufwachen gemessen, oder aus deiner Sportuhr. Macht die HF-Zonen deutlich genauer.
-              </div>
+              <button
+                type="button"
+                onClick={() => setStep(3)}
+                disabled={!canProceedStep2}
+                style={{
+                  flex: 2,
+                  padding: 15,
+                  borderRadius: 16,
+                  border: 'none',
+                  background: canProceedStep2
+                    ? 'linear-gradient(135deg,#FF8C69,#FF6B9D)'
+                    : '#EEE7E2',
+                  color: canProceedStep2 ? '#fff' : '#BCA99D',
+                  fontFamily: 'sans-serif',
+                  fontWeight: 900,
+                  cursor: canProceedStep2 ? 'pointer' : 'default',
+                }}
+              >
+                Weiter zu deinem Plan →
+              </button>
+            </div>
+          </section>
+        )}
+
+        {step === 3 && (
+          <section style={panelStyle}>
+            <div
+              style={{
+                marginBottom: 22,
+                padding: '11px 13px',
+                borderRadius: 13,
+                background: '#F2FAF5',
+                fontFamily: 'sans-serif',
+                fontSize: 10.5,
+                color: '#688070',
+                lineHeight: 1.5,
+              }}
+            >
+              Fast geschafft. Jetzt legen wir nur noch fest, wann und wie oft du trainieren möchtest.
             </div>
 
-            {!form.alter && !form.maxHF && (
-              <div style={{ marginBottom: 18, padding: '10px 14px', background: '#FFF5EE', border: '1px solid #FFE0CC', borderRadius: 12, fontSize: 12, color: '#C17A3A', fontFamily: 'sans-serif', lineHeight: 1.6 }}>
-                💡 <strong>Tipp:</strong> Mit Alter oder maximaler Herzfrequenz wird dein Plan noch präziser – die Einheiten werden dann mit individuellen Herzfrequenzzonen (Zone 1–5) ergänzt, statt nur nach Pace. Beides ist optional.
-              </div>
-            )}
-
-            <div style={{ marginBottom: 18 }}>
-              <label style={labelStyle}>Aktuelle Wochenkilometer <span style={optLabel}>optional</span></label>
-              <input style={inputStyle} type="number" placeholder="z.B. 20 km pro Woche" value={form.aktuelleWochenKm}
-                onChange={e => setForm({ ...form, aktuelleWochenKm: e.target.value })} />
-            </div>
-
-            <div style={{ marginBottom: 18 }}>
-              <label style={labelStyle}>Verletzungsgeschichte <span style={optLabel}>optional</span></label>
-              <input style={inputStyle} placeholder="z.B. Knieprobleme, Achillessehne..." value={form.verletzungen}
-                onChange={e => setForm({ ...form, verletzungen: e.target.value })} />
-            </div>
-
-            <div style={{ marginBottom: 18 }}>
+            <div style={{ marginBottom: 22 }}>
               <label style={labelStyle}>Startdatum des Plans</label>
-              <input type="date" style={{ ...inputStyle, cursor: 'pointer' }}
+              <input
+                type="date"
+                min={todayIso()}
+                style={{ ...inputStyle, cursor: 'pointer' }}
                 value={form.startDate}
-                onChange={e => setForm({ ...form, startDate: e.target.value })} />
+                onChange={event =>
+                  setForm(current => ({
+                    ...current,
+                    startDate: event.target.value,
+                  }))
+                }
+              />
             </div>
 
-            <div style={{ marginBottom: 18 }}>
-              <label style={labelStyle}>Wie lange soll dein Plan gehen?</label>
-              <div style={{ display: 'flex', gap: 8 }}>
-                {[8, 12, 16, 20].map(w => (
-                  <button key={w} onClick={() => setForm({ ...form, weeksUntilRace: w })}
-                    style={{ flex: 1, padding: '11px 0', borderRadius: 12, border: `2px solid ${form.weeksUntilRace === w ? '#FF8C69' : '#F0E0D0'}`, background: form.weeksUntilRace === w ? 'linear-gradient(135deg,#FF8C69,#FFB347)' : 'white', color: form.weeksUntilRace === w ? 'white' : '#C4A882', fontSize: 13, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', boxShadow: form.weeksUntilRace === w ? '0 4px 14px rgba(255,140,105,0.4)' : 'none', transition: 'all 0.2s' }}>
-                    {w} Wo.
-                  </button>
-                ))}
+            {form.zielTyp === 'rennen' ? (
+              <div
+                style={{
+                  marginBottom: 22,
+                  padding: '15px 16px',
+                  borderRadius: 15,
+                  background: '#FFF7F0',
+                  border: '1px solid #F2DED0',
+                  fontFamily: 'sans-serif',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 900,
+                    color: '#B56E4E',
+                    letterSpacing: 0.7,
+                  }}
+                >
+                  DEINE VORBEREITUNGSZEIT
+                </div>
+                <div
+                  style={{
+                    fontSize: 21,
+                    fontWeight: 900,
+                    color: '#4B372C',
+                    marginTop: 5,
+                  }}
+                >
+                  {raceWeeks != null && raceWeeks > 0
+                    ? `${raceWeeks} Wochen`
+                    : 'Bitte Renndatum prüfen'}
+                </div>
+                <div
+                  style={{
+                    fontSize: 10.5,
+                    color: '#9B8376',
+                    lineHeight: 1.45,
+                    marginTop: 4,
+                  }}
+                >
+                  Die Dauer ergibt sich aus deinem Planstart und deinem Renndatum.
+                </div>
               </div>
-            </div>
+            ) : (
+              <div style={{ marginBottom: 22 }}>
+                <div
+                  style={{
+                    ...labelStyle,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                  }}
+                >
+                  <span>Planlänge</span>
+                  <span
+                    style={{
+                      color: '#5E9A79',
+                      textTransform: 'none',
+                      letterSpacing: 0,
+                    }}
+                  >
+                    Empfehlung: {recommendation} Wochen
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(4, 1fr)',
+                    gap: 7,
+                  }}
+                >
+                  {[8, 12, 16, 20].map(weeks => {
+                    const selected = form.weeksUntilRace === weeks
+                    const recommended = recommendation === weeks
+
+                    return (
+                      <button
+                        key={weeks}
+                        type="button"
+                        onClick={() =>
+                          setForm(current => ({
+                            ...current,
+                            weeksUntilRace: weeks,
+                          }))
+                        }
+                        style={{
+                          position: 'relative',
+                          padding: '12px 5px',
+                          borderRadius: 12,
+                          border: `2px solid ${
+                            selected ? '#FF8C69' : '#EDE2DA'
+                          }`,
+                          background: selected ? '#FFF2EC' : '#fff',
+                          color: selected ? '#D66C51' : '#9B8477',
+                          fontFamily: 'sans-serif',
+                          fontSize: 11.5,
+                          fontWeight: 900,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {weeks} Wo.
+                        {recommended && (
+                          <span
+                            style={{
+                              display: 'block',
+                              marginTop: 3,
+                              fontSize: 7.5,
+                              color: '#5F9A79',
+                            }}
+                          >
+                            empfohlen
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             <div style={{ marginBottom: 26 }}>
-              <label style={labelStyle}>Läufe pro Woche</label>
+              <label style={labelStyle}>Wie oft möchtest du pro Woche laufen?</label>
+
               <div style={{ display: 'flex', gap: 8 }}>
-                {[3, 4, 5].map(r => (
-                  <button key={r} onClick={() => setForm({ ...form, runsPerWeek: r })}
-                    style={{ flex: 1, padding: '11px 0', borderRadius: 12, border: `2px solid ${form.runsPerWeek === r ? '#7EC8A4' : '#F0E0D0'}`, background: form.runsPerWeek === r ? 'linear-gradient(135deg,#7EC8A4,#5BA88A)' : 'white', color: form.runsPerWeek === r ? 'white' : '#C4A882', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', boxShadow: form.runsPerWeek === r ? '0 4px 14px rgba(126,200,164,0.4)' : 'none', transition: 'all 0.2s' }}>
-                    {r}×
-                  </button>
-                ))}
+                {[3, 4, 5].map(runs => {
+                  const selected = form.runsPerWeek === runs
+
+                  return (
+                    <button
+                      key={runs}
+                      type="button"
+                      onClick={() =>
+                        setForm(current => ({
+                          ...current,
+                          runsPerWeek: runs,
+                        }))
+                      }
+                      style={{
+                        flex: 1,
+                        padding: '12px 0',
+                        borderRadius: 12,
+                        border: `2px solid ${
+                          selected ? '#7EC8A4' : '#EDE2DA'
+                        }`,
+                        background: selected ? '#F0FAF4' : '#fff',
+                        color: selected ? '#4E9877' : '#9B8477',
+                        fontFamily: 'sans-serif',
+                        fontSize: 13,
+                        fontWeight: 900,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {runs}×
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginBottom: 22,
+                padding: '14px 15px',
+                borderRadius: 15,
+                background: '#F8F5FA',
+                border: '1px solid #E8DFEC',
+                fontFamily: 'sans-serif',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 900,
+                  color: '#80699A',
+                  letterSpacing: 0.7,
+                }}
+              >
+                DEIN PLAN
+              </div>
+
+              <div
+                style={{
+                  marginTop: 7,
+                  display: 'grid',
+                  gap: 5,
+                  fontSize: 10.5,
+                  color: '#756574',
+                }}
+              >
+                <div>
+                  {selectedGoal?.icon} {selectedGoal?.label}
+                  {form.goal ? ` · ${form.goal}` : ''}
+                </div>
+                <div>
+                  📅 {form.weeksUntilRace} Wochen · {form.runsPerWeek} Läufe pro Woche
+                </div>
+                <div>
+                  📈 Ausgangspunkt: {selectedLevel?.label || form.niveau}
+                </div>
               </div>
             </div>
 
             {error && (
-              <div style={{ marginBottom: 14, padding: '12px 16px', background: '#FDECEA', border: '1px solid #F5C4CC', borderRadius: 12, fontSize: 13, color: '#B85464', fontFamily: 'sans-serif' }}>
+              <div
+                style={{
+                  marginBottom: 14,
+                  padding: '12px 14px',
+                  background: '#FDECEA',
+                  border: '1px solid #F5C4CC',
+                  borderRadius: 12,
+                  fontSize: 12,
+                  color: '#B85464',
+                  fontFamily: 'sans-serif',
+                }}
+              >
                 {error}
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setStep(1)}
-                style={{ flex: 1, padding: '17px', borderRadius: 18, border: '1.5px solid #F0E0D0', background: 'white', color: '#C4A882', fontSize: 15, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
+            <div style={{ display: 'flex', gap: 9 }}>
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                disabled={loading}
+                style={{
+                  flex: 1,
+                  padding: 15,
+                  borderRadius: 16,
+                  border: '1.5px solid #E8DDD6',
+                  background: '#fff',
+                  color: '#A18B7E',
+                  fontFamily: 'sans-serif',
+                  fontWeight: 850,
+                  cursor: loading ? 'default' : 'pointer',
+                }}
+              >
                 ← Zurück
               </button>
-              <button onClick={handleGenerate} disabled={loading || (showDistanz && !form.goal)}
-                style={{ flex: 2, padding: '17px', borderRadius: 18, border: 'none', background: loading || (showDistanz && !form.goal) ? '#F0E8E0' : 'linear-gradient(135deg,#FF8C69,#FF6B9D)', color: loading || (showDistanz && !form.goal) ? '#C4A882' : 'white', fontSize: 15, fontWeight: 'bold', cursor: loading || (showDistanz && !form.goal) ? 'default' : 'pointer', fontFamily: 'sans-serif', boxShadow: loading || (showDistanz && !form.goal) ? 'none' : '0 8px 24px rgba(255,107,157,0.4)', transition: 'all 0.2s' }}>
-                {loading ? '⏳ Wird erstellt…' : '🏃‍♀️ Plan generieren'}
+
+              <button
+                type="button"
+                onClick={handleGenerate}
+                disabled={loading || !canGenerate}
+                style={{
+                  flex: 2,
+                  padding: 15,
+                  borderRadius: 16,
+                  border: 'none',
+                  background:
+                    loading || !canGenerate
+                      ? '#EEE7E2'
+                      : 'linear-gradient(135deg,#FF8C69,#FF6B9D)',
+                  color:
+                    loading || !canGenerate ? '#BCA99D' : '#fff',
+                  fontFamily: 'sans-serif',
+                  fontWeight: 900,
+                  cursor:
+                    loading || !canGenerate ? 'default' : 'pointer',
+                  boxShadow:
+                    loading || !canGenerate
+                      ? 'none'
+                      : '0 8px 22px rgba(255,107,157,.22)',
+                }}
+              >
+                {loading ? '⏳ Plan wird erstellt…' : 'Trainingsplan erstellen →'}
               </button>
             </div>
 
             {loading && (
-              <p style={{ textAlign: 'center', fontSize: 12, color: '#C4A882', marginTop: 12, fontFamily: 'sans-serif' }}>
-                Das dauert ca. 20–30 Sekunden
+              <p
+                style={{
+                  textAlign: 'center',
+                  fontSize: 10.5,
+                  color: '#AD988C',
+                  marginTop: 11,
+                  fontFamily: 'sans-serif',
+                }}
+              >
+                Einen Moment – dein Plan wird vorbereitet.
               </p>
             )}
-          </div>
+          </section>
         )}
-
-        <p style={{ textAlign: 'center', fontSize: 11, color: '#D4C4B8', marginTop: 20, fontFamily: 'sans-serif' }}>
-          Run Coaching App
-        </p>
-      </div>
+      </main>
     </div>
   )
 }
