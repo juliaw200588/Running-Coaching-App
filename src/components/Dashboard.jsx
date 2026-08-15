@@ -519,13 +519,16 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
   const heroMeta = hero?.log ? [kmText(hero.log.km), durationText(hero.log.moving_time_seconds || hero.log.duration_seconds), hero.log.bpm ? `Ø HF ${hero.log.bpm}` : null].filter(Boolean).join(' · ') : null
 
   const heroImage = useMemo(
-    () =>
-      getHeroImageForDashboard({
+    () => {
+      if (hero?.type === 'new') return '/hero/running/easy/02.webp'
+
+      return getHeroImageForDashboard({
         hero,
         userId: user?.id,
         dateKey: todayStr,
         weekNumber: context?.week?.n,
-      }),
+      })
+    },
     [
       hero?.type,
       hero?.title,
@@ -574,7 +577,7 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
           <div style={{fontSize:11,color:'#9B8578',marginTop:5}}>Das ist heute für dein Training wichtig.</div>
         </div>
 
-        <button type="button" onClick={openHero} style={{...card,width:'100%',padding:0,overflow:'hidden',textAlign:'left',cursor:'pointer',border:'none',position:'relative',minHeight:245,background:'linear-gradient(135deg,#6F8F7B 0%,#A7BCA8 42%,#E7B79B 100%)'}}>
+        <button type="button" onClick={openHero} style={{...card,width:'100%',padding:0,overflow:'hidden',textAlign:'left',cursor:'pointer',border:'none',position:'relative',minHeight:hero?.type === 'new' ? 285 : 245,background:'linear-gradient(135deg,#6F8F7B 0%,#A7BCA8 42%,#E7B79B 100%)'}}>
           {heroImage && (
             <div
               aria-hidden="true"
@@ -583,7 +586,7 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
                 inset:0,
                 backgroundImage:`url("${heroImage}")`,
                 backgroundSize:'cover',
-                backgroundPosition:'center',
+                backgroundPosition:hero?.type === 'new' ? '58% center' : 'center',
                 backgroundRepeat:'no-repeat',
               }}
             />
@@ -593,13 +596,15 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
               position:'absolute',
               inset:0,
               background: heroImage
-                ? 'linear-gradient(180deg,rgba(20,24,21,.07) 0%,rgba(26,24,21,.20) 40%,rgba(27,23,20,.72) 100%)'
+                ? hero?.type === 'new'
+                  ? 'linear-gradient(90deg,rgba(18,22,19,.72) 0%,rgba(20,22,19,.48) 43%,rgba(20,20,18,.12) 72%), linear-gradient(180deg,rgba(15,18,16,.04) 0%,rgba(22,20,18,.18) 52%,rgba(24,21,19,.62) 100%)'
+                  : 'linear-gradient(180deg,rgba(20,24,21,.07) 0%,rgba(26,24,21,.20) 40%,rgba(27,23,20,.72) 100%)'
                 : "linear-gradient(180deg,rgba(25,35,30,.08),rgba(35,27,23,.58)), radial-gradient(circle at 78% 24%,rgba(255,244,215,.72),transparent 22%), linear-gradient(155deg,transparent 0 45%,rgba(55,83,61,.45) 46% 62%,rgba(38,61,45,.58) 63% 100%)"
             }}
           />
-          <div style={{position:'relative',zIndex:1,minHeight:245,padding:'22px 20px',display:'flex',flexDirection:'column',justifyContent:'flex-end',color:'#fff'}}>
+          <div style={{position:'relative',zIndex:1,minHeight:hero?.type === 'new' ? 285 : 245,padding:hero?.type === 'new' ? '28px 22px' : '22px 20px',display:'flex',flexDirection:'column',justifyContent:'flex-end',color:'#fff'}}>
             <div style={{fontSize:10,fontWeight:900,letterSpacing:1.4,opacity:.9}}>{hero?.eyebrow}</div>
-            <div style={{fontSize:26,fontWeight:850,lineHeight:1.08,marginTop:7,maxWidth:520}}>{hero?.title}</div>
+            <div style={{fontSize:hero?.type === 'new' ? 30 : 26,fontWeight:850,lineHeight:1.08,marginTop:7,maxWidth:hero?.type === 'new' ? 470 : 520}}>{hero?.title}</div>
             {heroMeta && <div style={{fontSize:12,fontWeight:750,marginTop:8}}>{heroMeta}</div>}
             <div style={{fontSize:11,lineHeight:1.45,marginTop:8,maxWidth:540,opacity:.92}}>{hero?.text}</div>
             <div style={{marginTop:16,display:'inline-flex',alignSelf:'flex-start',padding:'9px 13px',borderRadius:999,background:'rgba(255,255,255,.92)',color:'#5B493E',fontSize:10.5,fontWeight:800}}>
