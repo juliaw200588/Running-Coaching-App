@@ -268,6 +268,14 @@ const validatePlan = (plan, input, guardrails) => {
         day.intensity = null
         day.loadGuidance = null
         day.distanceGuidance = null
+      } else {
+        const duration = Number(day.durationMinutes)
+        if (!Number.isFinite(duration) || duration < 20) {
+          throw new Error(
+            `Woche ${week.n}: Für "${day.einheit}" fehlt eine konkrete Trainingsdauer.`
+          )
+        }
+        day.durationMinutes = Math.round(duration)
       }
 
       if (
@@ -352,13 +360,15 @@ VERBINDLICHE REGELN:
 8. Die erste lange Ausfahrt orientiert sich ungefähr an guardrails.startLongHours. Nicht direkt einen neuen Rekord verlangen.
 9. Die längste reguläre Trainingsausfahrt überschreitet guardrails.peakLongHours nicht unnötig.
 10. ZEIT ist bei normalen Einheiten die Hauptvorgabe:
-    - durationMinutes immer als konkrete Dauer angeben, außer bei reiner Kraftoption.
-    - Lockere/Grundlagen-/Tempo-/Intervall-Einheiten primär in Minuten/Stunden formulieren.
+    - durationMinutes ist für JEDE Radeinheit verpflichtend und muss eine konkrete Dauer enthalten.
+    - Lockere/Grundlagen-/Tempo-/Intervall-Einheiten primär über diese Dauer steuern.
+    - Die Dauer muss zur Einheit passen und darf nicht nur im Freitext angedeutet werden.
+    - Beispiel: lockere Ausfahrt durationMinutes=60; lange Ausfahrt durationMinutes=180.
 11. DISTANZ:
-    - distanceGuidance nur bei langen oder zielspezifischen Ausfahrten verwenden.
-    - Kilometer immer als großzügige ORIENTIERUNG formulieren, niemals als Pflicht wenn Zeit erfüllt ist.
+    - distanceGuidance bei langen und zielspezifischen Ausfahrten verwenden, damit der Nutzer zusätzlich ein Gefühl für den ungefähren Umfang bekommt.
+    - Kilometer immer als großzügige ORIENTIERUNG formulieren, niemals als Pflicht wenn die Zeit erfüllt ist.
     - Beispiel: "Orientierung: meist etwa 60-75 km; Zeit und gleichmäßige Belastung haben Vorrang."
-    - Keine km-Range bei kurzen normalen Trainingsausfahrten nötig.
+    - Bei kurzen normalen Trainingsausfahrten ist keine km-Range nötig, weil die sichtbare Dauer die Einheit eindeutig vorgibt.
 12. GESCHWINDIGKEIT:
     - niemals km/h als Trainingsziel, Pace oder Belastungssteuerung ausgeben.
 13. INTENSITÄT:

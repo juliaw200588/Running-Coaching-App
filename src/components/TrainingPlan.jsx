@@ -8,6 +8,19 @@ import StoryShareModal from './StoryShareModal.jsx'
 
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
+const formatCyclingDuration = minutes => {
+  const total = Number(minutes)
+  if (!Number.isFinite(total) || total <= 0) return null
+
+  if (total < 60) return `${Math.round(total)} Min`
+
+  const hours = Math.floor(total / 60)
+  const mins = Math.round(total % 60)
+
+  if (mins === 0) return `${hours}:00 h`
+  return `${hours}:${String(mins).padStart(2, '0')} h`
+}
+
 const parseJsonArray = (value) => {
   if (Array.isArray(value)) return value
   if (!value) return []
@@ -1177,9 +1190,14 @@ export default function TrainingPlan({ plan, onReset, user }) {
                                 💪 <strong>Kraft & Stabilität:</strong> {day.strengthPrescription}
                               </div>
                             )}
-                            {isCyclingPlan && !day.strengthPrescription && (day.intensity || day.loadGuidance || day.distanceGuidance) && (
+                            {isCyclingPlan && !day.strengthPrescription && (
                               <>
                                 <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:7}}>
+                                  {formatCyclingDuration(day.durationMinutes) && (
+                                    <span style={{fontSize:9.8,background:'#EEF6F2',color:'#356E5E',padding:'4px 9px',borderRadius:99,fontWeight:900,fontFamily:'sans-serif',border:'1px solid #CFE3DA'}}>
+                                      ⏱️ {formatCyclingDuration(day.durationMinutes)}
+                                    </span>
+                                  )}
                                   {day.intensity && (
                                     <span style={{fontSize:9.5,background:'#F0F7F4',color:'#4E7C6D',padding:'3px 8px',borderRadius:99,fontWeight:800,fontFamily:'sans-serif',border:'1px solid #D7E7DF'}}>
                                       Belastung: {day.intensity}
@@ -1204,9 +1222,18 @@ export default function TrainingPlan({ plan, onReset, user }) {
                               </div>
                             )}
                             {isCyclingPlan && day.strengthPrescription && (
-                              <div style={{marginTop:8,padding:'9px 10px',borderRadius:11,background:'#F5F1FA',border:'1px solid #E2D8EC',fontSize:10.5,lineHeight:1.5,color:'#705E7D',fontFamily:'sans-serif',whiteSpace:'pre-line'}}>
-                                💪 <strong>Kraft & Stabilität:</strong> {day.strengthPrescription}
-                              </div>
+                              <>
+                                {formatCyclingDuration(day.durationMinutes) && (
+                                  <div style={{marginTop:7}}>
+                                    <span style={{fontSize:9.8,background:'#EEF6F2',color:'#356E5E',padding:'4px 9px',borderRadius:99,fontWeight:900,fontFamily:'sans-serif',border:'1px solid #CFE3DA'}}>
+                                      ⏱️ {formatCyclingDuration(day.durationMinutes)}
+                                    </span>
+                                  </div>
+                                )}
+                                <div style={{marginTop:8,padding:'9px 10px',borderRadius:11,background:'#F5F1FA',border:'1px solid #E2D8EC',fontSize:10.5,lineHeight:1.5,color:'#705E7D',fontFamily:'sans-serif',whiteSpace:'pre-line'}}>
+                                  💪 <strong>Kraft & Stabilität:</strong> {day.strengthPrescription}
+                                </div>
+                              </>
                             )}
                             {day.adjusted && day.adjustmentReason && (
                               <div style={{ fontSize: 10, color: '#FF8C69', fontFamily: 'sans-serif', marginTop: 3, fontStyle: 'italic' }}>
