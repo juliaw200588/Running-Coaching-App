@@ -45,6 +45,67 @@ const parseLocalPlanDate = (value) => {
 const formatLocalDate = (date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 
+
+function PlanSportSelection({ onSelect }) {
+  const sports = [
+    { id: 'running', icon: '🏃', title: 'Laufen', text: 'Trainiere strukturiert auf deine Laufziele hin.', available: true },
+    { id: 'hiking', icon: '🥾', title: 'Marsch & Wandern', text: 'Baue Distanz und Ausdauer Schritt für Schritt auf.', available: false },
+    { id: 'cycling', icon: '🚴', title: 'Radfahren', text: 'Mehr Ausdauer für längere Touren und persönliche Ziele.', available: false },
+    { id: 'mountain_biking', icon: '🚵', title: 'Mountainbike', text: 'Trainiere Ausdauer und Belastbarkeit fürs Gelände.', available: false },
+    { id: 'swimming', icon: '🏊', title: 'Schwimmen', text: 'Entwickle Ausdauer, Technik und längere Distanzen.', available: false },
+  ]
+
+  return (
+    <div style={{ minHeight:'100vh', background:'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 52%, #FFF0F5 100%)', padding:'30px 16px 110px', boxSizing:'border-box' }}>
+      <div style={{ maxWidth:720, margin:'0 auto' }}>
+        <div style={{ marginBottom:24 }}>
+          <div style={{ fontFamily:'sans-serif', fontSize:10, fontWeight:900, letterSpacing:1.25, color:'#C77861', marginBottom:7 }}>TRAININGSPLAN</div>
+          <h1 style={{ margin:0, color:'#3D2B1F', fontFamily:"'Georgia', 'Times New Roman', serif", fontSize:'clamp(27px, 6vw, 38px)', lineHeight:1.08 }}>
+            Wofür möchtest du trainieren?
+          </h1>
+          <p style={{ margin:'10px 0 0', maxWidth:560, color:'#8B7467', fontFamily:'sans-serif', fontSize:13, lineHeight:1.6 }}>
+            Wähle die Sportart für deinen Trainingsplan. Weitere Pläne kommen Schritt für Schritt dazu.
+          </p>
+        </div>
+
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(230px, 1fr))', gap:12 }}>
+          {sports.map(sport => (
+            <button
+              key={sport.id}
+              type="button"
+              disabled={!sport.available}
+              onClick={() => sport.available && onSelect(sport.id)}
+              style={{
+                position:'relative', minHeight:150, textAlign:'left', borderRadius:22,
+                border:sport.available ? '2px solid #F0D9CC' : '1.5px solid #E8E1DC',
+                background:sport.available ? '#FFFFFF' : '#FAF8F6', padding:18,
+                cursor:sport.available ? 'pointer' : 'default', opacity:sport.available ? 1 : 0.72,
+                boxShadow:sport.available ? '0 10px 30px rgba(78,54,40,0.08)' : 'none'
+              }}
+            >
+              {!sport.available && (
+                <span style={{ position:'absolute', top:13, right:13, padding:'5px 8px', borderRadius:999, background:'#F0EAE5', color:'#9B887C', fontFamily:'sans-serif', fontSize:9, fontWeight:900, letterSpacing:.5 }}>
+                  IN VORBEREITUNG
+                </span>
+              )}
+              <div style={{ fontSize:32, marginBottom:14 }}>{sport.icon}</div>
+              <div style={{ color:'#463328', fontFamily:'sans-serif', fontSize:16, fontWeight:900, marginBottom:6 }}>{sport.title}</div>
+              <div style={{ color:'#9A8477', fontFamily:'sans-serif', fontSize:11.5, lineHeight:1.5, paddingRight:8 }}>{sport.text}</div>
+              {sport.available && (
+                <div style={{ marginTop:15, color:'#D66D53', fontFamily:'sans-serif', fontSize:11, fontWeight:900 }}>Plan erstellen →</div>
+              )}
+            </button>
+          ))}
+        </div>
+
+        <p style={{ margin:'18px 4px 0', color:'#B09C91', fontFamily:'sans-serif', fontSize:10.5, lineHeight:1.5 }}>
+          Du kannst die App weiterhin ohne Trainingsplan nutzen und jederzeit später hierher zurückkehren.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   const [user, setUser] = useState(null)
   const [plan, setPlan] = useState(null)
@@ -58,6 +119,7 @@ function App() {
   const [authEntryMode, setAuthEntryMode] = useState(null)
   const [profileSetupLoading, setProfileSetupLoading] = useState(false)
   const [onboardingCompleted, setOnboardingCompleted] = useState(null)
+  const [selectedPlanSport, setSelectedPlanSport] = useState(null)
   const weeklyCheckKeyRef = useRef(null)
 
   useEffect(() => {
@@ -95,6 +157,7 @@ function App() {
       setUnreadCount(0)
       setOnboardingCompleted(null)
       setProfileSetupLoading(false)
+      setSelectedPlanSport(null)
     }
   }, [user])
 
@@ -1115,8 +1178,21 @@ const handleOpenWeekAnalysisFromNotification = (weekNumber) => {
                     openWeekAnalysis={openWeekAnalysisWeek}
                     onWeekAnalysisOpened={() => setOpenWeekAnalysisWeek(null)}
                   />
+                ) : selectedPlanSport === 'running' ? (
+                  <div>
+                    <div style={{ maxWidth:720, margin:'0 auto', padding:'4px 16px 0' }}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPlanSport(null)}
+                        style={{ border:'none', background:'transparent', color:'#B07A68', fontSize:11, fontWeight:800, cursor:'pointer', padding:'8px 0', fontFamily:'sans-serif' }}
+                      >
+                        ← Andere Sportart wählen
+                      </button>
+                    </div>
+                    <Onboarding onPlanGenerated={handlePlanGenerated} />
+                  </div>
                 ) : (
-                  <Onboarding onPlanGenerated={handlePlanGenerated} />
+                  <PlanSportSelection onSelect={setSelectedPlanSport} />
                 )}
               </div>
             )
