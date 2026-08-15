@@ -604,9 +604,14 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
 
       <div style={{ minHeight:'100vh', background:'linear-gradient(180deg,#FFF9F4 0%,#FBF8F6 45%,#F6FAF7 100%)', fontFamily:'sans-serif', color:'#3D2B1F' }}>
       <div style={{ maxWidth:720, margin:'0 auto', padding:'24px 16px 30px' }}>
-        <div style={{ padding:'4px 2px 16px' }}>
-          <div style={{fontSize:22,fontWeight:800}}>{greeting}{name ? `, ${name}` : ''} 👋</div>
-          <div style={{fontSize:11,color:'#9B8578',marginTop:5}}>Das ist heute für dein Training wichtig.</div>
+        <div style={{ padding:'4px 2px 16px', display:'flex', alignItems:'center', gap:11 }}>
+          <div style={{width:42,height:42,borderRadius:'50%',background:'#FFF7F0',border:'1px solid #F1DDD0',boxShadow:'0 5px 14px rgba(74,52,39,.08)',display:'grid',placeItems:'center',flexShrink:0}}>
+            <img src="/route-icon.png" alt="" aria-hidden="true" style={{width:32,height:32,borderRadius:'50%',display:'block'}} />
+          </div>
+          <div>
+            <div style={{fontSize:22,fontWeight:800}}>{greeting}{name ? `, ${name}` : ''} 👋</div>
+            <div style={{fontSize:11,color:'#9B8578',marginTop:5}}>Das ist heute für dein Training wichtig.</div>
+          </div>
         </div>
 
         <button type="button" onClick={openHero} style={{...card,width:'100%',padding:0,overflow:'hidden',textAlign:'left',cursor:'pointer',border:'none',position:'relative',minHeight:hero?.type === 'new' ? 285 : 245,background:'linear-gradient(135deg,#6F8F7B 0%,#A7BCA8 42%,#E7B79B 100%)'}}>
