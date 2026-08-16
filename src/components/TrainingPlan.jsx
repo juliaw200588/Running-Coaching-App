@@ -21,6 +21,25 @@ const formatCyclingDuration = minutes => {
   return `${hours}:${String(mins).padStart(2, '0')} h`
 }
 
+const formatMtbLoadGuidance = (guidance, intensity) => {
+  const text = String(guidance || '').trim()
+  if (!text) return null
+  if (!/\bRPE\b/i.test(text)) return text
+
+  const match = text.match(/RPE\s*(\d)\s*[-–]\s*(\d)/i)
+  const high = match ? Number(match[2]) : null
+
+  if (high != null && high <= 4) return 'Ruhig und entspannt, ohne Anstrengung'
+  if (high != null && high <= 5) return 'Gleichmäßig und kontrolliert, angenehm fordernd'
+  if (high != null && high <= 7) return 'Deutlich spürbar, aber kontrolliert – nicht maximal'
+  if (high != null) return 'Fordernd, aber sauber kontrollierbar – keine Maximalbelastung'
+
+  const normalized = String(intensity || '').toLowerCase()
+  if (normalized.includes('locker')) return 'Ruhig und entspannt'
+  if (normalized.includes('zügig') || normalized.includes('moderat')) return 'Deutlich spürbar, aber kontrolliert'
+  return 'Kontrollierte Belastung, nicht maximal'
+}
+
 const parseJsonArray = (value) => {
   if (Array.isArray(value)) return value
   if (!value) return []
@@ -176,6 +195,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
   const [showPauseModal, setShowPauseModal] = useState(false)
   const [pauseWeeks, setPauseWeeks] = useState(1)
   const [openWeeks, setOpenWeeks] = useState(() => ({ [findCurrentPhaseWeek(plan).weekIdx]: true }))
+  const [openTechniques, setOpenTechniques] = useState({})
   const [done, setDone] = useState({})
   const [logs, setLogs] = useState({})
   const [screenshots, setScreenshots] = useState({})
@@ -1038,7 +1058,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
             {plan.title || `${planSportLabel}-Trainingsplan`}
           </h1>
 
-          {plan.name && (
+          {plan.name && !String(plan.title || '').toLowerCase().includes(String(plan.name).toLowerCase()) && (
             <p
               style={{
                 color:'rgba(255,255,255,.84)',
@@ -1159,6 +1179,10 @@ export default function TrainingPlan({ plan, onReset, user }) {
                         ? { bg: '#F5F0EA', text: '#A89A88', border: '#E0D8CC', dot: '#C4BCAE' }
                         : typeStyle(day.einheit, day.optional, isDone)
                       const loggedSchuh = hasLog && logs[key]?.schuh_id ? schuhe.find(sh => sh.id === logs[key].schuh_id) : null
+                      const displayLoadGuidance = isMtbPlan
+                        ? formatMtbLoadGuidance(day.loadGuidance, day.intensity)
+                        : day.loadGuidance
+                      const techniqueOpen = Boolean(openTechniques[key])
 
                       return (
                         <div key={di} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 14, marginBottom: 8, background: s.bg, border: `1px solid ${isDone ? '#B8E4CC' : isSkipped ? '#E0D8CC' : 'transparent'}`, transition: 'all 0.2s ease', opacity: day.optional ? 0.7 : isSkipped ? 0.85 : 1 }}>
@@ -1208,15 +1232,15 @@ export default function TrainingPlan({ plan, onReset, user }) {
                                       Belastung: {day.intensity}
                                     </span>
                                   )}
-                                  {day.loadGuidance && (
+                                  {displayLoadGuidance && (
                                     <span style={{fontSize:9.5,background:'#F5F2FA',color:'#6F6384',padding:'3px 8px',borderRadius:99,fontWeight:800,fontFamily:'sans-serif',border:'1px solid #E2DAEC'}}>
-                                      {day.loadGuidance}
+                                      {displayLoadGuidance}
                                     </span>
                                   )}
                                 </div>
                                 {day.distanceGuidance && (
                                   <div style={{marginTop:7,fontSize:10.2,lineHeight:1.45,color:'#9A765F',fontFamily:'sans-serif',background:'#FFF8F1',border:'1px solid #F0E0D2',borderRadius:10,padding:'7px 9px'}}>
-                                    🚴 {day.distanceGuidance}
+                                    🚴 {isMtbPlan && !/orientierung/i.test(String(day.distanceGuidance)) ? `Orientierung: ${day.distanceGuidance}` : day.distanceGuidance}
                                   </div>
                                 )}
                                 {isMtbPlan && day.elevationGuidance && (
@@ -1227,12 +1251,28 @@ export default function TrainingPlan({ plan, onReset, user }) {
                               </>
                             )}
                             {isMtbPlan && day.techniqueTitle && day.techniqueInstructions && (
-                              <div style={{marginTop:8,padding:'10px 11px',borderRadius:11,background:'#EEF5EA',border:'1px solid #D4E3CF',fontSize:10.5,lineHeight:1.55,color:'#53664F',fontFamily:'sans-serif',whiteSpace:'pre-line'}}>
-                                🚵 <strong>Technikübung{day.techniqueMinutes ? ` · ${day.techniqueMinutes} Min` : ''}: {day.techniqueTitle}</strong>
-                                <div style={{marginTop:5}}>{day.techniqueInstructions}</div>
+                              <div style={{marginTop:8,borderRadius:11,background:'#EEF5EA',border:'1px solid #D4E3CF',fontSize:10.5,lineHeight:1.55,color:'#53664F',fontFamily:'sans-serif',overflow:'hidden'}}>
+                                <button
+                                  type="button"
+                                  onClick={() => setOpenTechniques(prev => ({ ...prev, [key]: !prev[key] }))}
+                                  style={{width:'100%',border:'none',background:'transparent',padding:'10px 11px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,textAlign:'left',color:'#53664F',cursor:'pointer',fontFamily:'sans-serif'}}
+                                >
+                                  <span>
+                                    🚵 <strong>Technikübung{day.techniqueMinutes ? ` · ${day.techniqueMinutes} Min` : ''}: {day.techniqueTitle}</strong>
+                                    <span style={{display:'block',marginTop:3,fontSize:9.6,color:'#73816D',fontWeight:700}}>
+                                      {techniqueOpen ? 'Anleitung ausblenden' : 'Schritt-für-Schritt-Anleitung anzeigen'}
+                                    </span>
+                                  </span>
+                                  <span style={{fontSize:13,transform:techniqueOpen?'rotate(180deg)':'none',transition:'transform .2s ease',flexShrink:0}}>⌄</span>
+                                </button>
+                                {techniqueOpen && (
+                                  <div style={{padding:'9px 11px 11px',whiteSpace:'pre-line',borderTop:'1px solid #DCE8D8'}}>
+                                    {day.techniqueInstructions}
+                                  </div>
+                                )}
                               </div>
                             )}
-                            {(isCyclingPlan || isMtbPlan) && day.nutritionTip && (
+                            {(isCyclingPlan || isMtbPlan) && day.nutritionTip && (!isMtbPlan || Number(day.durationMinutes) >= 60) && (
                               <div style={{marginTop:8,padding:'9px 10px',borderRadius:11,background:'#FFF9E9',border:'1px solid #F0E2B9',fontSize:10.5,lineHeight:1.45,color:'#806A3D',fontFamily:'sans-serif'}}>
                                 🍌 <strong>Verpflegung testen:</strong> {day.nutritionTip}
                               </div>
