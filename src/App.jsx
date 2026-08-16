@@ -1113,6 +1113,8 @@ if (!claimAcquired) return
     localStorage.removeItem(`runcoaching_plan_${user.id}`)
     setPlan(null)
     setPlanId(null)
+    setSelectedPlanSport(null)
+    setOpenWeekAnalysisWeek(null)
     setShowTrainingPlan(false)
   }
 
@@ -1212,7 +1214,7 @@ const handleOpenWeekAnalysisFromNotification = (weekNumber) => {
           showTrainingPlan
             ? (
               <div>
-                <div style={{ position: 'sticky', top: 0, zIndex: 90, padding: '10px 14px 0', maxWidth: 720, margin: '0 auto' }}>
+                <div style={{ position: 'relative', zIndex: 20, padding: '10px 14px 0', maxWidth: 720, margin: '0 auto' }}>
                   <button
                     type="button"
                     onClick={() => { setShowTrainingPlan(false); setOpenWeekAnalysisWeek(null) }}

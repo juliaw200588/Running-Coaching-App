@@ -220,7 +220,7 @@ export default function MtbOnboarding({ onPlanGenerated }) {
         </div>
 
         <div style={{marginBottom:24}}>
-          <div style={labelStyle}>Wo stehst du körperlich gerade?</div>
+          <div style={labelStyle}>Wie viel MTB-Erfahrung hast du aktuell?</div>
           <div style={{display:'grid',gap:8}}>
             {[
               ['beginner','🌱','Ich starte gerade','Selten oder noch nicht regelmäßig auf dem MTB'],
@@ -280,7 +280,7 @@ export default function MtbOnboarding({ onPlanGenerated }) {
 
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:9,marginBottom:22}}>
           <div><label style={labelStyle}>Stunden/Woche <span style={{textTransform:'none',fontWeight:600}}>optional</span></label><input style={inputStyle} type="number" step=".5" min="0" value={form.currentWeeklyHours} onChange={e=>setForm(c=>({...c,currentWeeklyHours:e.target.value}))}/></div>
-          <div><label style={labelStyle}>Typische hm längere Tour <span style={{textTransform:'none',fontWeight:600}}>optional</span></label><input style={inputStyle} type="number" step="50" min="0" value={form.typicalElevationM} onChange={e=>setForm(c=>({...c,typicalElevationM:e.target.value}))}/></div>
+          <div><label style={labelStyle}>Höhenmeter bei typischer längerer Tour <span style={{textTransform:'none',fontWeight:600}}>optional</span></label><input style={inputStyle} type="number" step="50" min="0" value={form.typicalElevationM} onChange={e=>setForm(c=>({...c,typicalElevationM:e.target.value}))}/></div>
         </div>
 
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:9,marginBottom:22}}>
@@ -318,7 +318,8 @@ export default function MtbOnboarding({ onPlanGenerated }) {
         </div>
 
         <div style={{marginBottom:22}}>
-          <div style={labelStyle}>Kannst du auch drinnen Rad fahren?</div>
+          <div style={labelStyle}>Kannst du Indoor-Radtraining nutzen?</div>
+          <div style={{...small,margin:'-2px 0 8px'}}>Zum Beispiel Rollentrainer, Smart-Trainer oder Indoorbike.</div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:7}}>
             {[['no','Nein'],['sometimes','Gelegentlich'],['regular','Regelmäßig']].map(([id,label])=><button key={id} type="button" onClick={()=>setForm(c=>({...c,indoorTrainer:id}))} style={{...choiceStyle(form.indoorTrainer===id),textAlign:'center',padding:'11px 5px'}}>{label}</button>)}
           </div>

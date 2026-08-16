@@ -450,15 +450,25 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
     return { type:'rest', eyebrow:'HEUTE IST RUHETAG', title:'Erholung gehört zum Training.', text:next ? `Als Nächstes: ${next.tag} · ${next.einheit}` : 'Für diese Woche ist keine weitere Einheit offen.', icon:'🌿', plannedDay:next }
   }, [plan, context, weekData, todayActivities, latestActivity, analyses, logsByKey, skippedKeys])
 
+  // Bei einem Planwechsel können Plan und Wochenkontext für einen kurzen Render-Zyklus
+  // auseinanderlaufen. Die Hero-Karte bekommt deshalb immer einen sichtbaren Fallback.
+  const displayHero = hero || (
+    !plan
+      ? latestActivity
+        ? { type:'free', eyebrow:'DU TRAINIERST FREI', title:'Dein Training läuft weiter.', text:'Aktivitäten, Entwicklung und Erfolge bleiben für dich im Blick.', icon:'✨' }
+        : { type:'new', eyebrow:'WILLKOMMEN', title:'Wie möchtest du starten?', text:'Du entscheidest: mit Trainingsplan, verbundenen Aktivitäten oder erst einmal ganz in Ruhe.', icon:'👋' }
+      : { type:'before', eyebrow:'DEIN TRAININGSPLAN', title:'Dein Plan ist bereit.', text:'Öffne deinen Trainingsplan und sieh dir deine nächsten Einheiten an.', icon:'🌱' }
+  )
+
   const dailyCoaching = useMemo(
-    () => getDailyCoaching({ context, weekData, logs, todayStr, hero }),
-    [context, weekData, logs, todayStr, hero]
+    () => getDailyCoaching({ context, weekData, logs, todayStr, hero: displayHero }),
+    [context, weekData, logs, todayStr, displayHero]
   )
 
   const needsTodayFeedback = Boolean(
-    hero?.type === 'trained' &&
-    hero?.log?.day_key &&
-    !hasStructuredTrainingFeedback(hero.log.gefuehl)
+    displayHero?.type === 'trained' &&
+    displayHero?.log?.day_key &&
+    !hasStructuredTrainingFeedback(displayHero.log.gefuehl)
   )
 
   const saveDashboardFeedback = async ({ effort, recovery, note }) => {
@@ -509,18 +519,18 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
   const greeting = hour < 11 ? 'Guten Morgen' : hour < 18 ? 'Hallo' : 'Guten Abend'
 
   const openHero = () => {
-    if (hero?.type === 'analysis' && hero.analysis?.week_number) onOpenWeekAnalysis?.(hero.analysis.week_number)
-    else if (['today','open','already','rest','before','completedPlan'].includes(hero?.type)) onOpenTraining?.()
-    else if (['trained','extra'].includes(hero?.type) && hero.log) onOpenActivities?.()
-    else if (hero?.type === 'new') onOpenTraining?.()
-    else if (hero?.type === 'free') onOpenActivities?.()
+    if (displayHero?.type === 'analysis' && displayHero.analysis?.week_number) onOpenWeekAnalysis?.(displayHero.analysis.week_number)
+    else if (['today','open','already','rest','before','completedPlan'].includes(displayHero?.type)) onOpenTraining?.()
+    else if (['trained','extra'].includes(displayHero?.type) && displayHero.log) onOpenActivities?.()
+    else if (displayHero?.type === 'new') onOpenTraining?.()
+    else if (displayHero?.type === 'free') onOpenActivities?.()
   }
 
-  const heroMeta = hero?.log ? [kmText(hero.log.km), durationText(hero.log.moving_time_seconds || hero.log.duration_seconds), hero.log.bpm ? `Ø HF ${hero.log.bpm}` : null].filter(Boolean).join(' · ') : null
+  const heroMeta = displayHero?.log ? [kmText(displayHero.log.km), durationText(displayHero.log.moving_time_seconds || displayHero.log.duration_seconds), displayHero.log.bpm ? `Ø HF ${displayHero.log.bpm}` : null].filter(Boolean).join(' · ') : null
 
   const heroImage = useMemo(
     () => {
-      if (hero?.type === 'new') {
+      if (displayHero?.type === 'new') {
         const selectedSports = Array.isArray(profile?.sportarten)
           ? profile.sportarten.filter(sport =>
               ['running', 'cycling', 'mountain_biking', 'hiking', 'swimming'].includes(sport)
@@ -541,9 +551,9 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
 
         return getHeroImageForDashboard({
           hero: {
-            ...hero,
+            ...displayHero,
             plannedDay: {
-              ...(hero?.plannedDay || {}),
+              ...(displayHero?.plannedDay || {}),
               sport_type: selectedSport,
             },
           },
@@ -554,20 +564,20 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
       }
 
       return getHeroImageForDashboard({
-        hero,
+        hero: displayHero,
         userId: user?.id,
         dateKey: todayStr,
         weekNumber: context?.week?.n,
       })
     },
     [
-      hero?.type,
-      hero?.title,
-      hero?.log?.id,
-      hero?.log?.polar_exercise_id,
-      hero?.log?.sport_type,
-      hero?.plannedDay?.key,
-      hero?.plannedDay?.einheit,
+      displayHero?.type,
+      displayHero?.title,
+      displayHero?.log?.id,
+      displayHero?.log?.polar_exercise_id,
+      displayHero?.log?.sport_type,
+      displayHero?.plannedDay?.key,
+      displayHero?.plannedDay?.einheit,
       profile?.sportarten,
       user?.id,
       todayStr,
@@ -614,7 +624,7 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
           </div>
         </div>
 
-        <button type="button" onClick={openHero} style={{...card,width:'100%',padding:0,overflow:'hidden',textAlign:'left',cursor:'pointer',border:'none',position:'relative',minHeight:hero?.type === 'new' ? 285 : 245,background:'linear-gradient(135deg,#6F8F7B 0%,#A7BCA8 42%,#E7B79B 100%)'}}>
+        <button type="button" onClick={openHero} style={{...card,width:'100%',padding:0,overflow:'hidden',textAlign:'left',cursor:'pointer',border:'none',position:'relative',minHeight:displayHero?.type === 'new' ? 285 : 245,background:'linear-gradient(135deg,#6F8F7B 0%,#A7BCA8 42%,#E7B79B 100%)'}}>
           {heroImage && (
             <div
               aria-hidden="true"
@@ -623,7 +633,7 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
                 inset:0,
                 backgroundImage:`url("${heroImage}")`,
                 backgroundSize:'cover',
-                backgroundPosition:hero?.type === 'new' ? '58% center' : 'center',
+                backgroundPosition:displayHero?.type === 'new' ? '58% center' : 'center',
                 backgroundRepeat:'no-repeat',
               }}
             />
@@ -633,19 +643,19 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
               position:'absolute',
               inset:0,
               background: heroImage
-                ? hero?.type === 'new'
+                ? displayHero?.type === 'new'
                   ? 'linear-gradient(90deg,rgba(18,22,19,.72) 0%,rgba(20,22,19,.48) 43%,rgba(20,20,18,.12) 72%), linear-gradient(180deg,rgba(15,18,16,.04) 0%,rgba(22,20,18,.18) 52%,rgba(24,21,19,.62) 100%)'
                   : 'linear-gradient(180deg,rgba(20,24,21,.07) 0%,rgba(26,24,21,.20) 40%,rgba(27,23,20,.72) 100%)'
                 : "linear-gradient(180deg,rgba(25,35,30,.08),rgba(35,27,23,.58)), radial-gradient(circle at 78% 24%,rgba(255,244,215,.72),transparent 22%), linear-gradient(155deg,transparent 0 45%,rgba(55,83,61,.45) 46% 62%,rgba(38,61,45,.58) 63% 100%)"
             }}
           />
-          <div style={{position:'relative',zIndex:1,minHeight:hero?.type === 'new' ? 285 : 245,padding:hero?.type === 'new' ? '28px 22px' : '22px 20px',display:'flex',flexDirection:'column',justifyContent:'flex-end',color:'#fff'}}>
-            <div style={{fontSize:10,fontWeight:900,letterSpacing:1.4,opacity:.9}}>{hero?.eyebrow}</div>
-            <div style={{fontSize:hero?.type === 'new' ? 30 : 26,fontWeight:850,lineHeight:1.08,marginTop:7,maxWidth:hero?.type === 'new' ? 470 : 520}}>{hero?.title}</div>
+          <div style={{position:'relative',zIndex:1,minHeight:displayHero?.type === 'new' ? 285 : 245,padding:displayHero?.type === 'new' ? '28px 22px' : '22px 20px',display:'flex',flexDirection:'column',justifyContent:'flex-end',color:'#fff'}}>
+            <div style={{fontSize:10,fontWeight:900,letterSpacing:1.4,opacity:.9}}>{displayHero?.eyebrow}</div>
+            <div style={{fontSize:displayHero?.type === 'new' ? 30 : 26,fontWeight:850,lineHeight:1.08,marginTop:7,maxWidth:displayHero?.type === 'new' ? 470 : 520}}>{displayHero?.title}</div>
             {heroMeta && <div style={{fontSize:12,fontWeight:750,marginTop:8}}>{heroMeta}</div>}
-            <div style={{fontSize:11,lineHeight:1.45,marginTop:8,maxWidth:540,opacity:.92}}>{hero?.text}</div>
+            <div style={{fontSize:11,lineHeight:1.45,marginTop:8,maxWidth:540,opacity:.92}}>{displayHero?.text}</div>
             <div style={{marginTop:16,display:'inline-flex',alignSelf:'flex-start',padding:'9px 13px',borderRadius:999,background:'rgba(255,255,255,.92)',color:'#5B493E',fontSize:10.5,fontWeight:800}}>
-              {hero?.type === 'analysis' ? 'Wochenanalyse ansehen' : hero?.type === 'new' ? 'Möglichkeiten ansehen' : hero?.type === 'free' ? 'Aktivitäten ansehen' : 'Mehr ansehen'} →
+              {displayHero?.type === 'analysis' ? 'Wochenanalyse ansehen' : displayHero?.type === 'new' ? 'Möglichkeiten ansehen' : displayHero?.type === 'free' ? 'Aktivitäten ansehen' : 'Mehr ansehen'} →
             </div>
           </div>
         </button>

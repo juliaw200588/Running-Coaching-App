@@ -72,9 +72,11 @@ const validate=(plan,input,g)=>{
       const exception=input.allowAdjacentDays==='yes'&&g.backToBack?.appropriate&&back
       if(!input.preferredDays.includes(day.tag)&&!exception)throw new Error(`Woche ${week.n} nutzt den nicht ausgewählten Trainingstag ${day.tag}.`)
 
-      const isStrength=Boolean(day.strengthPrescription)||/kraft|stabilität|strength/i.test(String(day.einheit||''))
+      // Echtes ergänzendes Krafttraining wird ausschließlich über das strukturierte
+      // strengthPrescription-Feld erkannt. "Kraftausdauer" kann eine normale MTB-Radeinheit sein.
+      const isStrength=Boolean(day.strengthPrescription)
       if(isStrength){
-        if(input.strengthTraining!=='yes')throw new Error('Plan enthält Krafttraining, obwohl es nicht ausgewählt wurde.')
+        if(input.strengthTraining!=='yes')throw new Error('Plan enthält ergänzendes Krafttraining, obwohl es nicht ausgewählt wurde.')
         day.durationMinutes=day.durationMinutes||30
       }else{
         const duration=Number(day.durationMinutes)
@@ -159,7 +161,9 @@ GELÄNDE:
 25. Bei höhenmeterreichem Ziel ohne Berge: vorhandene kurze Anstiege wiederholen, Kraftausdauer entwickeln oder – nur wenn verfügbar – Indoor-Widerstand nutzen.
 
 KRAFT:
-26. Nur wenn strengthTraining="yes". Dann 4-5 Übungen mit 2-3 Sätzen und meist 8-12 Wiederholungen, z.B. Split Squats, Step-ups, RDL/Hüftbeuge, Wadenheben, Rumpfstabilität. Nicht bis Muskelversagen.
+26. Nur wenn strengthTraining="yes" darf strengthPrescription befüllt sein. Dann 4-5 Übungen mit 2-3 Sätzen und meist 8-12 Wiederholungen, z.B. Split Squats, Step-ups, RDL/Hüftbeuge, Wadenheben, Rumpfstabilität. Nicht bis Muskelversagen.
+26a. Wenn strengthTraining="no", muss strengthPrescription bei JEDER Einheit null sein.
+26b. MTB-Kraftausdauer AUF DEM RAD, z.B. kontrollierte längere Anstiege oder Widerstandsintervalle, ist ausdrücklich erlaubt und gilt NICHT als ergänzendes Krafttraining. Solche Einheiten dürfen "Kraftausdauer" heißen, müssen aber strengthPrescription=null haben.
 
 VERPFLEGUNG – LERNKURVE:
 27. Kurze Einheiten nicht mit Ernährungshinweisen überladen.

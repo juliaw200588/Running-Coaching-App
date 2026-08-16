@@ -609,7 +609,8 @@ export default function CyclingOnboarding({ onPlanGenerated }) {
             </div>
 
             <div style={{marginBottom:22}}>
-              <div style={labelStyle}>Kannst du auch drinnen Rad fahren?</div>
+              <div style={labelStyle}>Kannst du Indoor-Radtraining nutzen?</div>
+              <div style={{...small,margin:'-2px 0 8px'}}>Zum Beispiel Rollentrainer, Smart-Trainer oder Indoorbike.</div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:7}}>
                 {[
                   ['no','Nein'],
