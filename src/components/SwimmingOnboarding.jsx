@@ -32,7 +32,20 @@ export default function SwimmingOnboarding({onPlanGenerated}){
   const eventWeeks=useMemo(()=>weeksBetween(form.startDate,form.eventDate),[form.startDate,form.eventDate])
   const effective={...form,targetDistanceM:Number(form.customDistanceM||form.targetDistanceM||0)}
   const recommendation=useMemo(()=>getRecommendedSwimmingWeeks(effective),[form.goalType,form.targetDistanceM,form.customDistanceM,form.currentContinuousM,form.currentSessionM,form.unitsPerWeek,form.continuousGoal])
-  useEffect(()=>{if(form.goalType==='event'&&eventWeeks>0){setWeeksManual(false);setForm(c=>({...c,weeksUntilGoal:eventWeeks}));return}if(!weeksManual)setForm(c=>({...c,weeksUntilGoal:recommendation}))},[form.goalType,eventWeeks,recommendation,weeksManual])
+  const weekOptions=useMemo(()=>{
+    if(form.goalType==='event') return []
+    const raw=[recommendation-4,recommendation-2,recommendation,recommendation+2]
+      .map(v=>Math.max(6,Math.min(24,v)))
+    return [...new Set(raw)].sort((a,b)=>a-b)
+  },[form.goalType,recommendation])
+  useEffect(()=>{
+    if(form.goalType==='event'&&eventWeeks>0){
+      setWeeksManual(false)
+      setForm(c=>({...c,weeksUntilGoal:eventWeeks}))
+      return
+    }
+    if(!weeksManual)setForm(c=>({...c,weeksUntilGoal:recommendation}))
+  },[form.goalType,eventWeeks,recommendation,weeksManual])
   const set=(k,v)=>setForm(c=>({...c,[k]:v}))
   const toggle=(k,v)=>setForm(c=>({...c,[k]:c[k].includes(v)?c[k].filter(x=>x!==v):[...c[k],v]}))
   const selectUnits=n=>setForm(c=>({...c,unitsPerWeek:n,preferredDays:DEFAULT_DAYS[n]}))
@@ -67,7 +80,34 @@ export default function SwimmingOnboarding({onPlanGenerated}){
         <div style={{marginTop:16}}><div style={label}>In welchem Becken trainierst du normalerweise?</div><Chips values={['25m','50m','both']} value={form.poolLength} onChange={v=>set('poolLength',v)} format={v=>({'25m':'25 m','50m':'50 m',both:'Beides'}[v])}/></div><div style={{marginTop:16}}><div style={label}>Welche Hilfsmittel stehen dir zur Verfügung? <span style={{textTransform:'none',fontWeight:600}}>optional</span></div><div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{['Pullbuoy','Brett','Flossen','Paddles'].map(v=><button type="button" key={v} style={chip(form.equipment.includes(v))} onClick={()=>toggle('equipment',v)}>{v}</button>)}</div><div style={{...small,marginTop:7}}>Der Plan funktioniert auch vollständig ohne Hilfsmittel.</div></div>
         <div style={{display:'flex',gap:8,marginTop:20}}><button onClick={()=>setStep(1)} style={{...card(false),textAlign:'center'}}>← Zurück</button><button disabled={!can2} onClick={()=>setStep(3)} style={{...card(can2),textAlign:'center',opacity:can2?1:.45}}>Weiter →</button></div></div>}
       {step===3&&<div style={panel}><h2 style={{margin:'0 0 15px',fontSize:22}}>So passt der Plan in deine Woche</h2><div style={label}>Wie oft möchtest du pro Woche schwimmen?</div><Chips values={[2,3,4]} value={form.unitsPerWeek} onChange={selectUnits} format={v=>`${v}×`}/><div style={{marginTop:16}}><div style={label}>An welchen Tagen kannst du normalerweise trainieren?</div><div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:5}}>{DAYS.map(d=><button key={d} type="button" style={{...chip(form.preferredDays.includes(d)),padding:'9px 0'}} onClick={()=>toggleDay(d)}>{d}</button>)}</div></div>
-        {form.goalType!=='event'&&<div style={{marginTop:18}}><div style={label}>Wie viele Wochen möchtest du trainieren?</div><div style={{...small,marginBottom:8}}><strong>Empfehlung: {recommendation} Wochen.</strong> Die Empfehlung berücksichtigt dein aktuelles Schwimmniveau, dein Ziel und die gewünschte Trainingshäufigkeit. Du kannst den Zeitraum trotzdem anpassen.</div><div style={{display:'flex',alignItems:'center',gap:10}}><button style={chip(false)} onClick={()=>{setWeeksManual(true);set('weeksUntilGoal',Math.max(6,form.weeksUntilGoal-1))}}>−</button><strong style={{fontFamily:'sans-serif'}}>{form.weeksUntilGoal} Wochen</strong><button style={chip(false)} onClick={()=>{setWeeksManual(true);set('weeksUntilGoal',Math.min(24,form.weeksUntilGoal+1))}}>+</button></div>{form.weeksUntilGoal<recommendation&&<div style={{...small,marginTop:8,color:'#B06D55'}}>Ambitionierter Zeitrahmen: Der Plan bleibt konservativ und erzwingt keine Belastungssprünge.</div>}</div>}
+        {form.goalType!=='event'&&<div style={{marginTop:18,padding:14,borderRadius:14,background:'#FFF8F3',border:'1px solid #F0DDD0'}}>
+          <div style={label}>Vorbereitungszeit</div>
+          <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap',marginBottom:10}}>
+            <strong style={{fontFamily:'sans-serif',fontSize:24,color:'#4A372D'}}>{form.weeksUntilGoal} Wochen</strong>
+            {form.weeksUntilGoal===recommendation&&<span style={{fontFamily:'sans-serif',fontSize:9.5,fontWeight:900,color:'#E67E58',letterSpacing:.4}}>EMPFOHLEN</span>}
+          </div>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            {weekOptions.map(w=><button
+              key={w}
+              type="button"
+              style={{
+                ...chip(form.weeksUntilGoal===w),
+                minWidth:58,
+                textAlign:'center',
+                borderColor:form.weeksUntilGoal===w?'#E89A6F':'#E8DFD8',
+                background:form.weeksUntilGoal===w?'#FFF3E9':'#fff',
+                color:form.weeksUntilGoal===w?'#B76A48':'#806F65'
+              }}
+              onClick={()=>{setWeeksManual(w!==recommendation);set('weeksUntilGoal',w)}}
+            >{w} Wo.</button>)}
+          </div>
+          <div style={{...small,marginTop:9}}>
+            Für dein Ziel empfehlen wir aktuell etwa {recommendation} Wochen.
+          </div>
+          {form.weeksUntilGoal<recommendation&&<div style={{...small,marginTop:8,padding:'8px 10px',borderRadius:9,background:'#FFF0E8',color:'#A95F43'}}>
+            <strong>Ambitionierter Zeitrahmen:</strong> Der Plan bleibt konservativ und erzwingt keine Belastungssprünge.
+          </div>}
+        </div>}
         {form.goalType==='event'&&<div style={{...small,marginTop:18,padding:10,borderRadius:10,background:'#F2F8F7'}}>📅 Bis zu deinem Event sind es {eventWeeks} Wochen. Die Planlänge richtet sich automatisch danach.</div>}<div style={{marginTop:18,padding:12,borderRadius:13,background:'#F7FAF9',border:'1px solid #DFEBE8',fontFamily:'sans-serif',fontSize:10.5,lineHeight:1.55}}><strong>Dein Plan:</strong> {form.unitsPerWeek}× pro Woche · {form.weeksUntilGoal} Wochen{needsTarget?` · ${Number(effective.targetDistanceM).toLocaleString('de-DE')} m`:''}<br/>Technik, Serien, Pausen und Gesamtmeter werden passend zu deinem aktuellen Stand aufgebaut.</div>{error&&<div style={{marginTop:12,padding:11,borderRadius:10,background:'#FDECEA',color:'#A64E55',fontFamily:'sans-serif',fontSize:11}}>{error}</div>}<div style={{display:'flex',gap:8,marginTop:20}}><button onClick={()=>setStep(2)} style={{...card(false),textAlign:'center'}}>← Zurück</button><button disabled={!can3||loading} onClick={generate} style={{...card(can3),textAlign:'center',opacity:can3&&!loading?1:.5}}>{loading?'Plan wird erstellt…':'Trainingsplan erstellen'}</button></div></div>}
     </main></div>
 }
