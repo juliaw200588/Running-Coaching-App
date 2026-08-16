@@ -1287,7 +1287,8 @@ export default function TrainingPlan({ plan, onReset, user }) {
                               <div style={{marginTop:8,display:'grid',gap:7,fontFamily:'sans-serif'}}>
                                 <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                                   {day.durationMinutes && <span style={{fontSize:9.5,background:'#EDF7F7',color:'#4F8580',padding:'3px 8px',borderRadius:99,fontWeight:800,border:'1px solid #D5E9E7'}}>⏱ {day.durationMinutes} Min</span>}
-                                  {day.totalDistanceM && <span style={{fontSize:9.5,background:'#EEF3FA',color:'#58738F',padding:'3px 8px',borderRadius:99,fontWeight:800,border:'1px solid #DCE5F0'}}>🏊 {Number(day.totalDistanceM).toLocaleString('de-DE')} m</span>}
+                                  {day.totalDistanceM && <span style={{fontSize:9.5,background:'#EEF3FA',color:'#58738F',padding:'3px 8px',borderRadius:99,fontWeight:800,border:'1px solid #DCE5F0'}}>🏊 {Number(day.totalDistanceM).toLocaleString('de-DE')} m gesamt</span>}
+                                   {day.targetSegmentM && <span style={{fontSize:9.5,background:'#FFF5EE',color:'#A46C43',padding:'3px 8px',borderRadius:99,fontWeight:800,border:'1px solid #F1DDCC'}}>🎯 {Number(day.targetSegmentM).toLocaleString('de-DE')} m am Stück</span>}
                                   {day.intensity && <span style={{fontSize:9.5,background:'#F5F2FA',color:'#6F6384',padding:'3px 8px',borderRadius:99,fontWeight:800,border:'1px solid #E2DAEC'}}>{day.intensity}</span>}
                                 </div>
                                 {day.loadGuidance && <div style={{fontSize:10.2,color:'#756C78',lineHeight:1.45}}>{day.loadGuidance}</div>}
