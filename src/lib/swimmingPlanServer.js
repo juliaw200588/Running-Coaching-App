@@ -64,12 +64,25 @@ const validatePlan=(plan,input)=>{
   plan.sport_type='swimming';plan.plan_type='swimming_endurance'
   const weeks=plan.phases.flatMap(p=>p.weeks||[])
   if(n(input.weeksUntilGoal)&&weeks.length!==n(input.weeksUntilGoal))throw new Error(`Der Schwimmplan enthält ${weeks.length} statt ${input.weeksUntilGoal} Wochen.`)
-  const days=new Set(input.preferredDays||[]),tools=new Set(input.equipment||[])
+  const normalizeDay=v=>{
+    const s=String(v||'').trim().toLowerCase()
+    const map={
+      'mo':'mo','montag':'mo','monday':'mo',
+      'di':'di','dienstag':'di','tuesday':'di',
+      'mi':'mi','mittwoch':'mi','wednesday':'mi',
+      'do':'do','donnerstag':'do','thursday':'do',
+      'fr':'fr','freitag':'fr','friday':'fr',
+      'sa':'sa','samstag':'sa','saturday':'sa',
+      'so':'so','sonntag':'so','sunday':'so'
+    }
+    return map[s]||s
+  }
+  const days=new Set((input.preferredDays||[]).map(normalizeDay)),tools=new Set(input.equipment||[])
   for(const week of weeks){
     if((week.days||[]).length!==n(input.unitsPerWeek))throw new Error(`Woche ${week.n} enthält nicht die gewählte Anzahl Schwimmeinheiten.`)
     for(const day of week.days||[]){
       day.sport_type='swimming'
-      if(days.size&&!days.has(day.tag))throw new Error(`Nicht gewählter Trainingstag in Woche ${week.n}: ${day.tag}`)
+      if(days.size&&!days.has(normalizeDay(day.tag)))throw new Error(`Nicht gewählter Trainingstag in Woche ${week.n}: ${day.tag}`)
       if(!n(day.durationMinutes))throw new Error(`Zeit fehlt in Woche ${week.n}.`)
       if(!day.mainSet||!day.restGuidance)throw new Error(`Serie oder Pausenangabe fehlt in Woche ${week.n}.`)
       reconcileSwimmingDay(day,input,week.n)
