@@ -1,6 +1,6 @@
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v))
 const round25=v=>Math.max(25,Math.round(Number(v||0)/25)*25)
-export const SWIM_PLAN_VERSION='swim-v2'
+export const SWIM_PLAN_VERSION='swim-v3'
 
 export const getRecommendedSwimmingWeeks=form=>{
   const goal=form.goalType
@@ -45,24 +45,63 @@ export const getRecommendedSwimmingWeeks=form=>{
   return 10
 }
 
+const getSwimmingDurationGuidance=form=>{
+  const level=String(form?.techniqueLevel||'okay')
+  const continuous=Math.max(25,Number(form?.currentContinuousM||50))
+  const session=Math.max(250,Number(form?.currentSessionM||500))
+  const basePace100=
+    level==='secure'?2.35:
+    level==='unsure'?3.15:2.75
+  const enduranceAdjustment=continuous>=800?-.15:continuous<=100?.2:0
+  const volumeAdjustment=session>=2000?-.1:0
+  const pace100=Math.max(1.9,basePace100+enduranceAdjustment+volumeAdjustment)
+  return{
+    estimatedSwimMinutesPer100m:Number(pace100.toFixed(2)),
+    rule:'Dauer aus Gesamtmetern plus realen Satzpausen ableiten. Keine pauschale Minutenangabe erfinden; bei fehlender Pace konservativ mit dem hinterlegten Schätzwert rechnen.'
+  }
+}
+
 export const buildSwimmingPlanGuardrails=form=>{
   const target=round25(form.targetDistanceM)
   const currentContinuous=round25(form.currentContinuousM)
   const currentSession=round25(form.currentSessionM)
   const weeks=clamp(Number(form.weeksUntilGoal||10),6,24)
   const units=clamp(Number(form.unitsPerWeek||3),2,4)
+  const allowedStrokes=getAllowedSwimmingStrokes(form)
+  const strokeWeights=getSwimmingStrokeWeights(form)
+  const continuousByWeek=buildContinuousDistanceProgression(form)
+  const sessionDistanceByWeek=buildSessionDistanceProgression(form)
+  const durationGuidance=getSwimmingDurationGuidance(form)
+  const isContinuousTarget=Boolean(['distance','event'].includes(form.goalType)&&target>0&&form.continuousGoal!=='no')
   return {
     version:SWIM_PLAN_VERSION,
     targetDistanceM:target||null,
     currentContinuousM:currentContinuous||null,
     currentSessionM:currentSession||null,
     weeks,unitsPerWeek:units,
+    allowedStrokes,
+    strokeWeights,
+    continuousByWeek,
+    sessionDistanceByWeek,
+    durationGuidance,
+    finalTargetAttempt:isContinuousTarget?{
+      enabled:true,
+      week:weeks,
+      distanceM:target,
+      instruction:`In der letzten Woche genau eine klar benannte Zieleinheit mit ${target} m am Stück vorsehen. Diese Einheit nicht als normalen Technikblock darstellen. Vorher 200 m sehr locker einschwimmen, dann ausreichende Erholung, anschließend der Zielversuch; danach locker ausschwimmen.`
+    }:{enabled:false},
     shortPreparation:Boolean(['distance','event'].includes(form.goalType)&&target>0&&currentContinuous>0&&target/currentContinuous>=4&&weeks<=10),
     rules:[
       'Technikqualität hat Vorrang vor bloßer Metersteigerung.',
       'Progression entsteht aus Gesamtumfang, längeren zusammenhängenden Abschnitten, passenden Pausen und Technik unter Ermüdung.',
       'Bei knapper Vorbereitungszeit keine aggressiven Sprünge erzwingen.',
-      'Nur ausgewählte Schwimmarten verwenden; mixed darf keine zusätzliche Lage einführen.',
+      allowedStrokes.length
+        ?`Ausschließlich diese Schwimmarten verwenden: ${allowedStrokes.join(', ')}. Auch Einschwimmen, Ausschwimmen, Technik, Erholung und "gemischt" dürfen keine andere Lage enthalten.`
+        :'Keine Schwimmart erfinden; lage-neutral formulieren.',
+      'Das Wort "gemischt" bedeutet ausschließlich eine Mischung aus den erlaubten Schwimmarten und niemals automatisch Rücken oder Delfin.',
+      'Wenn nur eine Schwimmart erlaubt ist, müssen sämtliche schwimmartspezifischen Meter in genau dieser Lage stattfinden.',
+      'Die angegebene Einheitsdauer muss zu Gesamtmetern, Intensität und ausgewiesenen Satzpausen passen.',
+      isContinuousTarget?'Die letzte Woche enthält genau einen klar erkennbaren Zielversuch über die Zieldistanz am Stück; dieser wird als Zieleinheit und nicht als Technikübung formuliert.':'Keinen künstlichen Zielversuch erzeugen, wenn kein Am-Stück-Ziel vorliegt.',
       'Hilfsmittel nur verwenden, wenn sie laut Eingabe verfügbar sind.',
       'Freiwasser nur einplanen, wenn sichere Trainingsmöglichkeit vorhanden ist.'
     ]
@@ -81,6 +120,11 @@ const normalizeStroke=v=>{
 const uniq=a=>[...new Set((a||[]).filter(Boolean))]
 
 export const getAllowedSwimmingStrokes=form=>{
+ const onboardingStroke=String(form?.stroke||'').toLowerCase()
+ if(onboardingStroke==='mixed')return['freestyle','breaststroke']
+ const direct=normalizeStroke(onboardingStroke)
+ if(direct)return[direct]
+
  const raw=[
   ...(Array.isArray(form?.strokes)?form.strokes:[]),
   ...(Array.isArray(form?.selectedStrokes)?form.selectedStrokes:[]),
@@ -95,7 +139,9 @@ export const getSwimmingStrokeWeights=form=>{
  const allowed=getAllowedSwimmingStrokes(form)
  if(!allowed.length)return{}
  if(allowed.length===1)return{[allowed[0]]:1}
- const focus=normalizeStroke(form?.focusStroke||form?.developmentStroke||form?.strokeToImprove||form?.strongerDevelopment||form?.developStroke)
+
+ const onboardingPriority=form?.mixedPriority==='equal'?null:normalizeStroke(form?.mixedPriority)
+ const focus=onboardingPriority||normalizeStroke(form?.focusStroke||form?.developmentStroke||form?.strokeToImprove||form?.strongerDevelopment||form?.developStroke)
  if(focus&&allowed.includes(focus)){
   const rest=.3/(allowed.length-1)
   return Object.fromEntries(allowed.map(s=>[s,s===focus?.7:rest]))
@@ -161,13 +207,18 @@ export const buildSwimmingGeneratorConstraints=form=>{
    allowedStrokes.length
     ?`Ausschließlich diese Schwimmarten verwenden: ${allowedStrokes.join(', ')}.`
     :'Keine Schwimmart erfinden; lage-neutral formulieren.',
-   'Mixed darf ausschließlich aus erlaubten Schwimmarten bestehen.',
+   'Mixed/gemischt darf ausschließlich aus erlaubten Schwimmarten bestehen; Rücken und Delfin niemals ergänzen, wenn sie nicht ausdrücklich erlaubt sind.',
+   'Diese Regel gilt auch für Einschwimmen, Ausschwimmen, aktive Erholung, Technikblöcke und frei formulierte Hinweise.',
    'Eine priorisierte Schwimmart soll ungefähr 70 % der schwimmartspezifischen Meter erhalten.',
    'Gesamtumfang und längste zusammenhängende Strecke getrennt progressieren.',
    'Die längste zusammenhängende Strecke darf das Wochenlimit nicht überschreiten.',
    'Technikblöcke sind konkrete kurze Technikübungen; lange Zielstrecken gehören in die Hauptserie.',
    'Hilfsmittel nur verwenden, wenn sie laut Eingabe verfügbar sind.',
-   'Teilstrecken müssen sich exakt zur ausgewiesenen Gesamtdistanz addieren.'
+   'Teilstrecken müssen sich exakt zur ausgewiesenen Gesamtdistanz addieren.',
+   'Zeitangaben müssen aus Schwimmmetern plus Satzpausen plausibel abgeleitet werden.',
+   form?.continuousGoal!=='no'&&Number(form?.targetDistanceM||0)>0
+    ?`In der letzten Woche genau eine separate Zieleinheit über ${round25(form.targetDistanceM)} m am Stück vorsehen.`
+    :'Keinen separaten Am-Stück-Zielversuch erzwingen.'
   ]
  }
 }
