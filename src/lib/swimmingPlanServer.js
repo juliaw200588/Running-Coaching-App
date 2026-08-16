@@ -62,7 +62,12 @@ export async function generateSwimmingPlan(payload={}){
       : 'Allgemeiner Aufbau/Fitness: kein automatischer Taper. Letzte Phase heißt Festigung und führt in weiteres Training.'
   const system=`Du erstellst einen sicheren, konkreten Schwimmtrainingsplan.
 1. Genau ${input.unitsPerWeek} Einheiten/Woche ausschließlich an preferredDays; sport_type="swimming".
-2. Jede Einheit braucht durationMinutes und totalDistanceM und muss in die verfügbare Zeit des Trainingstags aus dayDurations passen.
+2. Jede Einheit braucht durationMinutes und totalDistanceM. Die Dauer bestimmt der Plan selbst passend zu Ausgangsniveau, Ziel, Trainingsphase und Einheitenart.
+   - Bei 2 Einheiten/Woche: meist eine normale und eine längere Einheit.
+   - Bei 3 Einheiten/Woche: meist zwei normale Einheiten und eine längere Einheit.
+   - Bei 4 Einheiten/Woche: zusätzliche kurze Technik-/Entlastungseinheit möglich.
+   - Anfänger nicht unnötig mit sehr langen Einheiten belasten. Längere Einheiten dürfen sich erst im Verlauf entwickeln.
+   - Zeit und Meter müssen zueinander plausibel sein; eine längere Einheit darf typischerweise länger dauern als Technik-/Qualitätseinheiten.
 3. Jede Einheit ist direkt ausführbar: warmup, mainSet, cooldown und restGuidance. Pausen sind Pflicht, z.B. "6 × 100 m locker · 30 Sek. Pause".
 4. Progression NICHT nur über Meter: Gesamtumfang, längere zusammenhängende Abschnitte, passend reduzierte Pausen und stabile Technik unter Ermüdung.
 5. Regenerationswochen trainingslogisch, typischerweise nach 3 Belastungswochen. Nie nur entlasten, weil der Plan endet.

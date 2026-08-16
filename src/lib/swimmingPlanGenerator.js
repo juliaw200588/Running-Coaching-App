@@ -7,16 +7,41 @@ export const getRecommendedSwimmingWeeks=form=>{
   const target=Number(form.targetDistanceM||0)
   const continuous=Number(form.currentContinuousM||0)
   const total=Number(form.currentSessionM||0)
-  if(goal==='beginner') return 8
-  if(goal==='fitness') return total>=2000?8:10
+  const units=Math.max(2,Math.min(4,Number(form.unitsPerWeek||3)))
+  const continuousGoal=form.continuousGoal!=='no'
+
+  if(goal==='beginner') return units>=3?8:10
+  if(goal==='fitness') return total>=2000?(units>=3?8:10):(units>=3?10:12)
+
   if(goal==='distance'||goal==='event'){
-    const baseline=Math.max(continuous,total*0.45,100)
+    let weeks=
+      target<=500?8:
+      target<=1000?9:
+      target<=1500?10:
+      target<=2000?12:
+      target<=3000?14:
+      target<=5000?16:
+      target<=7500?18:20
+
+    const baseline=continuousGoal
+      ? Math.max(continuous,50)
+      : Math.max(total,250)
+
     const ratio=target>0?target/baseline:1
-    if(target>=5000||ratio>=6) return 20
-    if(target>=3000||ratio>=4) return 16
-    if(target>=1500||ratio>=2.5) return 12
-    return 10
+
+    if(ratio>10) weeks+=4
+    else if(ratio>6) weeks+=2
+    else if(ratio>3) weeks+=1
+    else if(ratio<=1.5) weeks-=2
+
+    if(total>=target*0.8) weeks-=1
+    if(units===2) weeks+=2
+    if(units===4) weeks-=1
+
+    weeks=Math.max(8,Math.min(24,weeks))
+    return weeks%2===0?weeks:weeks+1
   }
+
   return 10
 }
 

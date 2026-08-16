@@ -530,38 +530,12 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
 
   const heroImage = useMemo(
     () => {
-      if (displayHero?.type === 'new') {
-        const selectedSports = Array.isArray(profile?.sportarten)
-          ? profile.sportarten.filter(sport =>
-              ['running', 'cycling', 'mountain_biking', 'hiking', 'swimming'].includes(sport)
-            )
-          : []
-
-        const fallbackSports = ['running', 'cycling', 'hiking', 'swimming', 'mountain_biking']
-        const availableSports = selectedSports.length ? selectedSports : fallbackSports
-
-        const seedText = `${user?.id || 'anonymous'}|${todayStr || 'today'}`
-        let hash = 0
-        for (let i = 0; i < seedText.length; i += 1) {
-          hash = ((hash << 5) - hash + seedText.charCodeAt(i)) | 0
-        }
-
-        const index = Math.abs(hash) % availableSports.length
-        const selectedSport = availableSports[index]
-
-        return getHeroImageForDashboard({
-          hero: {
-            ...displayHero,
-            plannedDay: {
-              ...(displayHero?.plannedDay || {}),
-              sport_type: selectedSport,
-            },
-          },
-          userId: user?.id,
-          dateKey: todayStr,
-          weekNumber: context?.week?.n,
-        })
-      }
+      // Nach "Neuen Plan erstellen" existiert bewusst noch kein aktiver Plan.
+      // Für diesen Welcome-Zustand verwenden wir deshalb ein garantiert vorhandenes,
+      // neutrales Bild aus dem bereits etablierten Running-Easy-Pool.
+      // So hängt der Hero nicht davon ab, ob für jede auswählbare Sportart bereits
+      // ein vollständiger Bildpool im Deployment vorhanden ist.
+      if (displayHero?.type === 'new') return '/hero/running/easy/02.webp'
 
       return getHeroImageForDashboard({
         hero: displayHero,
@@ -578,7 +552,6 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
       displayHero?.log?.sport_type,
       displayHero?.plannedDay?.key,
       displayHero?.plannedDay?.einheit,
-      profile?.sportarten,
       user?.id,
       todayStr,
       context?.week?.n,
@@ -626,15 +599,30 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
 
         <button type="button" onClick={openHero} style={{...card,width:'100%',padding:0,overflow:'hidden',textAlign:'left',cursor:'pointer',border:'none',position:'relative',minHeight:displayHero?.type === 'new' ? 285 : 245,background:'linear-gradient(135deg,#6F8F7B 0%,#A7BCA8 42%,#E7B79B 100%)'}}>
           {heroImage && (
-            <div
+            <img
+              src={heroImage}
+              alt=""
               aria-hidden="true"
+              onError={(event) => {
+                // Robuster Fallback für den Welcome-/Planwechsel-Hero:
+                // Falls ein Bildpfad im Deployment fehlt, wird ein vorhandenes
+                // neutrales Free-Hero-Bild versucht. Erst danach bleibt der
+                // bisherige Gradient sichtbar.
+                if (displayHero?.type === 'new' && !event.currentTarget.dataset.fallbackTried) {
+                  event.currentTarget.dataset.fallbackTried = '1'
+                  event.currentTarget.src = '/hero/free/01.webp'
+                } else {
+                  event.currentTarget.style.display = 'none'
+                }
+              }}
               style={{
                 position:'absolute',
                 inset:0,
-                backgroundImage:`url("${heroImage}")`,
-                backgroundSize:'cover',
-                backgroundPosition:displayHero?.type === 'new' ? '58% center' : 'center',
-                backgroundRepeat:'no-repeat',
+                width:'100%',
+                height:'100%',
+                objectFit:'cover',
+                objectPosition:displayHero?.type === 'new' ? '58% center' : 'center',
+                display:'block',
               }}
             />
           )}
