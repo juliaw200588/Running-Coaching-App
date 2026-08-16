@@ -402,11 +402,19 @@ VERBINDLICHE REGELN:
     - strengthPrescription mit 4-5 Übungen, meist 2-3 Sätze, 8-12 Wiederholungen.
     - Gute Optionen: Split Squats, Step-ups, Hüftbeuge/RDL, Wadenheben, Rumpfstabilität.
     - Nicht bis Muskelversagen; Peak/Zielphase reduzieren.
-22. VERPFLEGUNG:
-    - Ab etwa 90 Minuten längeren Einheiten konkrete Testaufgabe geben.
-    - Früh: ungefähr 30-60 g Kohlenhydrate pro Stunde als Orientierung und regelmäßig trinken.
-    - Sehr lange spezifische Einheiten: persönliche Event-/Tourstrategie testen; höhere Mengen nur schrittweise und bei guter Verträglichkeit.
-    - Kurze Einheiten nicht mit Ernährungshinweisen überladen.
+22. VERPFLEGUNG – ALS LERNKURVE AUFBAUEN:
+    - Kurze Einheiten nicht mit Ernährungshinweisen überladen. Verpflegungshinweise vor allem bei langen bzw. zielrelevanten Ausfahrten einsetzen.
+    - Die Hinweise müssen auch für Anfänger direkt verständlich sein: nicht nur Gramm Kohlenhydrate nennen, sondern zusätzlich 1-2 konkrete Beispiele wie Gel, Riegel oder Banane.
+    - Früh im Plan bei längeren Ausfahrten zunächst das Essen und Trinken auf dem Rad kennenlernen: ab etwa 60-90 Minuten eine kleine Kohlenhydratmenge testen und regelmäßig trinken. Beispiel: 1 Gel, 1/2-1 Riegel oder eine Banane.
+    - Danach einen regelmäßigen Rhythmus vermitteln: nicht erst bei Hunger essen. Bei längeren Fahrten zunächst ungefähr 30 g Kohlenhydrate pro Stunde als gut verständliche Orientierung verwenden und über die Fahrt verteilen.
+    - Mit zunehmender Dauer schrittweise auf ungefähr 30-40 g Kohlenhydrate pro Stunde steigern und verschiedene gut verträgliche Produkte testen.
+    - In langen spezifischen Einheiten ungefähr 40-50 g Kohlenhydrate pro Stunde als mögliche Orientierung testen, sofern die bisherigen Mengen gut vertragen wurden. Keine abrupten Sprünge verlangen.
+    - Beispiele immer als Orientierung formulieren, nicht als starre Gleichsetzung, da Produkte unterschiedliche Kohlenhydratmengen enthalten. Nutzer sollen die Nährwertangaben des verwendeten Produkts berücksichtigen.
+    - Bei sehr langen spezifischen Einheiten eine persönliche Ziel-/Tourstrategie aufbauen: früh beginnen, regelmäßig essen und trinken, geplante Produkte testen und Verträglichkeit beobachten.
+    - In der letzten langen Generalprobe möglichst dieselben Getränke und Lebensmittel verwenden, die für Event oder Zielausfahrt vorgesehen sind. Keine neuen Produkte testen.
+    - In der Zielwoche 1-2 Tage vor dem Ziel konkret formulieren: normal und ausreichend essen, Kohlenhydrate nicht einschränken, regelmäßig trinken und keine ungewohnten Lebensmittel oder neuen Verpflegungsprodukte ausprobieren.
+    - Am Zieltag nicht nur allgemein 'regelmäßig verpflegen' schreiben. Klar sagen: früh mit der erprobten Verpflegung beginnen, nicht auf Hunger warten, die im Training getesteten Produkte verwenden und die individuell gut verträgliche Strategie der langen Trainingsfahrten umsetzen.
+    - Verpflegungshinweise sollen sich über die Wochen sinnvoll entwickeln und dürfen nicht jede Woche nahezu identisch wiederholt werden.
 23. BACK-TO-BACK:
     - Nur wenn guardrails.backToBack.appropriate=true.
     - Muss wirklich an direkt aufeinanderfolgenden Kalendertagen stattfinden.
