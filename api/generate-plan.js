@@ -323,6 +323,13 @@ AUSGEWÄHLTE TRAININGSTAGE: ${selectedDays.join(', ')}.
       ? 'RENNTEMPO: Es wurde keine Zielzeit angegeben. Bezeichne keine Pace als festes Ziel-Renntempo. Nutze stattdessen eine spezifische kontrollierte Einheit auf Basis der aktuellen Leistungsdaten.'
       : 'RENNTEMPO: Ohne Zielzeit und ohne bisherige Zeit keine konkrete Renntempo-Pace erfinden.'
 
+  const finalPhaseInstruction =
+    zielTyp === 'rennen'
+      ? `ABSCHLUSSLOGIK: Es gibt ein konkretes Rennen. Die letzte Phase ist eine echte Taper-/Zielphase. Reduziere den Umfang in den letzten 1-3 Wochen passend zur Plandauer und zum Niveau, erhalte kurze gezielte Qualität und führe erholt zum Renntag. Rennstrategie und Renntag-Verpflegung gehören ausschließlich hierhin.`
+      : zielTyp === 'distanz'
+        ? `ABSCHLUSSLOGIK: Es gibt KEIN Rennen, sondern das persönliche Ziel, ${goal || 'die gewählte Distanz'} zu schaffen. Keine mehrwöchige Wettkampf-Taperphase erzeugen. Die letzte Phase heißt "Abschluss" oder "Ziel erreichen". Die letzte Woche darf den Umfang moderat reduzieren, damit der abschließende Distanzversuch erholt gelingt. Der Distanzversuch darf als wichtigste Laufeinheit der letzten Woche erscheinen. Keine Rennstrategie, kein Carb-Loading und keine Wettkampfsprache verwenden, sofern kein tatsächliches Rennen vorliegt.`
+        : `ABSCHLUSSLOGIK: Das Ziel ist der Einstieg ins regelmäßige Laufen. Es gibt KEINEN Taper. Die letzte Phase heißt "Festigung" oder "Dranbleiben". Die letzte Woche ist eine normale, sinnvoll dosierte Trainingswoche mit Festigung bzw. kleinem Fortschrittsreiz und natürlichem Übergang in weiteres Training. Sie darf nicht automatisch regen=true sein, nur weil der Plan endet. Keine Rennstrategie, kein Carb-Loading und keine Wettkampfsprache verwenden.`
+
   const systemPrompt = `Du bist ein professioneller Lauftrainer mit tiefem Wissen in Sportphysiologie, Periodisierung und Verletzungsprävention. Erstelle einen wissenschaftlich fundierten, personalisierten Trainingsplan als JSON.
 
 Antworte NUR mit validem JSON, kein Markdown, keine Erklärungen.
@@ -393,13 +400,8 @@ HM-SPEZIFISCHE PHASE (nächste 25% der Wochen):
 - Langer Lauf erreicht 90-100% der Renndistanz
 - Rennstrategie vorbereiten
 
-TAPERING (letzte 2-3 Wochen):
-- Umfang um 30-40% reduzieren, Intensität BEIBEHALTEN
-- Kurze scharfe Einheiten um Beine frisch zu halten
-- 1 Woche vor Rennen: Rennstrategie-Analyse in der Details-Beschreibung: "${rennstrategie}"
-- 1 Woche vor Rennen: Verpflegungs-/Hydrationsstrategie ebenfalls in die Renntag-Vorbereitung einbauen: "${renntagFueling}"${carbLoadingHinweis ? `
-- 2 Tage vor Rennen: Carb-Loading-Hinweis in die Details der jeweiligen Einheit einbauen: "${carbLoadingHinweis}"` : ''}
-- Letzte 3 Tage: nur sehr lockere kurze Läufe oder Pause
+ABSCHLUSSPHASE – ZIELTYP ABHÄNGIG:
+${finalPhaseInstruction}
 
 ═══════════════════════════════════════
 TRAININGSPHILOSOPHIE – STRIKT EINHALTEN
@@ -434,7 +436,11 @@ TRAININGSPHILOSOPHIE – STRIKT EINHALTEN
 
 11. ANFÄNGER-SPEZIFISCH: Laufen/Gehen-Intervalle in Woche 1-4 (z.B. "3 min laufen, 2 min gehen × 6"). Keine Pace-Angaben, nur Zeitangaben und Gefühlsangaben.
 
-12. RENNSTRATEGIE: In der letzten Woche vor dem Renntag in der Einheit "Renntag-Vorbereitung" die konkrete Strategie einbauen: "${rennstrategie}" Zusätzlich die Verpflegungs-/Hydrationsstrategie ergänzen: "${renntagFueling}"${carbLoadingHinweis ? ` Außerdem 2 Tage vorher einen Carb-Loading-Hinweis einbauen: "${carbLoadingHinweis}"` : ''}
+12. ABSCHLUSS NACH ZIELTYP: ${zielTyp === 'rennen'
+  ? `In der letzten Woche vor dem Renntag in der Einheit "Renntag-Vorbereitung" die konkrete Strategie einbauen: "${rennstrategie}". Zusätzlich die Verpflegungs-/Hydrationsstrategie ergänzen: "${renntagFueling}"${carbLoadingHinweis ? ` und 2 Tage vorher diesen Carb-Loading-Hinweis: "${carbLoadingHinweis}"` : ''}.`
+  : zielTyp === 'distanz'
+    ? 'Keine Renntag-Vorbereitung erzeugen. Die letzte Woche auf einen persönlichen Distanz-Abschlussversuch ausrichten und davor nur moderat entlasten.'
+    : 'Keine Renntag-Vorbereitung erzeugen. Die letzte Woche als Festigungswoche mit Übergang in weiteres regelmäßiges Laufen gestalten.'}
 
 13. KEINE FAHRTSPIELE – nur Intervalle oder Tempodauerläufe.
 
