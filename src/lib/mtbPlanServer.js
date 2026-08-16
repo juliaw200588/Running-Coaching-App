@@ -124,14 +124,14 @@ GRUNDPRINZIPIEN:
 1. Erzeuge EXAKT ${guardrails.requestedWeeks} Wochen und EXAKT ${input.unitsPerWeek} Pflicht-Trainingseinheiten je Woche.
 2. Alle Pflicht-Einheiten grundsätzlich nur an preferredDays. Back-to-back-Ausnahme ausschließlich wenn guardrails.backToBack.appropriate=true.
 3. sport_type immer "mountain_biking".
-4. Phasen: Basis, Aufbau, Spezifisch, Zielphase. Alle vier verwenden.
+4. Phasen zielabhängig verwenden: Bei Event, Distanz oder Tour sinnvoll Basis, Aufbau, Spezifisch und Zielphase abbilden. Bei allgemeinem Fitnessziel keinen künstlichen Wettkampfcharakter erzeugen; der letzte Block darf regulärer Aufbau/Festigung sein.
 5. Entlastungswochen ungefähr alle 3-4 Wochen sinnvoll einbauen.
 6. MTB wird primär über ZEIT + BELASTUNG gesteuert. Jede Radeinheit MUSS durationMinutes haben.
 7. Niemals km/h als Zielgeschwindigkeit verwenden.
-8. Kilometer nur bei langen/zielspezifischen Einheiten als grobe Orientierung. Zeit und Belastung haben Vorrang.
+8. Kilometer nur bei längeren oder zielspezifischen Einheiten als grobe Orientierung ausgeben. Immer sprachlich als Orientierung kennzeichnen (z.B. „ca. 20–25 km als Orientierung“); Zeit und Belastung haben Vorrang und die Einheit darf nicht am Kilometerwert scheitern.
 9. Höhenmeter sind Belastungskontext und dürfen bei zielspezifischen langen Einheiten als Orientierung erscheinen. Keine künstlichen Höhenmeter verlangen, wenn sie in der Trainingsumgebung nicht verfügbar sind.
 10. Lange Ausfahrt konservativ von guardrails.startLongHours entwickeln; guardrails.peakLongHours nicht unnötig überschreiten.
-11. Intensität nutzerverständlich bevorzugt "locker", "zügig", "intensiv". HF/Watt nur ergänzend, wenn Daten vorhanden.
+11. Intensität immer nutzerverständlich über Belastungsgefühl steuern (z.B. locker/entspannt, moderat/zügig, intensiv aber kontrolliert sowie Sprechtest/RPE-artige Beschreibung). HF/Watt nur ergänzend, wenn belastbare Nutzerdaten vorhanden sind; nie voraussetzen, dass HF- oder FTP-Werte existieren.
 12. XC: Ausdauer, wiederholte Anstiege, kontrollierte Qualität und effizientes Fahren betonen.
 13. Trail/All-Mountain: Ausdauer plus Fahrtechnik stärker gewichten; technische Schwierigkeit niemals erzwingen.
 14. Touren/Genuss-MTB: lange Belastbarkeit, gleichmäßiges Fahren, Sitzzeit, Anstiege und Tourentauglichkeit priorisieren.
@@ -166,7 +166,7 @@ KRAFT:
 26b. MTB-Kraftausdauer AUF DEM RAD, z.B. kontrollierte längere Anstiege oder Widerstandsintervalle, ist ausdrücklich erlaubt und gilt NICHT als ergänzendes Krafttraining. Solche Einheiten dürfen "Kraftausdauer" heißen, müssen aber strengthPrescription=null haben.
 
 VERPFLEGUNG – LERNKURVE:
-27. Kurze Einheiten nicht mit Ernährungshinweisen überladen.
+27. Kurze Einheiten unter etwa 60 Min nicht mit Ernährungshinweisen überladen. nutritionTip dort grundsätzlich null lassen, außer es gibt einen konkreten Lernzweck. Reines „ausreichend trinken“ nicht in jeder kurzen Einheit wiederholen.
 28. Früh bei längeren Fahrten Essen/Trinken kennenlernen: ab etwa 60-90 Min kleine Kohlenhydratmenge testen und regelmäßig trinken; konkrete Beispiele nennen (Gel, Riegel, Banane).
 29. Danach Rhythmus lernen: nicht erst bei Hunger essen; zunächst etwa 30 g KH/h als Orientierung.
 30. Mit längeren Einheiten schrittweise etwa 30-40 g KH/h, später bei langen spezifischen Einheiten etwa 40-50 g KH/h testen, sofern verträglich.
@@ -180,8 +180,10 @@ SICHERHEIT:
 36. Bei knapper Vorbereitungszeit keine aggressiven Belastungssprünge.
 37. Keine Diagnosen oder Erfolgsgarantien.
 38. Keine internen technischen Begriffe, Modelle, APIs oder Kosten erwähnen.
-39. details kurz und konkret; techniqueInstructions darf ausführlicher sein.
-40. Event/Tour separat in event ausgeben, nicht als normale Trainingseinheit in phases. Letzte Woche enthält Taper/Vorbereitung.
+39. details kurz und konkret; techniqueInstructions darf ausführlicher sein, soll aber klar gegliedert und ohne unnötige Wiederholungen formuliert werden, damit die Oberfläche den ausführlichen Technikblock optional auf-/zuklappen kann.
+40. Event/Tour separat in event ausgeben, nicht als normale Trainingseinheit in phases. NUR bei einem konkreten Event, einer Zieldistanz mit festem Zieldatum oder einer Tour mit festem Starttermin die letzte Woche als Taper/Zielvorbereitung gestalten.
+41. Bei goalType="fitness" gibt es keinen Wettkampf-Taper. Die letzte Woche ist eine normale, sinnvoll dosierte Trainingswoche bzw. Festigungswoche. Eine Entlastungswoche am Ende ist nur zulässig, wenn sie aus der Belastungsprogression tatsächlich sinnvoll folgt; sie darf nicht automatisch allein deshalb entstehen, weil der Plan endet.
+42. Bei Fitnessplänen darf die letzte Woche einen kleinen Fortschrittsreiz oder eine Festigung enthalten und soll einen natürlichen Übergang in weiteres Training ermöglichen.
 
 AUSGABE ausschließlich als strukturiertes JSON gemäß Schema.`
 
