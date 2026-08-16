@@ -196,6 +196,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
   const [pauseWeeks, setPauseWeeks] = useState(1)
   const [openWeeks, setOpenWeeks] = useState(() => ({ [findCurrentPhaseWeek(plan).weekIdx]: true }))
   const [openTechniques, setOpenTechniques] = useState({})
+  const [openSwimTechniques, setOpenSwimTechniques] = useState({})
   const [done, setDone] = useState({})
   const [logs, setLogs] = useState({})
   const [screenshots, setScreenshots] = useState({})
@@ -219,7 +220,8 @@ export default function TrainingPlan({ plan, onReset, user }) {
   const isHikingPlan = plan?.sport_type === 'hiking' || plan?.plan_type === 'hiking_march'
   const isCyclingPlan = plan?.sport_type === 'cycling' || plan?.plan_type === 'cycling_endurance'
   const isMtbPlan = plan?.sport_type === 'mountain_biking' || plan?.plan_type === 'mtb_endurance'
-  const isRunningPlan = !isHikingPlan && !isCyclingPlan && !isMtbPlan && (
+  const isSwimmingPlan = plan?.sport_type === 'swimming' || plan?.plan_type === 'swimming_endurance'
+  const isRunningPlan = !isHikingPlan && !isCyclingPlan && !isMtbPlan && !isSwimmingPlan && (
     !plan?.sport_type ||
     plan?.sport_type === 'running' ||
     plan?.plan_type === 'running'
@@ -231,17 +233,21 @@ export default function TrainingPlan({ plan, onReset, user }) {
     ? '/hero/hiking/03.webp'
     : isMtbPlan
       ? '/hero/mtb/03.webp'
-      : isCyclingPlan
-        ? '/hero/cycling/03.webp'
-        : '/hero/running/easy/02.webp'
+      : isSwimmingPlan
+        ? '/hero/swimming/03.webp'
+        : isCyclingPlan
+          ? '/hero/cycling/03.webp'
+          : '/hero/running/easy/02.webp'
 
   const planSportLabel = isHikingPlan
     ? 'Marsch & Wandern'
     : isMtbPlan
       ? 'Mountainbike'
-      : isCyclingPlan
-        ? 'Radfahren'
-        : 'Laufen'
+      : isSwimmingPlan
+        ? 'Schwimmen'
+        : isCyclingPlan
+          ? 'Radfahren'
+          : 'Laufen'
 
   const progressUnitLabel = isRunningPlan ? 'Läufe' : 'Einheiten'
 
@@ -1146,7 +1152,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
             const allDone = weekDone === weekTotal && weekTotal > 0
             const isOpen = !!openWeeks[wi]
             const phaseColor = phase.accent || phaseTabColors[activePhase] || '#FF8C69'
-            const weekKm = (isCyclingPlan || isMtbPlan) ? 0 : estimateWeekKm(week)
+            const weekKm = (isCyclingPlan || isMtbPlan || isSwimmingPlan) ? 0 : estimateWeekKm(week)
 
             return (
               <div key={week.n} style={{ background: 'white', borderRadius: 20, marginBottom: 12, overflow: 'hidden', boxShadow: isOpen ? '0 8px 32px rgba(255,140,105,0.15)' : '0 2px 12px rgba(0,0,0,0.06)', border: isOpen ? '2px solid #FFD4C0' : '2px solid transparent', transition: 'all 0.3s ease' }}>
@@ -1277,6 +1283,34 @@ export default function TrainingPlan({ plan, onReset, user }) {
                                 🍌 <strong>Verpflegung testen:</strong> {day.nutritionTip}
                               </div>
                             )}
+                            {isSwimmingPlan && (
+                              <div style={{marginTop:8,display:'grid',gap:7,fontFamily:'sans-serif'}}>
+                                <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                                  {day.durationMinutes && <span style={{fontSize:9.5,background:'#EDF7F7',color:'#4F8580',padding:'3px 8px',borderRadius:99,fontWeight:800,border:'1px solid #D5E9E7'}}>⏱ {day.durationMinutes} Min</span>}
+                                  {day.totalDistanceM && <span style={{fontSize:9.5,background:'#EEF3FA',color:'#58738F',padding:'3px 8px',borderRadius:99,fontWeight:800,border:'1px solid #DCE5F0'}}>🏊 {Number(day.totalDistanceM).toLocaleString('de-DE')} m</span>}
+                                  {day.intensity && <span style={{fontSize:9.5,background:'#F5F2FA',color:'#6F6384',padding:'3px 8px',borderRadius:99,fontWeight:800,border:'1px solid #E2DAEC'}}>{day.intensity}</span>}
+                                </div>
+                                {day.loadGuidance && <div style={{fontSize:10.2,color:'#756C78',lineHeight:1.45}}>{day.loadGuidance}</div>}
+                                {day.warmup && <div style={{padding:'8px 10px',borderRadius:10,background:'#F7FAFC',border:'1px solid #E5ECF2',fontSize:10.3,lineHeight:1.5,color:'#586A78'}}><strong>Einschwimmen</strong><div>{day.warmup}</div></div>}
+                                {day.mainSet && <div style={{padding:'8px 10px',borderRadius:10,background:'#F1F8F7',border:'1px solid #DCEBE8',fontSize:10.3,lineHeight:1.5,color:'#4F6F6B'}}><strong>Hauptserie</strong><div>{day.mainSet}</div></div>}
+                                {day.restGuidance && <div style={{fontSize:10,color:'#8A7B72'}}>⏸️ <strong>Pausen:</strong> {day.restGuidance}</div>}
+                                {day.cooldown && <div style={{padding:'8px 10px',borderRadius:10,background:'#FAF8F5',border:'1px solid #ECE5DE',fontSize:10.3,lineHeight:1.5,color:'#74675F'}}><strong>Ausschwimmen</strong><div>{day.cooldown}</div></div>}
+                                {Array.isArray(day.equipment) && day.equipment.length>0 && <div style={{fontSize:10,color:'#8A7B72'}}>🧰 {day.equipment.join(' · ')}</div>}
+                                {day.openWaterTip && <div style={{padding:'8px 10px',borderRadius:10,background:'#EEF7FA',border:'1px solid #D7E9EE',fontSize:10.3,lineHeight:1.5,color:'#52737C'}}>🌊 <strong>Freiwasser:</strong> {day.openWaterTip}</div>}
+                                {day.techniqueTitle && day.techniqueInstructions && (
+                                  <div style={{borderRadius:11,background:'#EDF7F5',border:'1px solid #D3E8E3',fontSize:10.5,lineHeight:1.55,color:'#4E716B',overflow:'hidden'}}>
+                                    <button type="button" onClick={()=>setOpenSwimTechniques(prev=>({...prev,[key]:!prev[key]}))}
+                                      style={{width:'100%',border:'none',background:'transparent',padding:'10px 11px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,textAlign:'left',color:'#4E716B',cursor:'pointer',fontFamily:'sans-serif'}}>
+                                      <span>🏊 <strong>Technik{day.techniqueDistanceM ? ` · ${Number(day.techniqueDistanceM).toLocaleString('de-DE')} m` : ''}: {day.techniqueTitle}</strong>
+                                        <span style={{display:'block',marginTop:3,fontSize:9.6,color:'#718B86',fontWeight:700}}>{openSwimTechniques[key]?'Anleitung ausblenden':'Schritt-für-Schritt-Anleitung anzeigen'}</span>
+                                      </span><span style={{fontSize:13,transform:openSwimTechniques[key]?'rotate(180deg)':'none'}}>⌄</span>
+                                    </button>
+                                    {openSwimTechniques[key]&&<div style={{padding:'9px 11px 11px',whiteSpace:'pre-line',borderTop:'1px solid #DCEAE7'}}>{day.techniqueInstructions}</div>}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
                             {(isCyclingPlan || isMtbPlan) && day.strengthPrescription && (
                               <>
                                 {formatCyclingDuration(day.durationMinutes) && (
@@ -1346,7 +1380,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
           })}
         </div>
 
-        {(isHikingPlan || isCyclingPlan || isMtbPlan) && plan.event && (
+        {(isHikingPlan || isCyclingPlan || isMtbPlan || isSwimmingPlan) && plan.event && (
           <div style={{margin:'8px 16px 16px',padding:'18px',borderRadius:20,background:'linear-gradient(135deg,#FFF7EF,#F7F2FA)',border:'1.5px solid #E8D8CF',boxShadow:'0 5px 22px rgba(70,50,40,.07)'}}>
             <div style={{fontFamily:'sans-serif',fontSize:10,fontWeight:900,letterSpacing:1.4,textTransform:'uppercase',color:'#A77B5D',marginBottom:7}}>Dein Ziel</div>
             <div style={{display:'flex',gap:12,alignItems:'flex-start'}}>
@@ -1372,7 +1406,9 @@ export default function TrainingPlan({ plan, onReset, user }) {
               ? '🥾 Neuen Plan erstellen'
               : isMtbPlan
                 ? '🚵 Neuen Plan erstellen'
-                : isCyclingPlan
+                : isSwimmingPlan
+                  ? '🏊 Neuen Plan erstellen'
+                  : isCyclingPlan
                   ? '🚴 Neuen Plan erstellen'
                   : '🏃‍♀️ Neuen Plan erstellen'}
           </button>
