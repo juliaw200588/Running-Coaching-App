@@ -1036,6 +1036,14 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
         logoSrc="/route-icon.png"
       />
 
+      {analysisModal && (
+        <WeeklyAnalysis
+          analysis={analysisModal}
+          weekNumber={analysisModal.week_number}
+          onClose={() => setAnalysisModal(null)}
+        />
+      )}
+
       {/* Einheitlicher Trainingsplan-Hero */}
       <div style={{ position:'relative', overflow:'hidden', minHeight:300, boxShadow:'0 8px 32px rgba(55,45,35,.18)' }}>
         <div
@@ -1440,7 +1448,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                         <span>
                           📊 Coach-Rückblick ansehen
                           {weekAnalyses[week.n]?.analysis_data?.coach?.nextWeekFocus?.title
-                            ? ` · Woche ${Number(week.n) + 1}: ${weekAnalyses[week.n].analysis_data.coach.nextWeekFocus.title}`
+                            ? ` · Nächster Fokus: ${weekAnalyses[week.n].analysis_data.coach.nextWeekFocus.title}`
                             : ''}
                         </span>
                         <span style={{color:'#94AA9D'}}>→</span>
