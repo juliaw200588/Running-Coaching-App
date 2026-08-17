@@ -101,9 +101,30 @@ const recommendedWeeks = form => {
   return byGoal[form.goal] || 12
 }
 
+const RUNNING_DRAFT_KEY = 'running-onboarding-draft-v1'
+
+const DEFAULT_DAYS_BY_RUNS = {
+  3: ['Di', 'Do', 'So'],
+  4: ['Di', 'Do', 'Sa', 'So'],
+  5: ['Di', 'Mi', 'Do', 'Sa', 'So'],
+}
+
+const WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
+
+const loadRunningDraft = () => {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.sessionStorage.getItem(RUNNING_DRAFT_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
 export default function Onboarding({ onPlanGenerated }) {
-  const [step, setStep] = useState(1)
-  const [form, setForm] = useState({
+  const savedDraft = loadRunningDraft()
+  const [step, setStep] = useState(savedDraft?.step || 1)
+  const [form, setForm] = useState(() => ({
     name: '',
     zielTyp: '',
     niveau: '',
@@ -114,6 +135,7 @@ export default function Onboarding({ onPlanGenerated }) {
     startDate: todayIso(),
     weeksUntilRace: 12,
     runsPerWeek: 3,
+    preferredDays: DEFAULT_DAYS_BY_RUNS[3],
     currentRunsPerWeek: '',
     alter: '',
     aktuelleWochenKm: '',
@@ -123,7 +145,8 @@ export default function Onboarding({ onPlanGenerated }) {
     ruheHF: '',
     geschlecht: '',
     wohnort: '',
-  })
+    ...(savedDraft?.form || {}),
+  }))
   const [loading, setLoading] = useState(false)
   const [profileLoading, setProfileLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -181,6 +204,18 @@ export default function Onboarding({ onPlanGenerated }) {
     }
   }, [])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.sessionStorage.setItem(
+        RUNNING_DRAFT_KEY,
+        JSON.stringify({ step, form })
+      )
+    } catch (e) {
+      console.warn('[RunningOnboarding] Entwurf konnte nicht zwischengespeichert werden:', e)
+    }
+  }, [step, form])
+
   const showDistanz = form.zielTyp !== 'starten'
   const showZeiten = showDistanz && Boolean(form.goal)
   const zeiten =
@@ -237,20 +272,51 @@ export default function Onboarding({ onPlanGenerated }) {
     }))
   }
 
+  const togglePreferredDay = day => {
+    setForm(current => {
+      const selected = current.preferredDays.includes(day)
+
+      if (selected) {
+        return {
+          ...current,
+          preferredDays: current.preferredDays.filter(item => item !== day),
+        }
+      }
+
+      if (current.preferredDays.length >= Number(current.runsPerWeek)) {
+        return current
+      }
+
+      return {
+        ...current,
+        preferredDays: [...current.preferredDays, day]
+          .sort((a, b) => WEEKDAYS.indexOf(a) - WEEKDAYS.indexOf(b)),
+      }
+    })
+  }
+
   const handleGenerate = async () => {
     setLoading(true)
     setError(null)
 
     try {
+      const normalizedForm = {
+        ...form,
+        preferredDays:[...(form.preferredDays || [])]
+          .sort((a, b) => WEEKDAYS.indexOf(a) - WEEKDAYS.indexOf(b)),
+      }
       const response = await fetch('/api/generate-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify(normalizedForm),
       })
 
       const data = await response.json()
       if (data.error) throw new Error(data.error)
 
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem(RUNNING_DRAFT_KEY)
+      }
       onPlanGenerated(data.plan)
     } catch (e) {
       setError('Fehler: ' + e.message)
@@ -312,6 +378,8 @@ export default function Onboarding({ onPlanGenerated }) {
   const canGenerate =
     Boolean(form.startDate) &&
     Boolean(form.runsPerWeek) &&
+    Array.isArray(form.preferredDays) &&
+    form.preferredDays.length === Number(form.runsPerWeek) &&
     (form.zielTyp !== 'rennen' || (raceWeeks != null && raceWeeks > 0))
 
   const progress = [
@@ -1291,11 +1359,12 @@ export default function Onboarding({ onPlanGenerated }) {
                       key={runs}
                       type="button"
                       onClick={() =>
-                        setForm(current => ({
-                          ...current,
-                          runsPerWeek: runs,
-                        }))
-                      }
+                          setForm(current => ({
+                            ...current,
+                            runsPerWeek: runs,
+                            preferredDays: DEFAULT_DAYS_BY_RUNS[runs],
+                          }))
+                        }
                       style={{
                         flex: 1,
                         padding: '12px 0',
@@ -1315,6 +1384,58 @@ export default function Onboarding({ onPlanGenerated }) {
                     </button>
                   )
                 })}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 26 }}>
+              <label style={labelStyle}>Welche Tage passen dir?</label>
+
+              <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                {WEEKDAYS.map(day => {
+                  const selected = form.preferredDays.includes(day)
+                  const limitReached =
+                    !selected &&
+                    form.preferredDays.length >= Number(form.runsPerWeek)
+
+                  return (
+                    <button
+                      key={day}
+                      type="button"
+                      onClick={() => togglePreferredDay(day)}
+                      disabled={limitReached}
+                      style={{
+                        width: 52,
+                        padding: '10px 0',
+                        borderRadius: 12,
+                        border: `2px solid ${selected ? '#E6A66A' : '#EDE2DA'}`,
+                        background: selected ? '#FFF6EE' : '#fff',
+                        color: selected ? '#A96D40' : '#9B8477',
+                        opacity: limitReached ? 0.45 : 1,
+                        fontFamily: 'sans-serif',
+                        fontSize: 11,
+                        fontWeight: 900,
+                        cursor: limitReached ? 'default' : 'pointer',
+                      }}
+                    >
+                      {day}
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div
+                style={{
+                  marginTop: 7,
+                  fontFamily: 'sans-serif',
+                  fontSize: 10.3,
+                  lineHeight: 1.45,
+                  color:
+                    form.preferredDays.length === Number(form.runsPerWeek)
+                      ? '#7C9688'
+                      : '#B47A5F',
+                }}
+              >
+                Wähle genau {form.runsPerWeek} Tage. Wir verteilen lange und intensive Einheiten so sinnvoll wie möglich auf deinen Alltag.
               </div>
             </div>
 
@@ -1354,6 +1475,9 @@ export default function Onboarding({ onPlanGenerated }) {
                 </div>
                 <div>
                   📅 {form.weeksUntilRace} Wochen · {form.runsPerWeek} Läufe pro Woche
+                </div>
+                <div>
+                  🗓️ {form.preferredDays.join(' · ')}
                 </div>
                 <div>
                   📈 Ausgangspunkt: {selectedLevel?.label || form.niveau}

@@ -49,13 +49,21 @@ export default function SwimmingOnboarding({onPlanGenerated}){
   const set=(k,v)=>setForm(c=>({...c,[k]:v}))
   const toggle=(k,v)=>setForm(c=>({...c,[k]:c[k].includes(v)?c[k].filter(x=>x!==v):[...c[k],v]}))
   const selectUnits=n=>setForm(c=>({...c,unitsPerWeek:n,preferredDays:DEFAULT_DAYS[n]}))
-  const toggleDay=d=>setForm(c=>{const has=c.preferredDays.includes(d);if(has)return{...c,preferredDays:c.preferredDays.filter(x=>x!==d)};if(c.preferredDays.length>=c.unitsPerWeek)return c;return{...c,preferredDays:[...c.preferredDays,d]}})
+  const toggleDay=d=>setForm(c=>{
+    const has=c.preferredDays.includes(d)
+    const next=has
+      ? c.preferredDays.filter(x=>x!==d)
+      : c.preferredDays.length>=c.unitsPerWeek
+        ? c.preferredDays
+        : [...c.preferredDays,d]
+    return {...c,preferredDays:[...next].sort((a,b)=>DAYS.indexOf(a)-DAYS.indexOf(b))}
+  })
   const needsTarget=['distance','event'].includes(form.goalType)
   const can1=Boolean(form.goalType&&form.stroke)&&(!needsTarget||Number(effective.targetDistanceM)>0)&&(form.goalType!=='event'||(form.eventDate&&eventWeeks>0))
   const can2=Boolean(form.currentFrequency&&form.currentSessionM&&form.currentContinuousM&&form.techniqueLevel&&form.poolLength)
   const can3=form.preferredDays.length===form.unitsPerWeek&&form.weeksUntilGoal>=6
   const focusOptions=form.stroke==='breaststroke'?['Atmung','Armzug','Beinschlag','Timing/Koordination','Gleiten','Wenden']:['Atmung','Wasserlage','Armzug','Beinschlag','Rhythmus/Koordination','Wenden']
-  const generate=async()=>{setLoading(true);setError(null);try{const {dayDurations:_legacyDayDurations,...cleanEffective}=effective;const payload={...cleanEffective,sport_type:'swimming',plan_type:'swimming_endurance',guardrails:buildSwimmingPlanGuardrails(cleanEffective)};const r=await fetch('/api/generate-plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const data=await r.json();if(!r.ok||data?.error)throw new Error(data?.error||`HTTP ${r.status}`);if(!data?.plan?.phases?.length)throw new Error('Der Trainingsplan ist unvollständig.');sessionStorage.removeItem(DRAFT_KEY);onPlanGenerated(data.plan)}catch(e){setError(`Dein Plan konnte gerade nicht erstellt werden: ${e.message}`)}finally{setLoading(false)}}
+  const generate=async()=>{setLoading(true);setError(null);try{const {dayDurations:_legacyDayDurations,...cleanEffective}=effective;const sortedPreferredDays=[...(cleanEffective.preferredDays||[])].sort((a,b)=>DAYS.indexOf(a)-DAYS.indexOf(b));const normalizedEffective={...cleanEffective,preferredDays:sortedPreferredDays};const payload={...normalizedEffective,sport_type:'swimming',plan_type:'swimming_endurance',guardrails:buildSwimmingPlanGuardrails(normalizedEffective)};const r=await fetch('/api/generate-plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const data=await r.json();if(!r.ok||data?.error)throw new Error(data?.error||`HTTP ${r.status}`);if(!data?.plan?.phases?.length)throw new Error('Der Trainingsplan ist unvollständig.');sessionStorage.removeItem(DRAFT_KEY);onPlanGenerated(data.plan)}catch(e){setError(`Dein Plan konnte gerade nicht erstellt werden: ${e.message}`)}finally{setLoading(false)}}
   const Goal=({id,icon,title,text})=><button type="button" style={card(form.goalType===id)} onClick={()=>set('goalType',id)}><span style={{fontSize:20,marginRight:9}}>{icon}</span>{title}<div style={{...small,margin:'5px 0 0 30px'}}>{text}</div></button>
   const Chips=({values,value,onChange,format=x=>x})=><div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{values.map(v=><button type="button" key={v} style={chip(value===v)} onClick={()=>onChange(v)}>{format(v)}</button>)}</div>
 

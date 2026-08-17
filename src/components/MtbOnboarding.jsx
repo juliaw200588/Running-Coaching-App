@@ -140,7 +140,7 @@ export default function MtbOnboarding({ onPlanGenerated }) {
     const selected=c.preferredDays.includes(day)
     if(selected)return{...c,preferredDays:c.preferredDays.filter(x=>x!==day)}
     if(c.preferredDays.length>=Number(c.unitsPerWeek))return c
-    return{...c,preferredDays:[...c.preferredDays,day]}
+    return{...c,preferredDays:[...c.preferredDays,day].sort((a,b)=>DAYS.indexOf(a)-DAYS.indexOf(b))}
   })
   const selectUnits=units=>setForm(c=>({...c,unitsPerWeek:units,preferredDays:DEFAULT_DAYS[units]}))
 
@@ -159,8 +159,9 @@ export default function MtbOnboarding({ onPlanGenerated }) {
   const handleGenerate=async()=>{
     setLoading(true);setError(null)
     try{
-      const guardrails=buildMtbPlanGuardrails(form)
-      const response=await fetch('/api/generate-plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...form,sport_type:'mountain_biking',plan_type:'mtb_endurance',guardrails})})
+      const normalizedForm={...form,preferredDays:[...(form.preferredDays||[])].sort((a,b)=>DAYS.indexOf(a)-DAYS.indexOf(b))}
+      const guardrails=buildMtbPlanGuardrails(normalizedForm)
+      const response=await fetch('/api/generate-plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...normalizedForm,sport_type:'mountain_biking',plan_type:'mtb_endurance',guardrails})})
       const data=await response.json()
       if(!response.ok||data?.error)throw new Error(data?.error||`HTTP ${response.status}`)
       if(!data?.plan?.phases?.length)throw new Error('Der Trainingsplan ist unvollständig.')

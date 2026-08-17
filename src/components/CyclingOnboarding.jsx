@@ -261,7 +261,8 @@ export default function CyclingOnboarding({ onPlanGenerated }) {
 
       return {
         ...current,
-        preferredDays:[...current.preferredDays, day],
+        preferredDays:[...current.preferredDays, day]
+          .sort((a,b) => DAYS.indexOf(a) - DAYS.indexOf(b)),
       }
     })
   }
@@ -306,13 +307,18 @@ export default function CyclingOnboarding({ onPlanGenerated }) {
     setError(null)
 
     try {
-      const guardrails = buildCyclingPlanGuardrails(form)
+      const normalizedForm = {
+        ...form,
+        preferredDays:[...(form.preferredDays || [])]
+          .sort((a,b) => DAYS.indexOf(a) - DAYS.indexOf(b)),
+      }
+      const guardrails = buildCyclingPlanGuardrails(normalizedForm)
 
       const response = await fetch('/api/generate-plan', {
         method:'POST',
         headers:{ 'Content-Type':'application/json' },
         body:JSON.stringify({
-          ...form,
+          ...normalizedForm,
           sport_type:'cycling',
           plan_type:'cycling_endurance',
           guardrails,

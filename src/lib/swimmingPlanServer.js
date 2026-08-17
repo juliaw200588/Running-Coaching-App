@@ -109,7 +109,9 @@ const buildSessionSlots=(input)=>{
     return map[raw]||null
   }
   const canonical={mo:'Mo',di:'Di',mi:'Mi',do:'Do',fr:'Fr',sa:'Sa',so:'So'}
-  const preferred=(input.preferredDays||[]).map(normalize).filter(Boolean)
+  const dayOrder={mo:1,di:2,mi:3,do:4,fr:5,sa:6,so:7}
+  const preferred=[...new Set((input.preferredDays||[]).map(normalize).filter(Boolean))]
+    .sort((a,b)=>dayOrder[a]-dayOrder[b])
   const needed=n(input.unitsPerWeek)
   const selected=preferred.slice(0,needed)
   if(selected.length!==needed)throw new Error('Es wurden zu wenige gültige Trainingstage ausgewählt.')
@@ -480,11 +482,73 @@ const buildDeterministicPlan=(raw,input,slots)=>{
       stroke:input.stroke||null,
       mixedPriority:input.mixedPriority||null,
       poolLength:input.poolLength||null,
-      preferredDays:(input.preferredDays||[]).slice(),
+      preferredDays:slots.slice(0,units).map(slot=>slot.tag),
       regenWeek,
       guardrails:input.guardrails||null
     }
   }
+}
+
+
+const roundDown5=value=>Math.max(5,Math.floor(value/5)*5)
+const roundUp5=value=>Math.max(10,Math.ceil(value/5)*5)
+
+const estimateStructuredPauseMinutes=day=>{
+  const text=[day.mainSet,day.restGuidance].filter(Boolean).join(' · ')
+    .replace(/×/g,'x')
+    .replace(/(\d)\.(\d{3})/g,'$1$2')
+
+  let seconds=0
+  const seen=new Set()
+
+  // Typical generated forms: "6x100 m ... 30 Sek Pause" / "4x75 m ... je 25 Sek Pause".
+  const rx=/(\d+)\s*x\s*\d+\s*m[\s\S]{0,90}?(\d+)\s*(?:sek(?:unden?)?|s)\b/gi
+  let match
+  while((match=rx.exec(text))){
+    const reps=Math.max(1,Number(match[1])||1)
+    const pause=Math.max(0,Number(match[2])||0)
+    const key=`${match.index}:${reps}:${pause}`
+    if(seen.has(key))continue
+    seen.add(key)
+    seconds+=Math.max(0,reps-1)*pause
+  }
+
+  // If structured parsing found nothing, reserve a modest pause allowance from the explicit guidance.
+  if(seconds===0){
+    const pauses=[...String(day.restGuidance||'').matchAll(/(\d+)\s*(?:sek(?:unden?)?|s)\b/gi)]
+      .map(m=>Number(m[1])||0)
+      .filter(Boolean)
+    if(pauses.length)seconds=Math.min(240,Math.max(...pauses)*3)
+  }
+
+  return Math.min(12,seconds/60)
+}
+
+const swimmingPacePer100=input=>{
+  const level=String(input.techniqueLevel||'okay').toLowerCase()
+  if(level==='unsure')return 3.3
+  if(level==='secure')return 2.4
+  return 2.8
+}
+
+const applySwimmingDurationEstimate=(day,input)=>{
+  const distance=n(day.totalDistanceM)||
+    (n(day.warmupDistanceM)+n(day.mainDistanceM)+n(day.techniqueDistanceM)+n(day.cooldownDistanceM))
+
+  const swimMinutes=(distance/100)*swimmingPacePer100(input)
+  const pauseMinutes=estimateStructuredPauseMinutes(day)
+  const hasTechnique=Boolean(String(day.techniqueTitle||'').trim())||n(day.techniqueDistanceM)>0
+  const techniqueBuffer=hasTechnique?4:2
+  const transitionBuffer=2
+
+  const center=Math.max(10,swimMinutes+pauseMinutes+techniqueBuffer+transitionBuffer)
+  const low=roundDown5(Math.max(10,center-2.5))
+  const high=Math.max(low+5,roundUp5(center+2.5))
+
+  // Keep durationMinutes numeric for analytics/backwards compatibility.
+  day.durationMinutes=Math.round((low+high)/2)
+  day.durationRange=`ca. ${low}–${high} Min`
+  return day
 }
 
 const validatePlan=(plan,input)=>{
@@ -532,13 +596,13 @@ const validatePlan=(plan,input)=>{
         throw new Error(`Nicht gewählter Trainingstag in Woche ${week.n}: ${day.tag}`)
       }
       day.tag=canonicalDayTag[normalizedTag]
-      if(!n(day.durationMinutes))throw new Error(`Zeit fehlt in Woche ${week.n}.`)
       if(!day.warmup||!n(day.warmupDistanceM))throw new Error(`Einschwimmen fehlt in Woche ${week.n}.`)
       if(!day.mainSet||!n(day.mainDistanceM)||!day.restGuidance)throw new Error(`Serie, Seriendistanz oder Pausenangabe fehlt in Woche ${week.n}.`)
       if(!day.cooldown||!n(day.cooldownDistanceM))throw new Error(`Ausschwimmen fehlt in Woche ${week.n}.`)
 
       validateSwimmingDay(day,input,week.n)
       validateStrokes(day,input,week.n)
+      applySwimmingDurationEstimate(day,input)
 
       if(day.techniqueTitle&&!day.techniqueInstructions){
         const generic=genericTechniqueForStroke(input)
@@ -586,7 +650,7 @@ export async function generateSwimmingPlan(payload={}){
 
   const system=`Du erstellst einen sicheren, konkreten Schwimmtrainingsplan.
 1. Die Wochen-, Tages- und Phasenstruktur wird serverseitig festgelegt. Du erzeugst ausschließlich das sessions-Array in exakt der vorgegebenen Reihenfolge und mit exakt der vorgegebenen Anzahl. Jede Position ist eine verbindliche Pflichteinheit; optionale Zusatzeinheiten erzeugst du nicht.
-2. Jede Einheit braucht durationMinutes. Gib warmupDistanceM, mainDistanceM, techniqueDistanceM und cooldownDistanceM strukturiert aus. Die Gesamtdistanz wird serverseitig ausschließlich aus diesen Blöcken berechnet; erfinde deshalb keine davon unabhängige Gesamtdistanz. Felder, die in einer Einheit nicht benötigt werden, trotzdem schema-konform ausgeben: leere Textfelder als "", nicht vorhandene optionale Meterwerte als 0. Verwende kein null.
+2. durationMinutes ist nur ein Schema-Pflichtfeld und wird serverseitig neu berechnet. Gib warmupDistanceM, mainDistanceM, techniqueDistanceM und cooldownDistanceM strukturiert aus. Die Gesamtdistanz wird serverseitig ausschließlich aus diesen Blöcken berechnet; erfinde deshalb keine davon unabhängige Gesamtdistanz. Felder, die in einer Einheit nicht benötigt werden, trotzdem schema-konform ausgeben: leere Textfelder als "", nicht vorhandene optionale Meterwerte als 0. Verwende kein null.
 3. Baue jede Einheit in dieser Reihenfolge: (a) fachlich sinnvollen Hauptreiz aus Ziel, Niveau und Einheitentyp bestimmen, (b) Einschwimmen fest einplanen, (c) Ausschwimmen fest einplanen, (d) ggf. zusätzliche Technikmeter ergänzen. currentSessionM ist dabei keine harte Obergrenze. Die Gesamteinheit ergibt sich aus allen tatsächlich geschwommenen Blöcken; der Hauptreiz darf nicht künstlich zu kurz werden, nur um exakt auf currentSessionM zu kommen.
 4. Jede einzelne Einheit braucht ein echtes Einschwimmen UND ein echtes Ausschwimmen. Bei einer ${pool}-m-Bahn muss Ausschwimmen mindestens ${minCooldown} m betragen. Verwende 25 m Ausschwimmen bei einer 25-m-Bahn NICHT als Resteverwertung. Typisch sind bei kurzen Einheiten 50–100 m, bei längeren Einheiten 100–200 m.
 5. Einschwimmen soll ebenfalls ein echter Block sein: bei kürzeren Einheiten meist 100–150 m, bei längeren Einheiten meist 150–200 m, jeweils passend zum Ausgangsniveau. Es darf nicht unter ${pool*2} m liegen.
