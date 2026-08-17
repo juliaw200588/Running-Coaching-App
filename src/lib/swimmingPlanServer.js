@@ -314,14 +314,16 @@ const validatePlan=(plan,input)=>{
       if(!day.cooldown||!n(day.cooldownDistanceM))throw new Error(`Ausschwimmen fehlt in Woche ${week.n}.`)
 
       validateSwimmingDay(day,input,week.n)
-      validateTextDistances(day,input,week.n)
       validateStrokes(day,input,week.n)
 
       if(day.techniqueTitle&&!day.techniqueInstructions){
-        throw new Error(`Technikerklärung fehlt in Woche ${week.n}.`)
+        const generic=genericTechniqueForStroke(input)
+        day.techniqueInstructions=generic.instructions
       }
       if(n(day.techniqueDistanceM)&&!day.techniqueTitle){
-        throw new Error(`Woche ${week.n}: Technikdistanz ist vorhanden, aber der Technikblock fehlt.`)
+        const generic=genericTechniqueForStroke(input)
+        day.techniqueTitle=generic.title
+        if(!day.techniqueInstructions)day.techniqueInstructions=generic.instructions
       }
 
       day.equipment=(day.equipment||[]).filter(x=>tools.has(x))
@@ -359,7 +361,7 @@ export async function generateSwimmingPlan(payload={}){
 11. Schwimmart ist eine HARTE Auswahl: stroke=freestyle bedeutet ausschließlich Kraul/Freistil; stroke=breaststroke bedeutet ausschließlich Brust; stroke=mixed bedeutet ausschließlich Kraul/Freistil und Brust. Rücken, Delfin/Schmetterling und jede andere nicht gewählte Lage sind verboten. Das gilt AUSDRÜCKLICH auch für englische Bezeichnungen und Synonyme in ALLEN Textfeldern: backstroke/back stroke, butterfly, breaststroke/breast stroke, freestyle/front crawl dürfen nur vorkommen, wenn die entsprechende Lage ausgewählt und erlaubt ist. Verwende in den nutzerseitigen Texten bevorzugt die deutschen Bezeichnungen Kraul/Freistil und Brust und füge niemals eine weitere Lage zur Abwechslung, Technik oder Erholung hinzu. Prüfe vor der Ausgabe jedes Textfeld noch einmal auf nicht erlaubte Schwimmarten. Bei mixed Schwerpunkt=${input.mixedPriority}. Die priorisierte Schwimmart soll über eine Einheit bzw. sinnvoll über die Trainingswoche ungefähr 70 % des Schwimmumfangs ausmachen, die andere ungefähr 30 %. Das ist eine fachliche Zielgröße, keine mathematisch starre Quote: praktikable, bahngenaue Teilstrecken haben Vorrang. Bei Anfängern Technikqualität vor aggressiver Umfangssteigerung.
 12. Technikniveau=${input.techniqueLevel}; Schwerpunkte=${(input.techniqueFocus||[]).join(', ')||'keine besonderen'}. Technik regelmäßig passend zum Niveau einbauen.
 13. techniqueTitle kurz; techniqueInstructions vollständig und anfängertauglich: Durchführung, worauf achten, häufige Fehler. UI klappt Details ein.
-14. Becken=${input.poolLength}. JEDE schwimmbare Teilstrecke und JEDE Unterteilung innerhalb von warmup, mainSet, technique und cooldown muss bahngenau ausführbar sein. Schreibe Tausenderdistanzen bevorzugt ohne Tausenderpunkt (z.B. 1500 m statt 1.500 m), damit Angaben eindeutig bleiben. Formuliere Serien für Nutzer natürlich mit Komma, „danach“, „davon“ oder „je“ statt künstlichen Rechenketten mit Pluszeichen. Die Textbeschreibung muss inhaltlich zum zugehörigen Distanzfeld passen; die verbindliche Distanzberechnung erfolgt über die strukturierten Distanzfelder. Bei 25m nur Vielfache von 25 m, bei 50m nur Vielfache von 50 m. Bei "both"/"Beides" ausschließlich Vielfache von 50 m verwenden, damit jede Einheit sowohl im 25-m- als auch im 50-m-Becken funktioniert. Auch gemischte Aufteilungen müssen diese Regel erfüllen.
+14. Becken=${input.poolLength}. JEDE tatsächlich zu schwimmende Teilstrecke und JEDE Unterteilung innerhalb von warmup, mainSet, technique und cooldown muss bahngenau ausführbar sein. Schreibe Tausenderdistanzen bevorzugt ohne Tausenderpunkt (z.B. 1500 m statt 1.500 m), damit Angaben eindeutig bleiben. Formuliere Serien für Nutzer natürlich mit Komma, „danach“, „davon“ oder „je“ statt künstlichen Rechenketten mit Pluszeichen. Die strukturierten Distanzfelder sind die verbindliche Quelle für die Berechnung; Freitext kann zusätzlich Orientierungsangaben enthalten (z.B. „5 m vor der Wand“), die keine eigene Schwimmstrecke darstellen. Bei 25m nur Vielfache von 25 m, bei 50m nur Vielfache von 50 m. Bei "both"/"Beides" ausschließlich Vielfache von 50 m für tatsächlich zu schwimmende Teilstrecken verwenden, damit jede Einheit sowohl im 25-m- als auch im 50-m-Becken funktioniert. Auch gemischte Aufteilungen müssen diese Regel erfüllen.
 15. techniqueDistanceM zählt NUR dann zusätzliche Meter, wenn der Technikblock tatsächlich zusätzlich geschwommene Meter enthält. Ist Technik bereits Bestandteil von warmup oder mainSet, setze techniqueDistanceM=null, damit Meter nicht doppelt gezählt werden.
 16. Verfügbare Hilfsmittel=${(input.equipment||[]).join(', ')||'keine'}. NUR diese verwenden; ohne Hilfsmittel muss der Plan funktionieren.
 17. Intensität nur einfach: locker, zügig, intensiv aber kontrolliert. Keine RPE-Zahlen; keine HF-Pflicht.
