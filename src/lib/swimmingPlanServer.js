@@ -194,16 +194,112 @@ const validateSwimmingDay=(day,input,weekN)=>{
 }
 
 const strokePatterns={
-  freestyle:[/\bkraul(?:en|schwimmen|lage|technik|züge?|zug)?\b/i,/\bfreistil(?:schwimmen|lage|technik)?\b/i],
-  breaststroke:[/\bbrustschwimmen\b/i,/\bbrust(?:lage|technik|züge?|zug)\b/i,/\bbrust\s+schwimmen\b/i,/\b\d+(?:[.,]\d+)?\s*m\s+brust\b/i],
-  backstroke:[/\brückenschwimmen\b/i,/\brueckenschwimmen\b/i,/\brücken(?:lage|technik|züge?|zug)\b/i,/\bruecken(?:lage|technik|züge?|zug)\b/i,/\brücken\s+schwimmen\b/i,/\bruecken\s+schwimmen\b/i,/\b\d+(?:[.,]\d+)?\s*m\s+rücken\b/i,/\b\d+(?:[.,]\d+)?\s*m\s+ruecken\b/i],
-  butterfly:[/\bdelfin(?:schwimmen|lage|technik|züge?|zug)?\b/i,/\bschmetterling(?:schwimmen|lage|technik|züge?|zug)?\b/i]
+  freestyle:[
+    /\bkraul(?:en|schwimmen|lage|technik|züge?|zug)?\b/i,
+    /\bfreistil(?:schwimmen|lage|technik)?\b/i,
+    /\bfreestyle\b/i,
+    /\bfront\s+crawl\b/i,
+    /\bcrawl\s+stroke\b/i
+  ],
+  breaststroke:[
+    /\bbrustschwimmen\b/i,
+    /\bbrust(?:lage|technik|züge?|zug)\b/i,
+    /\bbrust\s+schwimmen\b/i,
+    /\b\d+(?:[.,]\d+)?\s*m\s+brust\b/i,
+    /\bbreaststroke\b/i,
+    /\bbreast\s+stroke\b/i
+  ],
+  backstroke:[
+    /\brückenschwimmen\b/i,
+    /\brueckenschwimmen\b/i,
+    /\brücken(?:lage|technik|züge?|zug)\b/i,
+    /\bruecken(?:lage|technik|züge?|zug)\b/i,
+    /\brücken\s+schwimmen\b/i,
+    /\bruecken\s+schwimmen\b/i,
+    /\b\d+(?:[.,]\d+)?\s*m\s+rücken\b/i,
+    /\b\d+(?:[.,]\d+)?\s*m\s+ruecken\b/i,
+    /\bbackstroke\b/i,
+    /\bback\s+stroke\b/i
+  ],
+  butterfly:[
+    /\bdelfin(?:schwimmen|lage|technik|züge?|zug)?\b/i,
+    /\bschmetterling(?:schwimmen|lage|technik|züge?|zug)?\b/i,
+    /\bbutterfly(?:\s+stroke)?\b/i
+  ]
 }
 
 const forbiddenStrokeTypes=input=>{
   if(input.stroke==='freestyle')return ['breaststroke','backstroke','butterfly']
   if(input.stroke==='breaststroke')return ['freestyle','backstroke','butterfly']
   return ['backstroke','butterfly']
+}
+
+
+const preferredAllowedStroke=input=>{
+  if(input.stroke==='breaststroke')return 'Brust'
+  if(input.stroke==='freestyle')return 'Kraul'
+  const priority=String(input.mixedPriority||'').toLowerCase()
+  return priority.includes('brust')||priority.includes('breast')?'Brust':'Kraul'
+}
+
+const replacementPatterns={
+  freestyle:[/\bfreestyle\b/gi,/\bfront\s+crawl\b/gi,/\bcrawl\s+stroke\b/gi,/\bkraul(?:schwimmen|lage)?\b/gi,/\bfreistil(?:schwimmen|lage)?\b/gi],
+  breaststroke:[/\bbreaststroke\b/gi,/\bbreast\s+stroke\b/gi,/\bbrustschwimmen\b/gi,/\bbrustlage\b/gi,/\bbrust\s+schwimmen\b/gi,/\bbrusttechnik\b/gi],
+  backstroke:[/\bbackstroke\b/gi,/\bback\s+stroke\b/gi,/\brückenschwimmen\b/gi,/\brueckenschwimmen\b/gi,/\brückenlage\b/gi,/\brueckenlage\b/gi,/\brücken\s+schwimmen\b/gi,/\bruecken\s+schwimmen\b/gi],
+  butterfly:[/\bbutterfly(?:\s+stroke)?\b/gi,/\bdelfin(?:schwimmen|lage|technik)?\b/gi,/\bschmetterling(?:schwimmen|lage|technik)?\b/gi]
+}
+
+const replaceForbiddenStrokeNames=(text,input)=>{
+  let out=String(text||'')
+  const replacement=preferredAllowedStroke(input)
+  for(const type of forbiddenStrokeTypes(input)){
+    for(const pattern of replacementPatterns[type]||[])out=out.replace(pattern,replacement)
+  }
+  // Kontextgebundene Kurzformen wie „100 m Rücken“ oder „100 m Brust“.
+  if(forbiddenStrokeTypes(input).includes('backstroke')){
+    out=out.replace(/(\d{1,3}(?:\.\d{3})+|\d+(?:,\d+)?)\s*m\s+rücken\b/gi,(_,d)=>`${d} m ${replacement}`)
+    out=out.replace(/(\d{1,3}(?:\.\d{3})+|\d+(?:,\d+)?)\s*m\s+ruecken\b/gi,(_,d)=>`${d} m ${replacement}`)
+  }
+  if(forbiddenStrokeTypes(input).includes('breaststroke')){
+    out=out.replace(/(\d{1,3}(?:\.\d{3})+|\d+(?:,\d+)?)\s*m\s+brust\b/gi,(_,d)=>`${d} m ${replacement}`)
+  }
+  return out
+}
+
+const genericTechniqueForStroke=input=>{
+  const stroke=preferredAllowedStroke(input)
+  if(stroke==='Brust')return {
+    title:'Brusttechnik sauber halten',
+    instructions:'Schwimme die vorgesehenen Technikmeter locker in Brust. Achte auf eine ruhige Gleitphase, symmetrische Arm- und Beinbewegungen und einen entspannten Kopf. Häufiger Fehler: die nächste Bewegung zu früh beginnen und dadurch die Gleitphase verkürzen.'
+  }
+  return {
+    title:'Kraultechnik sauber halten',
+    instructions:'Schwimme die vorgesehenen Technikmeter locker in Kraul. Achte auf eine lange Körperlinie, einen ruhigen Kopf und saubere, kontrollierte Züge. Häufiger Fehler: das Tempo erhöhen, obwohl die Technik unsauber wird.'
+  }
+}
+
+const containsForbiddenStroke=(text,input)=>forbiddenStrokeTypes(input).some(type=>(strokePatterns[type]||[]).some(pattern=>pattern.test(String(text||''))))
+
+const repairForbiddenStrokes=(plan,input)=>{
+  if(!plan?.phases?.length)return plan
+  for(const phase of plan.phases){
+    for(const week of phase.weeks||[]){
+      for(const day of week.days||[]){
+        // Struktur-/Distanztexte lokal auf eine erlaubte Lage umstellen. Meter bleiben unverändert.
+        for(const field of ['einheit','details','warmup','mainSet','cooldown','restGuidance','loadGuidance','openWaterTip']){
+          if(day[field]&&containsForbiddenStroke(day[field],input))day[field]=replaceForbiddenStrokeNames(day[field],input)
+        }
+        // Bei Technik nicht nur einen Lagennamen austauschen: die gesamte Erklärung wird
+        // durch einen neutralen, fachlich passenden Hinweis für die erlaubte Lage ersetzt.
+        if(containsForbiddenStroke(day.techniqueTitle,input)||containsForbiddenStroke(day.techniqueInstructions,input)){
+          const generic=genericTechniqueForStroke(input)
+          day.techniqueTitle=generic.title
+          day.techniqueInstructions=generic.instructions
+        }
+      }
+    }
+  }
+  return plan
 }
 
 const validateStrokes=(day,input,weekN)=>{
@@ -298,7 +394,7 @@ export async function generateSwimmingPlan(payload={}){
 8. Progression NICHT nur über Meter: Gesamtumfang, längere zusammenhängende Abschnitte, passend reduzierte Pausen, Tempowechsel und stabile Technik unter Ermüdung. Keine mechanische lineare Steigerung jeder Einheit.
 9. Regenerationswochen trainingslogisch, typischerweise nach 3–4 Belastungswochen. Eine Regenerationswoche muss im Umfang und/oder in der Belastungsdichte tatsächlich leichter sein.
 10. Ausgang: ca. ${input.currentSessionM||'unbekannt'} m/Einheit, ${input.currentContinuousM||'unbekannt'} m am Stück. currentSessionM ist eine ungefähre Ausgangsreferenz für die bisher verträgliche Trainingsgröße, KEIN starres Gesamtmeter-Budget. Plane den Hauptreiz fachlich sinnvoll aus Ziel, Niveau und Einheitentyp und ergänze dazu angemessenes Ein-/Ausschwimmen sowie ggf. zusätzliche Technikmeter. Die Gesamteinheit darf deshalb moderat über currentSessionM liegen, solange die Steigerung realistisch bleibt. Keine unrealistischen Sprünge.
-11. Schwimmart ist eine HARTE Auswahl: stroke=freestyle bedeutet ausschließlich Kraul/Freistil; stroke=breaststroke bedeutet ausschließlich Brust; stroke=mixed bedeutet ausschließlich Kraul/Freistil und Brust. Rücken, Delfin/Schmetterling und jede andere nicht gewählte Lage sind verboten. Bei mixed Schwerpunkt=${input.mixedPriority}. Die priorisierte Schwimmart soll über eine Einheit bzw. sinnvoll über die Trainingswoche ungefähr 70 % des Schwimmumfangs ausmachen, die andere ungefähr 30 %. Das ist eine fachliche Zielgröße, keine mathematisch starre Quote: praktikable, bahngenaue Teilstrecken haben Vorrang. Bei Anfängern Technikqualität vor aggressiver Umfangssteigerung.
+11. Schwimmart ist eine HARTE Auswahl: stroke=freestyle bedeutet ausschließlich Kraul/Freistil; stroke=breaststroke bedeutet ausschließlich Brust; stroke=mixed bedeutet ausschließlich Kraul/Freistil und Brust. Rücken, Delfin/Schmetterling und jede andere nicht gewählte Lage sind verboten. Das gilt AUSDRÜCKLICH auch für englische Bezeichnungen und Synonyme in ALLEN Textfeldern: backstroke/back stroke, butterfly, breaststroke/breast stroke, freestyle/front crawl dürfen nur vorkommen, wenn die entsprechende Lage ausgewählt und erlaubt ist. Verwende in den nutzerseitigen Texten bevorzugt die deutschen Bezeichnungen Kraul/Freistil und Brust und füge niemals eine weitere Lage zur Abwechslung, Technik oder Erholung hinzu. Prüfe vor der Ausgabe jedes Textfeld noch einmal auf nicht erlaubte Schwimmarten. Bei mixed Schwerpunkt=${input.mixedPriority}. Die priorisierte Schwimmart soll über eine Einheit bzw. sinnvoll über die Trainingswoche ungefähr 70 % des Schwimmumfangs ausmachen, die andere ungefähr 30 %. Das ist eine fachliche Zielgröße, keine mathematisch starre Quote: praktikable, bahngenaue Teilstrecken haben Vorrang. Bei Anfängern Technikqualität vor aggressiver Umfangssteigerung.
 12. Technikniveau=${input.techniqueLevel}; Schwerpunkte=${(input.techniqueFocus||[]).join(', ')||'keine besonderen'}. Technik regelmäßig passend zum Niveau einbauen.
 13. techniqueTitle kurz; techniqueInstructions vollständig und anfängertauglich: Durchführung, worauf achten, häufige Fehler. UI klappt Details ein.
 14. Becken=${input.poolLength}. JEDE schwimmbare Teilstrecke und JEDE Unterteilung innerhalb von warmup, mainSet, technique und cooldown muss bahngenau ausführbar sein. Schreibe Tausenderdistanzen bevorzugt ohne Tausenderpunkt (z.B. 1500 m statt 1.500 m), damit Angaben eindeutig bleiben. Die im Text beschriebenen Serien müssen rechnerisch zum jeweiligen Distanzfeld passen; z.B. 6 × 100 m erfordert mainDistanceM=600, sofern keine weiteren Teilserien hinzukommen. Bei 25m nur Vielfache von 25 m, bei 50m nur Vielfache von 50 m. Bei "both"/"Beides" ausschließlich Vielfache von 50 m verwenden, damit jede Einheit sowohl im 25-m- als auch im 50-m-Becken funktioniert. Auch gemischte Aufteilungen müssen diese Regel erfüllen.
@@ -338,6 +434,7 @@ AUSGABE: ausschließlich das verlangte JSON.`
   const text=data?.content?.find(x=>x?.type==='text')?.text
   if(!text)throw new Error('Es wurde kein Schwimmplan zurückgegeben.')
   const raw=JSON.parse(text)
+  raw.plan=repairForbiddenStrokes(raw.plan,input)
   raw.plan=validatePlan(raw.plan,input)
   return raw
 }
