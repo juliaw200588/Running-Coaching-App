@@ -1,6 +1,13 @@
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v))
-const round25=v=>Math.max(25,Math.round(Number(v||0)/25)*25)
-export const SWIM_PLAN_VERSION='swim-v3'
+const poolStep=form=>{
+  const p=String(form?.poolLength||'25m').toLowerCase()
+  return p==='both'||p.includes('50')?50:25
+}
+const roundToPool=(v,form)=>{
+  const step=poolStep(form)
+  return Math.max(step,Math.round(Number(v||0)/step)*step)
+}
+export const SWIM_PLAN_VERSION='swim-v10.1'
 
 export const getRecommendedSwimmingWeeks=form=>{
   const goal=form.goalType
@@ -62,9 +69,9 @@ const getSwimmingDurationGuidance=form=>{
 }
 
 export const buildSwimmingPlanGuardrails=form=>{
-  const target=round25(form.targetDistanceM)
-  const currentContinuous=round25(form.currentContinuousM)
-  const currentSession=round25(form.currentSessionM)
+  const target=Math.max(0,Number(form.targetDistanceM||0))
+  const currentContinuous=roundToPool(form.currentContinuousM,form)
+  const currentSession=roundToPool(form.currentSessionM,form)
   const weeks=clamp(Number(form.weeksUntilGoal||10),6,24)
   const units=clamp(Number(form.unitsPerWeek||3),2,4)
   const allowedStrokes=getAllowedSwimmingStrokes(form)
@@ -73,9 +80,11 @@ export const buildSwimmingPlanGuardrails=form=>{
   const sessionDistanceByWeek=buildSessionDistanceProgression(form)
   const durationGuidance=getSwimmingDurationGuidance(form)
   const isContinuousTarget=Boolean(['distance','event'].includes(form.goalType)&&target>0&&form.continuousGoal!=='no')
+  const executableTarget=form?.venue==='open_water'?target:roundToPool(target,form)
   return {
     version:SWIM_PLAN_VERSION,
     targetDistanceM:target||null,
+    executableTargetDistanceM:executableTarget||null,
     currentContinuousM:currentContinuous||null,
     currentSessionM:currentSession||null,
     weeks,unitsPerWeek:units,
@@ -87,8 +96,8 @@ export const buildSwimmingPlanGuardrails=form=>{
     finalTargetAttempt:isContinuousTarget?{
       enabled:true,
       week:weeks,
-      distanceM:target,
-      instruction:`In der letzten Woche genau eine klar benannte Zieleinheit mit ${target} m am Stück vorsehen. Diese Einheit nicht als normalen Technikblock darstellen. Vorher 200 m sehr locker einschwimmen, dann ausreichende Erholung, anschließend der Zielversuch; danach locker ausschwimmen.`
+      distanceM:executableTarget,
+      instruction:`In der letzten Woche genau eine klar benannte Zieleinheit mit ${executableTarget} m am Stück vorsehen. Diese Einheit nicht als normalen Technikblock darstellen. Vorher 200 m sehr locker einschwimmen, dann ausreichende Erholung, anschließend der Zielversuch; danach locker ausschwimmen.`
     }:{enabled:false},
     shortPreparation:Boolean(['distance','event'].includes(form.goalType)&&target>0&&currentContinuous>0&&target/currentContinuous>=4&&weeks<=10),
     rules:[
@@ -151,42 +160,47 @@ export const getSwimmingStrokeWeights=form=>{
 }
 
 export const buildContinuousDistanceProgression=form=>{
- const weeks=clamp(Number(form?.weeksUntilGoal||10),6,24)
- const start=Math.max(25,round25(form?.currentContinuousM||100))
- const target=Math.max(start,round25(form?.targetDistanceM||start))
- if(form?.continuousGoal==='no'||target<=start)return Array(weeks).fill(Math.min(start,target))
- const recovery=weeks>=8?Math.max(3,Math.round(weeks*.65)-1):-1
- const out=[]; let prev=start
- for(let i=0;i<weeks;i++){
-  if(i===weeks-1){out.push(target);continue}
-  if(i===recovery){out.push(round25(Math.max(start,prev*.7)));continue}
-  const progress=i/Math.max(1,weeks-1)
-  const desired=start+(target-start)*Math.pow(progress,1.35)
-  const maxFactor=prev<400?1.35:prev<800?1.30:1.25
-  const maxNext=prev+Math.max(50,round25(prev*(maxFactor-1)))
-  prev=Math.max(prev,Math.min(target,round25(Math.min(desired,maxNext))))
-  out.push(prev)
- }
- return out
+  const weeks=clamp(Number(form?.weeksUntilGoal||10),6,24)
+  const step=poolStep(form)
+  const start=Math.max(step,roundToPool(form?.currentContinuousM||100,form))
+  const rawTarget=Math.max(start,Number(form?.targetDistanceM||start))
+  const target=form?.venue==='open_water'?rawTarget:roundToPool(rawTarget,form)
+  if(form?.continuousGoal==='no'||target<=start)return Array(weeks).fill(Math.min(start,target))
+  const recovery=weeks>=8?Math.max(3,Math.round(weeks*.65)-1):-1
+  const out=[]; let prev=start
+  for(let i=0;i<weeks;i++){
+    if(i===weeks-1){out.push(target);continue}
+    if(i===recovery){
+      out.push(roundToPool(Math.max(start,prev*.7),form))
+      continue
+    }
+    const progress=i/Math.max(1,weeks-1)
+    const desired=start+(target-start)*Math.pow(progress,1.35)
+    const maxFactor=prev<400?1.35:prev<800?1.30:1.25
+    const maxNext=prev+Math.max(step,roundToPool(prev*(maxFactor-1),form))
+    prev=Math.max(prev,Math.min(target,roundToPool(Math.min(desired,maxNext),form)))
+    out.push(prev)
+  }
+  return out
 }
 
 export const buildSessionDistanceProgression=form=>{
- const weeks=clamp(Number(form?.weeksUntilGoal||10),6,24)
- const units=clamp(Number(form?.unitsPerWeek||3),2,4)
- const base=Math.max(250,round25(form?.currentSessionM||500))
- const target=Math.max(0,round25(form?.targetDistanceM||0))
- const recovery=weeks>=8?Math.max(3,Math.round(weeks*.65)-1):-1
- const spreads=units===2?[.95,1.1]:units===3?[.9,1,1.12]:[.88,.96,1.03,1.12]
- return Array.from({length:weeks},(_,i)=>{
-  const p=i/Math.max(1,weeks-1)
-  let weekBase=round25(base*(1.05+p*.75))
-  if(i===recovery)weekBase=round25(base*Math.max(.9,(1.05+p*.75)*.72))
-  return spreads.map(x=>{
-   let d=round25(weekBase*x)
-   const cap=target?Math.max(base*1.9,target*1.2):base*2
-   return Math.max(250,Math.min(d,round25(cap)))
+  const weeks=clamp(Number(form?.weeksUntilGoal||10),6,24)
+  const units=clamp(Number(form?.unitsPerWeek||3),2,4)
+  const base=Math.max(poolStep(form)*4,roundToPool(form?.currentSessionM||500,form))
+  const target=Math.max(0,Number(form?.targetDistanceM||0))
+  const recovery=weeks>=8?Math.max(3,Math.round(weeks*.65)-1):-1
+  const spreads=units===2?[.95,1.1]:units===3?[.9,1,1.12]:[.88,.96,1.03,1.12]
+  return Array.from({length:weeks},(_,i)=>{
+    const p=i/Math.max(1,weeks-1)
+    let weekBase=roundToPool(base*(1.05+p*.75),form)
+    if(i===recovery)weekBase=roundToPool(base*Math.max(.9,(1.05+p*.75)*.72),form)
+    return spreads.map(x=>{
+      let d=roundToPool(weekBase*x,form)
+      const cap=target?Math.max(base*1.9,target*1.2):base*2
+      return Math.max(poolStep(form)*4,Math.min(d,roundToPool(cap,form)))
+    })
   })
- })
 }
 
 export const getAvailableSwimmingEquipment=form=>uniq([
@@ -217,33 +231,54 @@ export const buildSwimmingGeneratorConstraints=form=>{
    'Teilstrecken müssen sich exakt zur ausgewiesenen Gesamtdistanz addieren.',
    'Zeitangaben müssen aus Schwimmmetern plus Satzpausen plausibel abgeleitet werden.',
    form?.continuousGoal!=='no'&&Number(form?.targetDistanceM||0)>0
-    ?`In der letzten Woche genau eine separate Zieleinheit über ${round25(form.targetDistanceM)} m am Stück vorsehen.`
+    ?`In der letzten Woche genau eine separate Zieleinheit über ${roundToPool(form.targetDistanceM,form)} m am Stück vorsehen.`
     :'Keinen separaten Am-Stück-Zielversuch erzwingen.'
   ]
  }
 }
 
 export const validateSwimmingPlan=(plan,form)=>{
- const c=buildSwimmingGeneratorConstraints(form),errors=[],warnings=[]
- const txt=JSON.stringify(plan||{}).toLowerCase()
- const used=[
-  txt.includes('brust')||txt.includes('breast')?'breaststroke':null,
-  txt.includes('kraul')||txt.includes('freestyle')?'freestyle':null,
-  txt.includes('rücken')||txt.includes('ruecken')||txt.includes('backstroke')?'backstroke':null,
-  txt.includes('delfin')||txt.includes('delphin')||txt.includes('butterfly')?'butterfly':null
- ].filter(Boolean)
- uniq(used).forEach(s=>{if(!c.allowedStrokes.includes(s))errors.push(`Nicht ausgewählte Schwimmart im Plan: ${s}`)})
- const weeks=Array.isArray(plan?.weeks)?plan.weeks:[]
- weeks.forEach((w,wi)=>{
-  const sessions=Array.isArray(w?.sessions)?w.sessions:Array.isArray(w?.workouts)?w.workouts:[]
-  sessions.forEach((s,si)=>{
-   const total=Number(s?.distanceM??s?.totalDistanceM??s?.distance??0)
-   const parts=[s?.warmupDistanceM,s?.mainDistanceM,s?.techniqueDistanceM,s?.cooldownDistanceM].map(Number).filter(Number.isFinite)
-   if(total>0&&parts.length>=2&&parts.reduce((a,b)=>a+b,0)!==total)errors.push(`W${wi+1} E${si+1}: Teilstrecken stimmen nicht mit ${total} m überein`)
-   const longest=Number(s?.longestContinuousM??s?.continuousDistanceM??0)
-   if(longest>0&&c.continuousByWeek[wi]&&longest>c.continuousByWeek[wi])errors.push(`W${wi+1} E${si+1}: zusammenhängende Strecke ${longest} m über Wochenlimit ${c.continuousByWeek[wi]} m`)
+  const c=buildSwimmingGeneratorConstraints(form),errors=[],warnings=[]
+  const weeks=(plan?.phases||[]).flatMap(p=>p?.weeks||[])
+  const step=poolStep(form)
+  const allowed=new Set(c.allowedStrokes||[])
+
+  const strokeChecks=[
+    ['backstroke',/\b(backstroke|back\s+stroke|back\s+crawl|rückenschwimmen|rueckenschwimmen|rückenkraul|rueckenkraul)\b/i],
+    ['butterfly',/\b(butterfly|delfinschwimmen|delphinschwimmen|schmetterlingsschwimmen)\b/i],
+    ['breaststroke',/\b(brustschwimmen|breaststroke|breast\s+stroke)\b/i],
+    ['freestyle',/\b(kraul(?:schwimmen)?|freestyle|front\s+crawl)\b/i]
+  ]
+
+  weeks.forEach((w,wi)=>{
+    const days=Array.isArray(w?.days)?w.days:[]
+    days.forEach((s,si)=>{
+      const total=Number(s?.totalDistanceM||0)
+      const parts=[s?.warmupDistanceM,s?.mainDistanceM,s?.techniqueDistanceM,s?.cooldownDistanceM]
+        .map(v=>Number(v||0))
+      const calculated=parts.reduce((a,b)=>a+b,0)
+
+      if(total>0&&calculated!==total)errors.push(`W${w.n||wi+1} E${si+1}: Teilstrecken stimmen nicht mit ${total} m überein`)
+      for(const value of [...parts,s?.longestContinuousM,s?.targetSegmentM]){
+        const d=Number(value||0)
+        if(d>0&&Math.abs(d/step-Math.round(d/step))>1e-9){
+          errors.push(`W${w.n||wi+1} E${si+1}: ${d} m passt nicht zur ${step}-m-Planung`)
+        }
+      }
+
+      const longest=Number(s?.longestContinuousM||0)
+      if(longest>0&&c.continuousByWeek[wi]&&longest>c.continuousByWeek[wi]){
+        errors.push(`W${w.n||wi+1} E${si+1}: zusammenhängende Strecke ${longest} m über Wochenlimit ${c.continuousByWeek[wi]} m`)
+      }
+
+      const text=[s?.einheit,s?.details,s?.warmup,s?.mainSet,s?.cooldown,s?.techniqueTitle,s?.techniqueInstructions]
+        .filter(Boolean).join(' ')
+      for(const [stroke,pattern] of strokeChecks){
+        if(pattern.test(text)&&!allowed.has(stroke))errors.push(`W${w.n||wi+1} E${si+1}: nicht ausgewählte Schwimmart ${stroke}`)
+      }
+    })
   })
- })
- if(!weeks.length)warnings.push('Kein standardisiertes weeks[]-Array: strukturierte Distanzprüfung ist nur eingeschränkt möglich.')
- return{valid:!errors.length,errors,warnings,constraints:c}
+
+  if(!weeks.length)warnings.push('Keine Trainingswochen im Format phases → weeks gefunden.')
+  return{valid:!errors.length,errors,warnings,constraints:c}
 }

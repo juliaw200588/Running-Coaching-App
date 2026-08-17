@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
-import { buildSwimmingGeneratorConstraints, buildSwimmingPlanGuardrails, getRecommendedSwimmingWeeks, validateSwimmingPlan } from '../lib/swimmingPlanGenerator.js'
+import { buildSwimmingPlanGuardrails, getRecommendedSwimmingWeeks } from '../lib/swimmingPlanGenerator.js'
 
 const DRAFT_KEY='swimming_onboarding_draft_v2'
 const DAYS=['Mo','Di','Mi','Do','Fr','Sa','So']
@@ -55,7 +55,7 @@ export default function SwimmingOnboarding({onPlanGenerated}){
   const can2=Boolean(form.currentFrequency&&form.currentSessionM&&form.currentContinuousM&&form.techniqueLevel&&form.poolLength)
   const can3=form.preferredDays.length===form.unitsPerWeek&&form.weeksUntilGoal>=6
   const focusOptions=form.stroke==='breaststroke'?['Atmung','Armzug','Beinschlag','Timing/Koordination','Gleiten','Wenden']:['Atmung','Wasserlage','Armzug','Beinschlag','Rhythmus/Koordination','Wenden']
-  const generate=async()=>{setLoading(true);setError(null);try{const {dayDurations:_legacyDayDurations,...cleanEffective}=effective;const constraints=buildSwimmingGeneratorConstraints(cleanEffective);const payload={...cleanEffective,sport_type:'swimming',plan_type:'swimming_endurance',guardrails:buildSwimmingPlanGuardrails(cleanEffective),generatorConstraints:constraints};const r=await fetch('/api/generate-plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const data=await r.json();if(!r.ok||data?.error)throw new Error(data?.error||`HTTP ${r.status}`);if(!data?.plan?.phases?.length)throw new Error('Der Trainingsplan ist unvollständig.');const validation=validateSwimmingPlan(data.plan,cleanEffective);if(!validation.valid)throw new Error(`Der erzeugte Plan verletzt deine Schwimm-Einstellungen: ${validation.errors.join(' · ')}`);sessionStorage.removeItem(DRAFT_KEY);onPlanGenerated(data.plan)}catch(e){setError(`Dein Plan konnte gerade nicht erstellt werden: ${e.message}`)}finally{setLoading(false)}}
+  const generate=async()=>{setLoading(true);setError(null);try{const {dayDurations:_legacyDayDurations,...cleanEffective}=effective;const payload={...cleanEffective,sport_type:'swimming',plan_type:'swimming_endurance',guardrails:buildSwimmingPlanGuardrails(cleanEffective)};const r=await fetch('/api/generate-plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const data=await r.json();if(!r.ok||data?.error)throw new Error(data?.error||`HTTP ${r.status}`);if(!data?.plan?.phases?.length)throw new Error('Der Trainingsplan ist unvollständig.');sessionStorage.removeItem(DRAFT_KEY);onPlanGenerated(data.plan)}catch(e){setError(`Dein Plan konnte gerade nicht erstellt werden: ${e.message}`)}finally{setLoading(false)}}
   const Goal=({id,icon,title,text})=><button type="button" style={card(form.goalType===id)} onClick={()=>set('goalType',id)}><span style={{fontSize:20,marginRight:9}}>{icon}</span>{title}<div style={{...small,margin:'5px 0 0 30px'}}>{text}</div></button>
   const Chips=({values,value,onChange,format=x=>x})=><div style={{display:'flex',gap:7,flexWrap:'wrap'}}>{values.map(v=><button type="button" key={v} style={chip(value===v)} onClick={()=>onChange(v)}>{format(v)}</button>)}</div>
 

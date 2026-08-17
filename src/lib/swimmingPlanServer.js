@@ -24,7 +24,7 @@ const DAY_SCHEMA={
 const SESSION_SCHEMA={
   type:'object',additionalProperties:false,
   properties:{
-    einheit:{type:'string'},details:{type:'string'},optional:{type:'boolean'},
+    einheit:{type:'string'},details:{type:'string'},
     durationMinutes:{type:'number'},intensity:{type:'string'},loadGuidance:{anyOf:[{type:'string'},{type:'null'}]},
     warmup:{type:'string'},warmupDistanceM:{type:'number'},
     mainSet:{type:'string'},mainDistanceM:{type:'number'},
@@ -39,12 +39,54 @@ const SESSION_SCHEMA={
     openWaterTip:{anyOf:[{type:'string'},{type:'null'}]}
   },
   required:[
-    'einheit','details','optional','durationMinutes','intensity','loadGuidance',
+    'einheit','details','durationMinutes','intensity','loadGuidance',
     'warmup','warmupDistanceM','mainSet','mainDistanceM','cooldown','cooldownDistanceM',
     'restGuidance','longestContinuousM','targetSegmentM','techniqueTitle',
     'techniqueInstructions','techniqueDistanceM','equipment','openWaterTip'
   ]
 }
+
+const parsePlanDate=value=>{
+  const m=String(value||'').match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if(!m)return new Date()
+  return new Date(Number(m[1]),Number(m[2])-1,Number(m[3]),12,0,0,0)
+}
+const addDays=(date,days)=>{
+  const d=new Date(date)
+  d.setDate(d.getDate()+days)
+  return d
+}
+const displayDate=date=>`${String(date.getDate()).padStart(2,'0')}.${String(date.getMonth()+1).padStart(2,'0')}.`
+const isoDate=date=>`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`
+const weekDateRange=(startDate,weekN)=>{
+  const start=addDays(parsePlanDate(startDate),(weekN-1)*7)
+  const end=addDays(start,6)
+  return `${displayDate(start)} – ${displayDate(end)}`
+}
+const recoveryWeekNumber=weeks=>{
+  const w=n(weeks)
+  if(w<8)return null
+  return Math.min(w-2,Math.max(4,Math.round(w*.65)))
+}
+const buildPhaseTemplate=input=>{
+  const weeks=n(input.weeksUntilGoal)
+  const finalLabel=input.goalType==='event'?'Zielphase':input.goalType==='distance'?'Abschluss':'Festigung'
+  const basisEnd=Math.max(1,Math.min(weeks-3,Math.round(weeks*.25)))
+  const buildEnd=Math.max(basisEnd+1,Math.min(weeks-2,Math.round(weeks*.55)))
+  const specificEnd=Math.max(buildEnd+1,weeks-2)
+  return[
+    {id:'basis',label:'Basis',sub:'Grundlage',icon:'',description:'Technik stabilisieren und eine verlässliche Ausdauerbasis aufbauen.',startWeek:1,endWeek:basisEnd,accent:'',light:'',mid:'',soft:''},
+    {id:'aufbau',label:'Aufbau',sub:'Umfang & Qualität',icon:'',description:'Umfang, Serienlänge und Belastungsverträglichkeit schrittweise entwickeln.',startWeek:basisEnd+1,endWeek:buildEnd,accent:'',light:'',mid:'',soft:''},
+    {id:'spezifisch',label:'Spezifisch',sub:'Zielgerichtet',icon:'',description:'Längere zusammenhängende Abschnitte und zielnahe Belastungen festigen.',startWeek:buildEnd+1,endWeek:specificEnd,accent:'',light:'',mid:'',soft:''},
+    {id:'abschluss',label:finalLabel,sub:'Frische & Umsetzung',icon:'',description:input.goalType==='event'
+      ?'Belastung gezielt reduzieren, Sicherheit bewahren und frisch in das Event gehen.'
+      :input.goalType==='distance'
+        ?'Frische herstellen, gezielt aktivieren und den persönlichen Distanzversuch kontrolliert umsetzen.'
+        :'Erarbeitetes stabilisieren und sinnvoll in das weitere Training überführen.',
+      startWeek:specificEnd+1,endWeek:weeks,accent:'',light:'',mid:'',soft:''}
+  ].filter(p=>p.startWeek<=p.endWeek)
+}
+const phaseForWeek=(phases,weekN)=>phases.find(p=>p.startWeek<=weekN&&p.endWeek>=weekN)||phases[phases.length-1]
 
 const buildSessionSlots=(input)=>{
   const normalize=v=>{
@@ -64,20 +106,34 @@ const buildSessionSlots=(input)=>{
   const preferred=(input.preferredDays||[]).map(normalize).filter(Boolean)
   const needed=n(input.unitsPerWeek)
   const selected=preferred.slice(0,needed)
-  if(selected.length!==needed){
-    throw new Error('Es wurden zu wenige gültige Trainingstage ausgewählt.')
-  }
+  if(selected.length!==needed)throw new Error('Es wurden zu wenige gültige Trainingstage ausgewählt.')
+
   const weeks=n(input.weeksUntilGoal)
+  const phases=buildPhaseTemplate(input)
+  const regenWeek=recoveryWeekNumber(weeks)
+  const guardrails=input.guardrails||{}
   const slots=[]
+
   for(let week=1;week<=weeks;week++){
-    for(const dayKey of selected){
+    const phase=phaseForWeek(phases,week)
+    selected.forEach((dayKey,index)=>{
       slots.push({
         key:`w${week}_${dayKey}`,
         week,
         dayKey,
-        tag:canonical[dayKey]
+        tag:canonical[dayKey],
+        phaseId:phase.id,
+        phaseLabel:phase.label,
+        regen:regenWeek===week,
+        finalWeek:week===weeks,
+        plannedSessionDistanceM:Array.isArray(guardrails.sessionDistanceByWeek?.[week-1])
+          ? guardrails.sessionDistanceByWeek[week-1][index] ?? null
+          : null,
+        continuousLimitM:Array.isArray(guardrails.continuousByWeek)
+          ? guardrails.continuousByWeek[week-1] ?? null
+          : null
       })
-    }
+    })
   }
   return slots
 }
@@ -90,21 +146,9 @@ const buildResponseSchema=(slots)=>({
       properties:{
         title:{type:'string'},
         goal:{type:'string'},
-        name:{type:'string'},
-        phases:{
-          type:'array',
-          items:{
-            type:'object',additionalProperties:false,
-            properties:{
-              id:{type:'string'},label:{type:'string'},sub:{type:'string'},icon:{type:'string'},
-              description:{type:'string'},startWeek:{type:'number'},endWeek:{type:'number'},
-              accent:{type:'string'},light:{type:'string'},mid:{type:'string'},soft:{type:'string'}
-            },
-            required:['id','label','sub','icon','description','startWeek','endWeek','accent','light','mid','soft']
-          }
-        }
+        name:{type:'string'}
       },
-      required:['title','goal','name','phases']
+      required:['title','goal','name']
     },
     sessions:{
       type:'object',additionalProperties:false,
@@ -347,16 +391,13 @@ const validateStrokes=(day,input,weekN)=>{
 }
 
 
-const phaseForWeek=(metaPhases,weekN)=>{
-  const phases=(metaPhases||[]).filter(p=>n(p.startWeek)<=weekN&&n(p.endWeek)>=weekN)
-  return phases[0]||null
-}
-
 const buildDeterministicPlan=(raw,input,slots)=>{
   if(!raw?.meta||!raw?.sessions)throw new Error('Der Schwimmplan ist unvollständig.')
+
   const weeksCount=n(input.weeksUntilGoal)
   const units=n(input.unitsPerWeek)
-
+  const phases=buildPhaseTemplate(input)
+  const regenWeek=recoveryWeekNumber(weeksCount)
   const byWeek=new Map()
   for(let week=1;week<=weeksCount;week++)byWeek.set(week,[])
 
@@ -364,53 +405,71 @@ const buildDeterministicPlan=(raw,input,slots)=>{
     const session=raw.sessions[slot.key]
     if(!session)throw new Error(`Trainingseinheit ${slot.key} fehlt.`)
     byWeek.get(slot.week).push({
+      ...session,
       tag:slot.tag,
       sport_type:'swimming',
-      ...session
+      optional:false
     })
   }
 
-  const metaPhases=Array.isArray(raw.meta.phases)?raw.meta.phases:[]
-  const phaseBuckets=[]
+  const phaseBuckets=phases.map(phase=>({
+    id:phase.id,
+    label:phase.label,
+    sub:phase.sub,
+    icon:phase.icon,
+    dateRange:`${displayDate(addDays(parsePlanDate(input.startDate),(phase.startWeek-1)*7))} – ${displayDate(addDays(parsePlanDate(input.startDate),phase.endWeek*7-1))}`,
+    description:phase.description,
+    accent:phase.accent,
+    light:phase.light,
+    mid:phase.mid,
+    soft:phase.soft,
+    weeks:[]
+  }))
+
   for(let week=1;week<=weeksCount;week++){
-    const phase=phaseForWeek(metaPhases,week)||{
-      id:'phase',
-      label: input.goalType==='event'?'Zielphase':input.goalType==='distance'?'Abschluss':'Festigung',
-      sub:'',
-      icon:'',
-      description:'',
-      accent:'',
-      light:'',
-      mid:'',
-      soft:'',
-      startWeek:1,
-      endWeek:weeksCount
-    }
-    let bucket=phaseBuckets.find(x=>x.id===phase.id&&x.label===phase.label)
-    if(!bucket){
-      bucket={
-        id:phase.id,label:phase.label,sub:phase.sub,icon:phase.icon,description:phase.description,
-        accent:phase.accent,light:phase.light,mid:phase.mid,soft:phase.soft,weeks:[]
-      }
-      phaseBuckets.push(bucket)
-    }
+    const phase=phaseForWeek(phases,week)
+    const bucket=phaseBuckets.find(p=>p.id===phase.id)
     bucket.weeks.push({
       n:week,
-      dateRange:'',
-      regen:false,
+      dateRange:weekDateRange(input.startDate,week),
+      regen:regenWeek===week,
       days:byWeek.get(week)
     })
   }
+
+  const target=n(input.targetDistanceM)
+  const event=input.goalType==='event'&&input.eventDate
+    ?{
+      date:input.eventDate,
+      distanceM:target||0,
+      venue:String(input.venue||'pool'),
+      label:'Dein Schwimm-Event'
+    }
+    :null
 
   return {
     title:raw.meta.title,
     goal:raw.meta.goal,
     startDate:input.startDate||'',
+    goalDate:input.goalType==='event'?input.eventDate||null:null,
     name:raw.meta.name,
     sport_type:'swimming',
     plan_type:'swimming_endurance',
-    event:null,
-    phases:phaseBuckets
+    weeksUntilRace:weeksCount,
+    unitsPerWeek:units,
+    event,
+    phases:phaseBuckets,
+    swimmingProfile:{
+      goalType:input.goalType||null,
+      targetDistanceM:target||null,
+      continuousGoal:input.continuousGoal||null,
+      stroke:input.stroke||null,
+      mixedPriority:input.mixedPriority||null,
+      poolLength:input.poolLength||null,
+      preferredDays:(input.preferredDays||[]).slice(),
+      regenWeek,
+      guardrails:input.guardrails||null
+    }
   }
 }
 
@@ -450,6 +509,7 @@ const validatePlan=(plan,input)=>{
 
     for(const day of week.days||[]){
       day.sport_type='swimming'
+      day.optional=false
       const normalizedTag=normalizeDay(day.tag)
       if(!normalizedTag){
         throw new Error(`Trainingstag in Woche ${week.n} konnte nicht erkannt werden: ${day.tag}`)
@@ -498,15 +558,15 @@ export async function generateSwimmingPlan(payload={}){
       : 'Allgemeiner Aufbau/Fitness: kein automatischer Taper. Letzte Phase heißt Festigung und führt in weiteres Training.'
 
   const system=`Du erstellst einen sicheren, konkreten Schwimmtrainingsplan.
-1. Die Wochen- und Tagesstruktur wird serverseitig festgelegt. Du befüllst ausschließlich die vorgegebenen Session-Slots und darfst KEINEN Slot weglassen, hinzufügen oder umbenennen. Die Zuordnung der Slots zu Woche und Wochentag ist verbindlich.
-2. Jede Einheit braucht durationMinutes. Gib warmupDistanceM, mainDistanceM, techniqueDistanceM und cooldownDistanceM strukturiert aus. totalDistanceM muss EXAKT warmupDistanceM + mainDistanceM + techniqueDistanceM + cooldownDistanceM entsprechen. Die Gesamtdistanz darf niemals unabhängig von diesen Blöcken erfunden werden.
+1. Die Wochen-, Tages- und Phasenstruktur wird serverseitig festgelegt. Du befüllst ausschließlich die vorgegebenen Session-Slots und darfst KEINEN Slot weglassen, hinzufügen oder umbenennen. Jeder Slot ist eine verbindliche Pflichteinheit; optionale Zusatzeinheiten erzeugst du nicht.
+2. Jede Einheit braucht durationMinutes. Gib warmupDistanceM, mainDistanceM, techniqueDistanceM und cooldownDistanceM strukturiert aus. Die Gesamtdistanz wird serverseitig ausschließlich aus diesen Blöcken berechnet; erfinde deshalb keine davon unabhängige Gesamtdistanz.
 3. Baue jede Einheit in dieser Reihenfolge: (a) fachlich sinnvollen Hauptreiz aus Ziel, Niveau und Einheitentyp bestimmen, (b) Einschwimmen fest einplanen, (c) Ausschwimmen fest einplanen, (d) ggf. zusätzliche Technikmeter ergänzen. currentSessionM ist dabei keine harte Obergrenze. Die Gesamteinheit ergibt sich aus allen tatsächlich geschwommenen Blöcken; der Hauptreiz darf nicht künstlich zu kurz werden, nur um exakt auf currentSessionM zu kommen.
 4. Jede einzelne Einheit braucht ein echtes Einschwimmen UND ein echtes Ausschwimmen. Bei einer ${pool}-m-Bahn muss Ausschwimmen mindestens ${minCooldown} m betragen. Verwende 25 m Ausschwimmen bei einer 25-m-Bahn NICHT als Resteverwertung. Typisch sind bei kurzen Einheiten 50–100 m, bei längeren Einheiten 100–200 m.
 5. Einschwimmen soll ebenfalls ein echter Block sein: bei kürzeren Einheiten meist 100–150 m, bei längeren Einheiten meist 150–200 m, jeweils passend zum Ausgangsniveau. Es darf nicht unter ${pool*2} m liegen.
 6. Jede Einheit ist direkt ausführbar: warmup, mainSet, cooldown und restGuidance sind Pflicht. Beschreibe in den Texten exakt dieselben Distanzen, die in den zugehörigen Distanzfeldern stehen.
 7. Rechne JEDE Einheit vor Ausgabe intern nach. Beispiel: 150 m Einschwimmen + 750 m Hauptserie + 100 m Technik + 100 m Ausschwimmen = 1100 m gesamt. Wenn die Summe nicht stimmt, korrigiere den bewusst geplanten Block; entferne niemals einfach das Ausschwimmen und kürze den Hauptreiz nicht nur deshalb, um exakt auf currentSessionM zu kommen.
 8. Progression NICHT nur über Meter: Gesamtumfang, längere zusammenhängende Abschnitte, passend reduzierte Pausen, Tempowechsel und stabile Technik unter Ermüdung. Keine mechanische lineare Steigerung jeder Einheit.
-9. Regenerationswochen trainingslogisch, typischerweise nach 3–4 Belastungswochen. Eine Regenerationswoche muss im Umfang und/oder in der Belastungsdichte tatsächlich leichter sein.
+9. Ob ein Session-Slot zu einer Regenerationswoche gehört, steht im Slot-Kontext als regen=true. In diesen Slots muss Umfang und/oder Belastungsdichte tatsächlich leichter sein. Erfinde keine zusätzliche Regenerationswoche außerhalb dieser Markierung.
 10. Ausgang: ca. ${input.currentSessionM||'unbekannt'} m/Einheit, ${input.currentContinuousM||'unbekannt'} m am Stück. currentSessionM ist eine ungefähre Ausgangsreferenz für die bisher verträgliche Trainingsgröße, KEIN starres Gesamtmeter-Budget. Plane den Hauptreiz fachlich sinnvoll aus Ziel, Niveau und Einheitentyp und ergänze dazu angemessenes Ein-/Ausschwimmen sowie ggf. zusätzliche Technikmeter. Die Gesamteinheit darf deshalb moderat über currentSessionM liegen, solange die Steigerung realistisch bleibt. Keine unrealistischen Sprünge.
 11. Schwimmart ist eine HARTE Auswahl: stroke=freestyle bedeutet ausschließlich Kraul/Freistil; stroke=breaststroke bedeutet ausschließlich Brust; stroke=mixed bedeutet ausschließlich Kraul/Freistil und Brust. Rücken, Delfin/Schmetterling und jede andere nicht gewählte Lage sind verboten. Das gilt AUSDRÜCKLICH auch für englische Bezeichnungen und Synonyme in ALLEN Textfeldern: backstroke/back stroke, butterfly, breaststroke/breast stroke, freestyle/front crawl dürfen nur vorkommen, wenn die entsprechende Lage ausgewählt und erlaubt ist. Verwende in den nutzerseitigen Texten bevorzugt die deutschen Bezeichnungen Kraul/Freistil und Brust und füge niemals eine weitere Lage zur Abwechslung, Technik oder Erholung hinzu. Prüfe vor der Ausgabe jedes Textfeld noch einmal auf nicht erlaubte Schwimmarten. Bei mixed Schwerpunkt=${input.mixedPriority}. Die priorisierte Schwimmart soll über eine Einheit bzw. sinnvoll über die Trainingswoche ungefähr 70 % des Schwimmumfangs ausmachen, die andere ungefähr 30 %. Das ist eine fachliche Zielgröße, keine mathematisch starre Quote: praktikable, bahngenaue Teilstrecken haben Vorrang. Bei Anfängern Technikqualität vor aggressiver Umfangssteigerung.
 12. Technikniveau=${input.techniqueLevel}; Schwerpunkte=${(input.techniqueFocus||[]).join(', ')||'keine besonderen'}. Technik regelmäßig passend zum Niveau einbauen.
@@ -519,7 +579,7 @@ export async function generateSwimmingPlan(payload={}){
 19. ${finalLogic}
 20. Freiwasserziel=${input.venue||'nein'}, sicherer Zugang=${input.openWaterAccess||'nein'}. Freiwasser nur verlangen, wenn sicher verfügbar. Sighting/Orientierung sonst im Becken vorbereiten.
 21. Eigene lange Ziele wie 5.000 m nicht linear hochskalieren; bei knapper Zeit konservativ bleiben.
-22. Beschreibe in meta.phases vier fachlich passende Phasen mit startWeek/endWeek: Basis, Aufbau, Spezifisch und passend Zielphase/Abschluss/Festigung. Die Wochen selbst werden serverseitig aus den festen Session-Slots zusammengesetzt.
+22. Die Phasen werden serverseitig festgelegt und stehen für jeden Slot im Kontext. Erzeuge keine eigene Wochen-, Tages- oder Phasenstruktur.
 23. details kurz. Serien in warmup/mainSet/cooldown/restGuidance; Technikdetails in techniqueInstructions.
 24. longestContinuousM enthält die längste tatsächlich am Stück geschwommene Teilstrecke. Wiederholungen wie 6 × 100 m bedeuten longestContinuousM=100, nicht 600.
 25. targetSegmentM nur setzen, wenn eine klar benannte Ziel-/Teststrecke existiert, sonst null.
@@ -533,7 +593,16 @@ AUSGABE: ausschließlich das verlangte JSON.`
 
   const slots=buildSessionSlots(input)
   const responseSchema=buildResponseSchema(slots)
-  const slotContext=slots.map(slot=>({key:slot.key,week:slot.week,tag:slot.tag}))
+  const slotContext=slots.map(slot=>({
+    key:slot.key,
+    week:slot.week,
+    tag:slot.tag,
+    phase:slot.phaseLabel,
+    regen:slot.regen,
+    finalWeek:slot.finalWeek,
+    plannedSessionDistanceM:slot.plannedSessionDistanceM,
+    continuousLimitM:slot.continuousLimitM
+  }))
 
   const response=await fetch(ANTHROPIC_URL,{method:'POST',headers:{
     'Content-Type':'application/json',
