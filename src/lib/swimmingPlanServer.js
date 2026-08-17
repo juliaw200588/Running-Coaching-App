@@ -24,19 +24,25 @@ const DAY_SCHEMA={
 const SESSION_SCHEMA={
   type:'object',additionalProperties:false,
   properties:{
-    einheit:{type:'string'},details:{type:'string'},
-    durationMinutes:{type:'number'},intensity:{type:'string'},loadGuidance:{anyOf:[{type:'string'},{type:'null'}]},
-    warmup:{type:'string'},warmupDistanceM:{type:'number'},
-    mainSet:{type:'string'},mainDistanceM:{type:'number'},
-    cooldown:{type:'string'},cooldownDistanceM:{type:'number'},
+    einheit:{type:'string'},
+    details:{type:'string'},
+    durationMinutes:{type:'number'},
+    intensity:{type:'string'},
+    loadGuidance:{type:'string'},
+    warmup:{type:'string'},
+    warmupDistanceM:{type:'number'},
+    mainSet:{type:'string'},
+    mainDistanceM:{type:'number'},
+    cooldown:{type:'string'},
+    cooldownDistanceM:{type:'number'},
     restGuidance:{type:'string'},
-    longestContinuousM:{anyOf:[{type:'number'},{type:'null'}]},
-    targetSegmentM:{anyOf:[{type:'number'},{type:'null'}]},
-    techniqueTitle:{anyOf:[{type:'string'},{type:'null'}]},
-    techniqueInstructions:{anyOf:[{type:'string'},{type:'null'}]},
-    techniqueDistanceM:{anyOf:[{type:'number'},{type:'null'}]},
+    longestContinuousM:{type:'number'},
+    targetSegmentM:{type:'number'},
+    techniqueTitle:{type:'string'},
+    techniqueInstructions:{type:'string'},
+    techniqueDistanceM:{type:'number'},
     equipment:{type:'array',items:{type:'string'}},
-    openWaterTip:{anyOf:[{type:'string'},{type:'null'}]}
+    openWaterTip:{type:'string'}
   },
   required:[
     'einheit','details','durationMinutes','intensity','loadGuidance',
@@ -536,6 +542,15 @@ const validatePlan=(plan,input)=>{
         if(!day.techniqueInstructions)day.techniqueInstructions=generic.instructions
       }
 
+      if(!n(day.techniqueDistanceM)){
+        day.techniqueDistanceM=null
+        if(!String(day.techniqueTitle||'').trim())day.techniqueTitle=null
+        if(!String(day.techniqueInstructions||'').trim())day.techniqueInstructions=null
+      }
+      if(!n(day.targetSegmentM))day.targetSegmentM=null
+      if(!String(day.loadGuidance||'').trim())day.loadGuidance=null
+      if(!String(day.openWaterTip||'').trim())day.openWaterTip=null
+
       day.equipment=(day.equipment||[]).filter(x=>tools.has(x))
       if(input.venue!=='open_water'||input.openWaterAccess==='no')day.openWaterTip=null
     }
@@ -559,7 +574,7 @@ export async function generateSwimmingPlan(payload={}){
 
   const system=`Du erstellst einen sicheren, konkreten Schwimmtrainingsplan.
 1. Die Wochen-, Tages- und Phasenstruktur wird serverseitig festgelegt. Du befüllst ausschließlich die vorgegebenen Session-Slots und darfst KEINEN Slot weglassen, hinzufügen oder umbenennen. Jeder Slot ist eine verbindliche Pflichteinheit; optionale Zusatzeinheiten erzeugst du nicht.
-2. Jede Einheit braucht durationMinutes. Gib warmupDistanceM, mainDistanceM, techniqueDistanceM und cooldownDistanceM strukturiert aus. Die Gesamtdistanz wird serverseitig ausschließlich aus diesen Blöcken berechnet; erfinde deshalb keine davon unabhängige Gesamtdistanz.
+2. Jede Einheit braucht durationMinutes. Gib warmupDistanceM, mainDistanceM, techniqueDistanceM und cooldownDistanceM strukturiert aus. Die Gesamtdistanz wird serverseitig ausschließlich aus diesen Blöcken berechnet; erfinde deshalb keine davon unabhängige Gesamtdistanz. Felder, die in einer Einheit nicht benötigt werden, trotzdem schema-konform ausgeben: leere Textfelder als "", nicht vorhandene optionale Meterwerte als 0. Verwende kein null.
 3. Baue jede Einheit in dieser Reihenfolge: (a) fachlich sinnvollen Hauptreiz aus Ziel, Niveau und Einheitentyp bestimmen, (b) Einschwimmen fest einplanen, (c) Ausschwimmen fest einplanen, (d) ggf. zusätzliche Technikmeter ergänzen. currentSessionM ist dabei keine harte Obergrenze. Die Gesamteinheit ergibt sich aus allen tatsächlich geschwommenen Blöcken; der Hauptreiz darf nicht künstlich zu kurz werden, nur um exakt auf currentSessionM zu kommen.
 4. Jede einzelne Einheit braucht ein echtes Einschwimmen UND ein echtes Ausschwimmen. Bei einer ${pool}-m-Bahn muss Ausschwimmen mindestens ${minCooldown} m betragen. Verwende 25 m Ausschwimmen bei einer 25-m-Bahn NICHT als Resteverwertung. Typisch sind bei kurzen Einheiten 50–100 m, bei längeren Einheiten 100–200 m.
 5. Einschwimmen soll ebenfalls ein echter Block sein: bei kürzeren Einheiten meist 100–150 m, bei längeren Einheiten meist 150–200 m, jeweils passend zum Ausgangsniveau. Es darf nicht unter ${pool*2} m liegen.
@@ -572,7 +587,7 @@ export async function generateSwimmingPlan(payload={}){
 12. Technikniveau=${input.techniqueLevel}; Schwerpunkte=${(input.techniqueFocus||[]).join(', ')||'keine besonderen'}. Technik regelmäßig passend zum Niveau einbauen.
 13. techniqueTitle kurz; techniqueInstructions vollständig und anfängertauglich: Durchführung, worauf achten, häufige Fehler. UI klappt Details ein.
 14. Becken=${input.poolLength}. JEDE tatsächlich zu schwimmende Teilstrecke und JEDE Unterteilung innerhalb von warmup, mainSet, technique und cooldown muss bahngenau ausführbar sein. Schreibe Tausenderdistanzen bevorzugt ohne Tausenderpunkt (z.B. 1500 m statt 1.500 m), damit Angaben eindeutig bleiben. Formuliere Serien für Nutzer natürlich mit Komma, „danach“, „davon“ oder „je“ statt künstlichen Rechenketten mit Pluszeichen. Die strukturierten Distanzfelder sind die verbindliche Quelle für die Berechnung; Freitext kann zusätzlich Orientierungsangaben enthalten (z.B. „5 m vor der Wand“), die keine eigene Schwimmstrecke darstellen. Bei 25m nur Vielfache von 25 m, bei 50m nur Vielfache von 50 m. Bei "both"/"Beides" ausschließlich Vielfache von 50 m für tatsächlich zu schwimmende Teilstrecken verwenden, damit jede Einheit sowohl im 25-m- als auch im 50-m-Becken funktioniert. Auch gemischte Aufteilungen müssen diese Regel erfüllen.
-15. techniqueDistanceM zählt NUR dann zusätzliche Meter, wenn der Technikblock tatsächlich zusätzlich geschwommene Meter enthält. Ist Technik bereits Bestandteil von warmup oder mainSet, setze techniqueDistanceM=null, damit Meter nicht doppelt gezählt werden.
+15. techniqueDistanceM zählt NUR dann zusätzliche Meter, wenn der Technikblock tatsächlich zusätzlich geschwommene Meter enthält. Ist Technik bereits Bestandteil von warmup oder mainSet, setze techniqueDistanceM=0 sowie techniqueTitle="" und techniqueInstructions="", damit Meter nicht doppelt gezählt werden.
 16. Verfügbare Hilfsmittel=${(input.equipment||[]).join(', ')||'keine'}. NUR diese verwenden; ohne Hilfsmittel muss der Plan funktionieren.
 17. Intensität nur einfach: locker, zügig, intensiv aber kontrolliert. Keine RPE-Zahlen; keine HF-Pflicht.
 18. Zieltyp=${input.goalType}; Zieldistanz=${target||'keine feste'} m; Ziel am Stück=${input.continuousGoal==='yes'?'ja':'nein/gesamt'}.
@@ -582,7 +597,7 @@ export async function generateSwimmingPlan(payload={}){
 22. Die Phasen werden serverseitig festgelegt und stehen für jeden Slot im Kontext. Erzeuge keine eigene Wochen-, Tages- oder Phasenstruktur.
 23. details kurz. Serien in warmup/mainSet/cooldown/restGuidance; Technikdetails in techniqueInstructions.
 24. longestContinuousM enthält die längste tatsächlich am Stück geschwommene Teilstrecke. Wiederholungen wie 6 × 100 m bedeuten longestContinuousM=100, nicht 600.
-25. targetSegmentM nur setzen, wenn eine klar benannte Ziel-/Teststrecke existiert, sonst null.
+25. targetSegmentM nur setzen, wenn eine klar benannte Ziel-/Teststrecke existiert, sonst 0.
 26. Bei einer Zieleinheit Gesamtumfang und Zielstrecke getrennt behandeln: z.B. 200 m Einschwimmen + 1500 m Zielversuch + 200 m Ausschwimmen = totalDistanceM 1900 und targetSegmentM 1500.
 27. Bei einem langen einzelnen Hauptblock keine künstliche Serienpause innerhalb des Blocks formulieren. Stattdessen anschließend angemessen locker erholen und dann ausschwimmen.
 28. Bei einem persönlichen Distanzziel soll die Abschlusswoche NICHT einfach die normale lineare Steigerung fortsetzen: zuerst Technik/Frische, dann moderate Aktivierung, dann Abschluss-/Zieleinheit. Bei 2 Einheiten/Woche entsprechend auf zwei sinnvolle Schritte verdichten.
@@ -610,7 +625,7 @@ AUSGABE: ausschließlich das verlangte JSON.`
     'anthropic-version':'2023-06-01'
   },body:JSON.stringify({
     model:MODEL,
-    max_tokens:14000,
+    max_tokens:20000,
     system,
     output_config:{format:{type:'json_schema',schema:responseSchema}},
     messages:[{role:'user',content:`Erstelle die Schwimm-Trainingsinhalte für GENAU diese festen Session-Slots. Kein Slot darf fehlen oder zusätzlich entstehen.\nSlots: ${JSON.stringify(slotContext)}\nNutzerdaten: ${JSON.stringify(input)}`}]
@@ -619,6 +634,7 @@ AUSGABE: ausschließlich das verlangte JSON.`
   const data=await response.json()
   if(!response.ok)throw new Error(data?.error?.message||`Planservice Fehler ${response.status}`)
   if(data?.stop_reason==='max_tokens')throw new Error('Der Schwimmplan wurde unvollständig erzeugt. Bitte erneut versuchen.')
+  if(data?.stop_reason==='refusal')throw new Error('Der Schwimmplan konnte in diesem Versuch nicht erzeugt werden.')
   const text=data?.content?.find(x=>x?.type==='text')?.text
   if(!text)throw new Error('Es wurde kein Schwimmplan zurückgegeben.')
 
