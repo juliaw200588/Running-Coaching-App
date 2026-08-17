@@ -61,50 +61,6 @@ const extractSwimDistances=text=>{
   return hits
 }
 
-const parseSeriesSegment=segment=>{
-  const raw=String(segment||'')
-  const repeated=raw.match(/(\d+)\s*[x×]\s*(\d{1,3}(?:\.\d{3})+|\d+(?:,\d+)?)\s*m\b/i)
-  if(repeated){
-    const reps=Number(repeated[1])
-    const distance=parseMeterNumber(repeated[2])
-    return Number.isFinite(reps)&&reps>0&&Number.isFinite(distance)&&distance>0?reps*distance:null
-  }
-  const single=raw.match(/(\d{1,3}(?:\.\d{3})+|\d+(?:,\d+)?)\s*m\b(?!\s*-\s*(?:bahn|becken))/i)
-  if(single){
-    const distance=parseMeterNumber(single[1])
-    return Number.isFinite(distance)&&distance>0?distance:null
-  }
-  return null
-}
-
-const extractExplicitSeriesSums=text=>{
-  const raw=String(text||'')
-
-  // Explizite Additionskette: Beschreibende Wörter zwischen Strecke und Plus sind erlaubt,
-  // z.B. „2 × 100 m Kraul + 4 × 50 m Brust + 100 m Kraul locker“.
-  const segments=raw.split(/\s*\+\s*/).filter(Boolean)
-  if(segments.length>1){
-    const values=segments.map(parseSeriesSegment)
-    if(values.every(value=>Number.isFinite(value)&&value>0)){
-      return [values.reduce((a,b)=>a+b,0)]
-    }
-  }
-
-  // Ohne Plus nur dann hart prüfen, wenn genau eine Wiederholungsserie vorkommt
-  // und daneben keine weitere eigenständige Meterangabe steht. So vermeiden wir
-  // Fehlalarme bei freier Prosa wie „6 × 100 m, danach 100 m locker“.
-  const repeatRe=/(\d+)\s*[x×]\s*(\d{1,3}(?:\.\d{3})+|\d+(?:,\d+)?)\s*m\b/gi
-  const repeats=[...raw.matchAll(repeatRe)]
-  if(repeats.length===1){
-    const stripped=raw.replace(repeatRe,' ')
-    if(extractSwimDistances(stripped).length===0){
-      const value=parseSeriesSegment(repeats[0][0])
-      if(Number.isFinite(value)&&value>0)return [value]
-    }
-  }
-  return []
-}
-
 const validateTextDistances=(day,input,weekN)=>{
   const pool=poolMeters(input.poolLength)
   const fields=[
@@ -120,18 +76,6 @@ const validateTextDistances=(day,input,weekN)=>{
     for(const value of distances){
       if(!isPoolMultiple(value,pool)){
         throw new Error(`Woche ${weekN}: ${label} enthält die nicht bahngenaue Teilstrecke ${value} m für eine ${pool}-m-Bahn.`)
-      }
-    }
-
-    // Wo die Textstruktur eindeutig prüfbar ist, muss sie auch zum Distanzfeld passen:
-    // Entweder nennt der Block seine Gesamtdistanz ausdrücklich oder eine reine
-    // Wiederholungsserie (z.B. 6 × 100 m) ergibt exakt die hinterlegte Distanz.
-    const mentionsExpected=distances.some(value=>Math.abs(value-expected)<1e-9)
-    const explicitSeriesSums=extractExplicitSeriesSums(text)
-    if(!mentionsExpected&&explicitSeriesSums.length===1){
-      const described=explicitSeriesSums[0]
-      if(Math.abs(described-expected)>1e-9){
-        throw new Error(`Woche ${weekN}: ${label} beschreibt ${described} m, hinterlegt sind aber ${expected} m.`)
       }
     }
   }
@@ -219,12 +163,21 @@ const strokePatterns={
     /\b\d+(?:[.,]\d+)?\s*m\s+rücken\b/i,
     /\b\d+(?:[.,]\d+)?\s*m\s+ruecken\b/i,
     /\bbackstroke\b/i,
-    /\bback\s+stroke\b/i
+    /\bback\s+stroke\b/i,
+    /\bback\s+crawl\b/i,
+    /\brückenkraul\b/i,
+    /\brueckenkraul\b/i,
+    /\brücken(?:beine|kick|kicks)\b/i,
+    /\bruecken(?:beine|kick|kicks)\b/i,
+    /\brücken[-\s]?züge?\b/i,
+    /\bruecken[-\s]?zuege?\b/i
   ],
   butterfly:[
     /\bdelfin(?:schwimmen|lage|technik|züge?|zug)?\b/i,
     /\bschmetterling(?:schwimmen|lage|technik|züge?|zug)?\b/i,
-    /\bbutterfly(?:\s+stroke)?\b/i
+    /\bbutterfly(?:\s+stroke)?\b/i,
+    /\bdelfin(?:kick|kicks|beine)\b/i,
+    /\bschmetterling(?:kick|kicks|beine)\b/i
   ]
 }
 
@@ -245,8 +198,8 @@ const preferredAllowedStroke=input=>{
 const replacementPatterns={
   freestyle:[/\bfreestyle\b/gi,/\bfront\s+crawl\b/gi,/\bcrawl\s+stroke\b/gi,/\bkraul(?:schwimmen|lage)?\b/gi,/\bfreistil(?:schwimmen|lage)?\b/gi],
   breaststroke:[/\bbreaststroke\b/gi,/\bbreast\s+stroke\b/gi,/\bbrustschwimmen\b/gi,/\bbrustlage\b/gi,/\bbrust\s+schwimmen\b/gi,/\bbrusttechnik\b/gi],
-  backstroke:[/\bbackstroke\b/gi,/\bback\s+stroke\b/gi,/\brückenschwimmen\b/gi,/\brueckenschwimmen\b/gi,/\brückenlage\b/gi,/\brueckenlage\b/gi,/\brücken\s+schwimmen\b/gi,/\bruecken\s+schwimmen\b/gi],
-  butterfly:[/\bbutterfly(?:\s+stroke)?\b/gi,/\bdelfin(?:schwimmen|lage|technik)?\b/gi,/\bschmetterling(?:schwimmen|lage|technik)?\b/gi]
+  backstroke:[/\bbackstroke\b/gi,/\bback\s+stroke\b/gi,/\bback\s+crawl\b/gi,/\brückenschwimmen\b/gi,/\brueckenschwimmen\b/gi,/\brückenlage\b/gi,/\brueckenlage\b/gi,/\brückenkraul\b/gi,/\brueckenkraul\b/gi,/\brücken(?:beine|kick|kicks)\b/gi,/\bruecken(?:beine|kick|kicks)\b/gi,/\brücken[-\s]?züge?\b/gi,/\bruecken[-\s]?zuege?\b/gi,/\brücken\s+schwimmen\b/gi,/\bruecken\s+schwimmen\b/gi],
+  butterfly:[/\bbutterfly(?:\s+stroke)?\b/gi,/\bdelfin(?:schwimmen|lage|technik|kick|kicks|beine)?\b/gi,/\bschmetterling(?:schwimmen|lage|technik|kick|kicks|beine)?\b/gi]
 }
 
 const replaceForbiddenStrokeNames=(text,input)=>{
@@ -322,21 +275,22 @@ const validatePlan=(plan,input)=>{
   const normalizeDay=v=>{
     const s=String(v||'').trim().toLowerCase()
     const patterns=[
-      [/^(mo|montag|monday)\b/,'mo'],
-      [/^(di|dienstag|tuesday|tue)\b/,'di'],
-      [/^(mi|mittwoch|wednesday|wed)\b/,'mi'],
-      [/^(do|donnerstag|thursday|thu|thur|thurs)\b/,'do'],
-      [/^(fr|freitag|friday|fri)\b/,'fr'],
-      [/^(sa|samstag|saturday|sat)\b/,'sa'],
-      [/^(so|sonntag|sunday|sun)\b/,'so']
+      [/\b(mo|montag|monday|mon)\b/,'mo'],
+      [/\b(di|dienstag|tuesday|tue)\b/,'di'],
+      [/\b(mi|mittwoch|wednesday|wed)\b/,'mi'],
+      [/\b(do|donnerstag|thursday|thu|thur|thurs)\b/,'do'],
+      [/\b(fr|freitag|friday|fri)\b/,'fr'],
+      [/\b(sa|samstag|saturday|sat)\b/,'sa'],
+      [/\b(so|sonntag|sunday|sun)\b/,'so']
     ]
     for(const [pattern,key] of patterns){
       if(pattern.test(s))return key
     }
-    return s
+    return null
   }
+  const canonicalDayTag={mo:'Mo',di:'Di',mi:'Mi',do:'Do',fr:'Fr',sa:'Sa',so:'So'}
 
-  const days=new Set((input.preferredDays||[]).map(normalizeDay))
+  const days=new Set((input.preferredDays||[]).map(normalizeDay).filter(Boolean))
   const tools=new Set(input.equipment||[])
 
   for(const week of weeks){
@@ -346,9 +300,14 @@ const validatePlan=(plan,input)=>{
 
     for(const day of week.days||[]){
       day.sport_type='swimming'
-      if(days.size&&!days.has(normalizeDay(day.tag))){
+      const normalizedTag=normalizeDay(day.tag)
+      if(!normalizedTag){
+        throw new Error(`Trainingstag in Woche ${week.n} konnte nicht erkannt werden: ${day.tag}`)
+      }
+      if(days.size&&!days.has(normalizedTag)){
         throw new Error(`Nicht gewählter Trainingstag in Woche ${week.n}: ${day.tag}`)
       }
+      day.tag=canonicalDayTag[normalizedTag]
       if(!n(day.durationMinutes))throw new Error(`Zeit fehlt in Woche ${week.n}.`)
       if(!day.warmup||!n(day.warmupDistanceM))throw new Error(`Einschwimmen fehlt in Woche ${week.n}.`)
       if(!day.mainSet||!n(day.mainDistanceM)||!day.restGuidance)throw new Error(`Serie, Seriendistanz oder Pausenangabe fehlt in Woche ${week.n}.`)
@@ -387,7 +346,7 @@ export async function generateSwimmingPlan(payload={}){
       : 'Allgemeiner Aufbau/Fitness: kein automatischer Taper. Letzte Phase heißt Festigung und führt in weiteres Training.'
 
   const system=`Du erstellst einen sicheren, konkreten Schwimmtrainingsplan.
-1. Genau ${input.unitsPerWeek} Einheiten/Woche ausschließlich an preferredDays; sport_type="swimming".
+1. Genau ${input.unitsPerWeek} Einheiten/Woche ausschließlich an preferredDays; sport_type="swimming". Das Feld tag enthält ausschließlich den Wochentag als Kurzform Mo, Di, Mi, Do, Fr, Sa oder So – niemals ein Datum, keine Jahreszahl und keinen weiteren Zusatz.
 2. Jede Einheit braucht durationMinutes. Gib warmupDistanceM, mainDistanceM, techniqueDistanceM und cooldownDistanceM strukturiert aus. totalDistanceM muss EXAKT warmupDistanceM + mainDistanceM + techniqueDistanceM + cooldownDistanceM entsprechen. Die Gesamtdistanz darf niemals unabhängig von diesen Blöcken erfunden werden.
 3. Baue jede Einheit in dieser Reihenfolge: (a) fachlich sinnvollen Hauptreiz aus Ziel, Niveau und Einheitentyp bestimmen, (b) Einschwimmen fest einplanen, (c) Ausschwimmen fest einplanen, (d) ggf. zusätzliche Technikmeter ergänzen. currentSessionM ist dabei keine harte Obergrenze. Die Gesamteinheit ergibt sich aus allen tatsächlich geschwommenen Blöcken; der Hauptreiz darf nicht künstlich zu kurz werden, nur um exakt auf currentSessionM zu kommen.
 4. Jede einzelne Einheit braucht ein echtes Einschwimmen UND ein echtes Ausschwimmen. Bei einer ${pool}-m-Bahn muss Ausschwimmen mindestens ${minCooldown} m betragen. Verwende 25 m Ausschwimmen bei einer 25-m-Bahn NICHT als Resteverwertung. Typisch sind bei kurzen Einheiten 50–100 m, bei längeren Einheiten 100–200 m.
@@ -400,7 +359,7 @@ export async function generateSwimmingPlan(payload={}){
 11. Schwimmart ist eine HARTE Auswahl: stroke=freestyle bedeutet ausschließlich Kraul/Freistil; stroke=breaststroke bedeutet ausschließlich Brust; stroke=mixed bedeutet ausschließlich Kraul/Freistil und Brust. Rücken, Delfin/Schmetterling und jede andere nicht gewählte Lage sind verboten. Das gilt AUSDRÜCKLICH auch für englische Bezeichnungen und Synonyme in ALLEN Textfeldern: backstroke/back stroke, butterfly, breaststroke/breast stroke, freestyle/front crawl dürfen nur vorkommen, wenn die entsprechende Lage ausgewählt und erlaubt ist. Verwende in den nutzerseitigen Texten bevorzugt die deutschen Bezeichnungen Kraul/Freistil und Brust und füge niemals eine weitere Lage zur Abwechslung, Technik oder Erholung hinzu. Prüfe vor der Ausgabe jedes Textfeld noch einmal auf nicht erlaubte Schwimmarten. Bei mixed Schwerpunkt=${input.mixedPriority}. Die priorisierte Schwimmart soll über eine Einheit bzw. sinnvoll über die Trainingswoche ungefähr 70 % des Schwimmumfangs ausmachen, die andere ungefähr 30 %. Das ist eine fachliche Zielgröße, keine mathematisch starre Quote: praktikable, bahngenaue Teilstrecken haben Vorrang. Bei Anfängern Technikqualität vor aggressiver Umfangssteigerung.
 12. Technikniveau=${input.techniqueLevel}; Schwerpunkte=${(input.techniqueFocus||[]).join(', ')||'keine besonderen'}. Technik regelmäßig passend zum Niveau einbauen.
 13. techniqueTitle kurz; techniqueInstructions vollständig und anfängertauglich: Durchführung, worauf achten, häufige Fehler. UI klappt Details ein.
-14. Becken=${input.poolLength}. JEDE schwimmbare Teilstrecke und JEDE Unterteilung innerhalb von warmup, mainSet, technique und cooldown muss bahngenau ausführbar sein. Schreibe Tausenderdistanzen bevorzugt ohne Tausenderpunkt (z.B. 1500 m statt 1.500 m), damit Angaben eindeutig bleiben. Die im Text beschriebenen Serien müssen rechnerisch zum jeweiligen Distanzfeld passen; z.B. 6 × 100 m erfordert mainDistanceM=600, sofern keine weiteren Teilserien hinzukommen. Bei 25m nur Vielfache von 25 m, bei 50m nur Vielfache von 50 m. Bei "both"/"Beides" ausschließlich Vielfache von 50 m verwenden, damit jede Einheit sowohl im 25-m- als auch im 50-m-Becken funktioniert. Auch gemischte Aufteilungen müssen diese Regel erfüllen.
+14. Becken=${input.poolLength}. JEDE schwimmbare Teilstrecke und JEDE Unterteilung innerhalb von warmup, mainSet, technique und cooldown muss bahngenau ausführbar sein. Schreibe Tausenderdistanzen bevorzugt ohne Tausenderpunkt (z.B. 1500 m statt 1.500 m), damit Angaben eindeutig bleiben. Formuliere Serien für Nutzer natürlich mit Komma, „danach“, „davon“ oder „je“ statt künstlichen Rechenketten mit Pluszeichen. Die Textbeschreibung muss inhaltlich zum zugehörigen Distanzfeld passen; die verbindliche Distanzberechnung erfolgt über die strukturierten Distanzfelder. Bei 25m nur Vielfache von 25 m, bei 50m nur Vielfache von 50 m. Bei "both"/"Beides" ausschließlich Vielfache von 50 m verwenden, damit jede Einheit sowohl im 25-m- als auch im 50-m-Becken funktioniert. Auch gemischte Aufteilungen müssen diese Regel erfüllen.
 15. techniqueDistanceM zählt NUR dann zusätzliche Meter, wenn der Technikblock tatsächlich zusätzlich geschwommene Meter enthält. Ist Technik bereits Bestandteil von warmup oder mainSet, setze techniqueDistanceM=null, damit Meter nicht doppelt gezählt werden.
 16. Verfügbare Hilfsmittel=${(input.equipment||[]).join(', ')||'keine'}. NUR diese verwenden; ohne Hilfsmittel muss der Plan funktionieren.
 17. Intensität nur einfach: locker, zügig, intensiv aber kontrolliert. Keine RPE-Zahlen; keine HF-Pflicht.
