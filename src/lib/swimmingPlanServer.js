@@ -321,16 +321,19 @@ const validatePlan=(plan,input)=>{
 
   const normalizeDay=v=>{
     const s=String(v||'').trim().toLowerCase()
-    const map={
-      'mo':'mo','montag':'mo','monday':'mo',
-      'di':'di','dienstag':'di','tuesday':'di',
-      'mi':'mi','mittwoch':'mi','wednesday':'mi',
-      'do':'do','donnerstag':'do','thursday':'do',
-      'fr':'fr','freitag':'fr','friday':'fr',
-      'sa':'sa','samstag':'sa','saturday':'sa',
-      'so':'so','sonntag':'so','sunday':'so'
+    const patterns=[
+      [/^(mo|montag|monday)\b/,'mo'],
+      [/^(di|dienstag|tuesday|tue)\b/,'di'],
+      [/^(mi|mittwoch|wednesday|wed)\b/,'mi'],
+      [/^(do|donnerstag|thursday|thu|thur|thurs)\b/,'do'],
+      [/^(fr|freitag|friday|fri)\b/,'fr'],
+      [/^(sa|samstag|saturday|sat)\b/,'sa'],
+      [/^(so|sonntag|sunday|sun)\b/,'so']
+    ]
+    for(const [pattern,key] of patterns){
+      if(pattern.test(s))return key
     }
-    return map[s]||s
+    return s
   }
 
   const days=new Set((input.preferredDays||[]).map(normalizeDay))
