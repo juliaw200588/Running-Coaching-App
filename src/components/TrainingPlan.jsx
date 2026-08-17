@@ -5,6 +5,7 @@ import PhaseTimeline from './PhaseTimeline.jsx'
 import PhaseCards from './PhaseCards.jsx'
 import SplitAccordion from './SplitAccordion.jsx'
 import StoryShareModal from './StoryShareModal.jsx'
+import WeeklyAnalysis from './WeeklyAnalysis.jsx'
 
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
@@ -190,7 +191,7 @@ function findCurrentPhaseWeek(plan) {
   return { phaseIdx: 0, weekIdx: 0 }
 }
 
-export default function TrainingPlan({ plan, onReset, user }) {
+export default function TrainingPlan({ plan, onReset, user, planId = null, openWeekAnalysis = null, onWeekAnalysisOpened }) {
   const [activePhase, setActivePhase] = useState(() => findCurrentPhaseWeek(plan).phaseIdx)
   const [showPauseModal, setShowPauseModal] = useState(false)
   const [pauseWeeks, setPauseWeeks] = useState(1)
@@ -213,8 +214,18 @@ export default function TrainingPlan({ plan, onReset, user }) {
   const [routeMapLoading, setRouteMapLoading] = useState(false)
   const [routeMapError, setRouteMapError] = useState(null)
   const [storyOpen, setStoryOpen] = useState(false)
+  const [weekAnalyses, setWeekAnalyses] = useState({})
+  const [analysisModal, setAnalysisModal] = useState(null)
   const [skipReasonInput, setSkipReasonInput] = useState('')
   const fileRef = useRef()
+
+  useEffect(() => {
+    if (openWeekAnalysis == null) return
+    const analysis = weekAnalyses[Number(openWeekAnalysis)]
+    if (!analysis) return
+    setAnalysisModal(analysis)
+    if (typeof onWeekAnalysisOpened === 'function') onWeekAnalysisOpened()
+  }, [openWeekAnalysis, weekAnalyses, onWeekAnalysisOpened])
 
   const phases = plan.phases || []
   const isHikingPlan = plan?.sport_type === 'hiking' || plan?.plan_type === 'hiking_march'
@@ -355,6 +366,45 @@ export default function TrainingPlan({ plan, onReset, user }) {
         try { const l = await window.storage.get('laufplan_logs'); if (l) setLogs(JSON.parse(l.value)) } catch {}
       }
 
+      // Wochenanalysen planfest laden. Neue Analysen tragen plan_id;
+      // ältere Analysen ohne plan_id werden nur übernommen, wenn week_start
+      // exakt zur Wochenposition dieses Plans passt.
+      if (user) {
+        try {
+          let analysisQuery = supabase
+            .from('week_analyses')
+            .select('id, plan_id, week_number, week_start, analysis, recommendation, next_week_adjustment, analysis_data')
+            .eq('user_id', user.id)
+            .order('week_start', { ascending: true })
+
+          if (planId) analysisQuery = analysisQuery.or(`plan_id.eq.${planId},plan_id.is.null`)
+
+          const { data: analysisRows } = await analysisQuery
+          const expectedStarts = {}
+          const planStart = new Date(`${String(plan.startDate || '').slice(0,10)}T12:00:00`)
+          let sequentialWeek = 0
+          for (const phase of plan.phases || []) {
+            for (const week of phase.weeks || []) {
+              const d = new Date(planStart)
+              d.setDate(d.getDate() + sequentialWeek * 7)
+              expectedStarts[week.n] = d.toISOString().slice(0,10)
+              sequentialWeek += 1
+            }
+          }
+
+          const analysisMap = {}
+          ;(analysisRows || []).forEach(row => {
+            const belongsToPlan = row.plan_id
+              ? row.plan_id === planId
+              : row.week_start === expectedStarts[row.week_number]
+            if (belongsToPlan) analysisMap[row.week_number] = row
+          })
+          setWeekAnalyses(analysisMap)
+        } catch (error) {
+          console.error('Wochenanalysen laden fehlgeschlagen:', error)
+        }
+      }
+
       // Screenshots: zuerst aus Supabase, dann localStorage als Fallback
       if (user) {
         try {
@@ -422,7 +472,7 @@ export default function TrainingPlan({ plan, onReset, user }) {
       }
     }
     load()
-  }, [user])
+  }, [user, planId, plan])
 
   useEffect(() => {
     if (!detailModal) {
@@ -1374,6 +1424,28 @@ export default function TrainingPlan({ plan, onReset, user }) {
                         </div>
                       )
                     })}
+
+                    {weekAnalyses[week.n] && (
+                      <button
+                        type="button"
+                        onClick={() => setAnalysisModal(weekAnalyses[week.n])}
+                        style={{
+                          width:'100%', marginTop:10, padding:'12px 13px', borderRadius:14,
+                          border:'1.5px solid #DDE9E2', background:'linear-gradient(135deg,#F3FBF7,#FFF8F1)',
+                          color:'#527E67', fontSize:11, fontWeight:'bold', fontFamily:'sans-serif',
+                          cursor:'pointer', textAlign:'left', display:'flex', alignItems:'center',
+                          justifyContent:'space-between', gap:10
+                        }}
+                      >
+                        <span>
+                          📊 Coach-Rückblick ansehen
+                          {weekAnalyses[week.n]?.analysis_data?.coach?.nextWeekFocus?.title
+                            ? ` · Woche ${Number(week.n) + 1}: ${weekAnalyses[week.n].analysis_data.coach.nextWeekFocus.title}`
+                            : ''}
+                        </span>
+                        <span style={{color:'#94AA9D'}}>→</span>
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

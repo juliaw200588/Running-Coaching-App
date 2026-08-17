@@ -186,7 +186,7 @@ const card = {
   boxShadow: '0 8px 24px rgba(74,52,39,0.055)', boxSizing: 'border-box'
 }
 
-function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile, onOpenWeekAnalysis }) {
+function Dashboard({ user, plan, planId = null, onOpenTraining, onOpenActivities, onOpenProfile, onOpenWeekAnalysis }) {
   const [loading, setLoading] = useState(true)
   const [profile, setProfile] = useState(null)
   const [logs, setLogs] = useState([])
@@ -250,7 +250,7 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
           .select('*')
           .eq('user_id', user.id)
           .order('week_start', { ascending: false })
-          .limit(6),
+          .limit(24),
       ])
 
       if (profileRes.error) throw profileRes.error
@@ -261,7 +261,32 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
       setProfile(profileRes.data || null)
       setLogs(logsRes.data || [])
       setSkipped(skippedRes.data || [])
-      setAnalyses(analysisRes.data || [])
+
+      // Weekly-v3: Analysen immer dem aktuell geöffneten Plan zuordnen.
+      // Neue Analysen besitzen plan_id. Für ältere Analysen ohne plan_id
+      // verwenden wir als rückwärtskompatiblen Fallback die Wochenstarts
+      // des aktuell geöffneten Plans.
+      const expectedWeekStarts = new Set()
+      if (plan?.startDate) {
+        const planStart = localDate(plan.startDate)
+        if (planStart) {
+          let weekOffset = 0
+          for (const phase of plan?.phases || []) {
+            for (const _week of phase.weeks || []) {
+              const d = new Date(planStart)
+              d.setDate(d.getDate() + weekOffset * 7)
+              expectedWeekStarts.add(dateString(d))
+              weekOffset += 1
+            }
+          }
+        }
+      }
+
+      const planAnalyses = (analysisRes.data || []).filter(row => {
+        if (row.plan_id) return planId ? row.plan_id === planId : false
+        return expectedWeekStarts.has(String(row.week_start || '').slice(0, 10))
+      })
+      setAnalyses(planAnalyses)
 
       // Die Erfolgsprüfung ist für die sichtbaren Dashboard-Daten nicht nötig.
       // Sie läuft deshalb nachgelagert und blockiert den Seitenaufbau nicht.
@@ -307,7 +332,7 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
       .subscribe()
 
     return () => supabase.removeChannel(channel)
-  }, [user?.id, plan])
+  }, [user?.id, plan, planId])
 
   const context = useMemo(() => getCurrentPlanContext(plan), [plan])
   const todayStr = dateString(new Date())
@@ -506,6 +531,7 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
 
   const latestAnalysis = analyses[0] || null
   const focus =
+    latestAnalysis?.analysis_data?.coach?.nextWeekFocus ||
     latestAnalysis?.analysis_data?.nextWeekFocus ||
     latestAnalysis?.analysis_data?.next_week_focus ||
     null

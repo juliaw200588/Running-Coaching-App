@@ -74,6 +74,19 @@ const METRIC_LABELS = {
   heart_rate: 'Herzfrequenz',
   consistency: 'Konstanz',
   cadence: 'Kadenz',
+  duration: 'Trainingsdauer',
+  distance: 'Umfang',
+  elevation: 'Höhenmeter',
+  climbing: 'Anstiege',
+  technique: 'Technik',
+  swim_technique: 'Schwimmtechnik',
+  continuous_distance: 'Strecke am Stück',
+  swim_endurance: 'Schwimmausdauer',
+  block_quality: 'Belastungsblöcke',
+  tempo_blocks: 'Tempoblöcke',
+  trail_tolerance: 'Trail-Belastbarkeit',
+  time_on_feet: 'Zeit auf den Beinen',
+  foot_tolerance: 'Fußverträglichkeit',
 }
 
 function friendlyMetricLabel(metric) {
@@ -182,6 +195,10 @@ export default function WeeklyAnalysis({
     null
 
   const nextWeekNumber = Number(weekNumber) + 1
+  const sportType = analysisData?.plan?.sportType || analysisData?.facts?.sportType || 'running'
+  const sportIcon = {
+    running:'🏃', hiking:'🥾', cycling:'🚴', mountainbike:'🚵', swimming:'🏊'
+  }[sportType] || '🏃'
 
   // Alte Wochenanalysen ohne analysis_data weiterhin sauber anzeigen.
   if (!data) {
@@ -229,7 +246,7 @@ export default function WeeklyAnalysis({
               lineHeight: 1.25,
             }}
           >
-            🏃 Woche {weekNumber} im Rückblick
+            {sportIcon} Woche {weekNumber} im Rückblick
           </div>
 
           <div
@@ -382,7 +399,7 @@ export default function WeeklyAnalysis({
               lineHeight: 1.2,
             }}
           >
-            🏃 Woche {weekNumber} im Rückblick
+            {sportIcon} Woche {weekNumber} im Rückblick
           </div>
 
           <div

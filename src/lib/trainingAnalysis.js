@@ -229,6 +229,88 @@ const normalizeSegment = segment => {
   }
 }
 
+
+const classifyStructuredBlock = label => {
+  if (!String(label || '').trim()) return 'unlabeled'
+  const text = String(label || '').toLowerCase()
+  if (/warm|ein.?schwimm|einrollen|einlaufen|locker starten/.test(text)) return 'warmup'
+  if (/cool|aus.?schwimm|ausrollen|auslaufen/.test(text)) return 'cooldown'
+  if (/pause|recovery|erholung|locker|easy|trab/.test(text)) return 'recovery'
+  if (/intervall|interval|tempo|threshold|schwelle|zügig|zuegig|hard|belast|sprint|vo2/.test(text)) return 'quality'
+  if (/technik|drill|technikblock/.test(text)) return 'technique'
+  return 'work'
+}
+
+const compactStructuredBlocks = (segments = [], sportType = 'running') => {
+  const sport = normalizeSport(sportType)
+  return (segments || []).slice(0, 16).map((segment, index) => {
+    const distanceMeters = numeric(segment?.distanceMeters)
+    const durationSeconds = numeric(segment?.durationSeconds)
+    const pacePer100Seconds =
+      sport === 'swimming' && distanceMeters > 0 && durationSeconds > 0
+        ? durationSeconds / (distanceMeters / 100)
+        : null
+
+    return {
+      index: segment?.index ?? index + 1,
+      label: segment?.label || null,
+      kind: classifyStructuredBlock(segment?.label),
+      distanceMeters: distanceMeters || null,
+      durationSeconds: durationSeconds || null,
+      paceSecondsPerKm: sport !== 'swimming' ? numeric(segment?.paceSeconds) : null,
+      paceSecondsPer100m: sport === 'swimming' ? pacePer100Seconds : null,
+      avgHr: numeric(segment?.avgHr),
+      maxHr: numeric(segment?.maxHr),
+      cadence: numeric(segment?.cadence),
+      ascentMeters: numeric(segment?.ascentMeters),
+    }
+  })
+}
+
+const structuredBlockTrend = (blocks = []) => {
+  const quality = blocks.filter(block =>
+    block.kind === 'quality' || block.kind === 'work'
+  )
+  if (quality.length < 2) return null
+
+  const first = quality[0]
+  const last = quality.at(-1)
+  const hrValues = quality.map(block => block.avgHr).filter(Number.isFinite)
+  const durationValues = quality.map(block => block.durationSeconds).filter(Number.isFinite)
+  const paceKmValues = quality.map(block => block.paceSecondsPerKm).filter(Number.isFinite)
+  const pace100Values = quality.map(block => block.paceSecondsPer100m).filter(Number.isFinite)
+
+  return {
+    blockCount: quality.length,
+    firstAvgHr: first?.avgHr ?? null,
+    lastAvgHr: last?.avgHr ?? null,
+    hrDeltaBpm:
+      Number.isFinite(first?.avgHr) && Number.isFinite(last?.avgHr)
+        ? last.avgHr - first.avgHr
+        : null,
+    firstPaceSecondsPerKm: first?.paceSecondsPerKm ?? null,
+    lastPaceSecondsPerKm: last?.paceSecondsPerKm ?? null,
+    paceDeltaSecondsPerKm:
+      Number.isFinite(first?.paceSecondsPerKm) && Number.isFinite(last?.paceSecondsPerKm)
+        ? last.paceSecondsPerKm - first.paceSecondsPerKm
+        : null,
+    firstPaceSecondsPer100m: first?.paceSecondsPer100m ?? null,
+    lastPaceSecondsPer100m: last?.paceSecondsPer100m ?? null,
+    paceDeltaSecondsPer100m:
+      Number.isFinite(first?.paceSecondsPer100m) && Number.isFinite(last?.paceSecondsPer100m)
+        ? last.paceSecondsPer100m - first.paceSecondsPer100m
+        : null,
+    averageHr: hrValues.length ? avg(hrValues) : null,
+    averageBlockDurationSeconds: durationValues.length ? avg(durationValues) : null,
+    paceVariationPercent:
+      paceKmValues.length >= 2
+        ? (stdDev(paceKmValues) / avg(paceKmValues)) * 100
+        : pace100Values.length >= 2
+          ? (stdDev(pace100Values) / avg(pace100Values)) * 100
+          : null,
+  }
+}
+
 const heartRateZone = (heartRate, maxHr, restHr) => {
   const hr = numeric(heartRate)
   const max = numeric(maxHr)
@@ -361,6 +443,8 @@ const analyzeRun = (log, maxHr, restHr) => {
     workout: log?.einheit || null,
     workoutType,
     plannedDetails: log?.details || null,
+    mainSet: log?.mainSet || null,
+    restGuidance: log?.restGuidance || null,
     completed: Boolean(log?.logged),
     skipped: Boolean(log?.skipped),
     skipReason: log?.skipReason || null,
@@ -386,11 +470,16 @@ const analyzeRun = (log, maxHr, restHr) => {
       : null,
     splits: splits.slice(0, 30),
     segments: segments.slice(0, 30),
+    structuredBlocks: compactStructuredBlocks(segments, log?.sport_type || log?.sportType || 'running'),
+    structuredBlockTrend: structuredBlockTrend(
+      compactStructuredBlocks(segments, log?.sport_type || log?.sportType || 'running')
+    ),
     splitTrend: splitHalfMetrics(splits),
     segmentConsistency: segmentConsistency(segments),
     dataQuality: {
       hasSplits: splits.length > 0,
       hasSegments: segments.length > 0,
+      hasStructuredBlocks: segments.length > 0,
       hasHr: avgHr != null,
       hasMaxHr: maxHeartRate != null,
       hasRunningIndex: numeric(log?.running_index) != null,
@@ -548,11 +637,45 @@ const activityLoadClass = activity => {
     return 'low'
   }
 
-  if (sport === 'mountainbike' && (durationMinutes >= 75 || distanceKm >= 20)) return 'moderate'
-  if (sport === 'cycling' && (durationMinutes >= 90 || distanceKm >= 30)) return 'moderate'
-  if (sport === 'hiking' && durationMinutes >= 120) return 'moderate'
+  const elevationGain = activityElevationGainMeters(activity)
+  const hmPerKm = elevationPerKm(activity)
+
+  if (sport === 'mountainbike' && (
+    durationMinutes >= 75 || distanceKm >= 20 ||
+    elevationGain >= 500 || hmPerKm >= 25
+  )) return 'moderate'
+  if (sport === 'cycling' && (
+    durationMinutes >= 90 || distanceKm >= 30 ||
+    elevationGain >= 700 || hmPerKm >= 15
+  )) return 'moderate'
+  if (sport === 'hiking' && (
+    durationMinutes >= 120 || elevationGain >= 600 || hmPerKm >= 35
+  )) return 'moderate'
+  if (sport === 'running' && (
+    durationMinutes >= 75 || elevationGain >= 350 || hmPerKm >= 25
+  )) return 'moderate'
   if (sport === 'swimming' && durationMinutes >= 60) return 'moderate'
   return 'low'
+}
+
+const activityElevationGainMeters = activity => {
+  const value = numeric(
+    activity?.elevation_gain ??
+    activity?.hoehenmeter ??
+    activity?.elevationGain ??
+    activity?.elevationGainMeters ??
+    activity?.ascent ??
+    activity?.total_ascent
+  )
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : null
+}
+
+const elevationPerKm = activity => {
+  const gain = activityElevationGainMeters(activity)
+  const km = numeric(activity?.km)
+  return gain != null && km != null && km > 0
+    ? Math.round((gain / km) * 10) / 10
+    : null
 }
 
 const buildAllActivityChronology = ({ activityHistory = [], weekStart }) => {
@@ -579,6 +702,14 @@ const buildAllActivityChronology = ({ activityHistory = [], weekStart }) => {
           : null,
       averageHr: numeric(activity.bpm),
       trainingLoad: numeric(activity.training_load),
+      elevationGainMeters:
+        normalizeSport(activity.sport_type) === 'swimming'
+          ? null
+          : activityElevationGainMeters(activity),
+      elevationMetersPerKm:
+        normalizeSport(activity.sport_type) === 'swimming'
+          ? null
+          : elevationPerKm(activity),
       loadClass: activityLoadClass(activity),
       note: activity.note || activity.gefuehl || null,
       isPlanLinked: Boolean(activity.day_key),
@@ -652,7 +783,7 @@ const buildSubjectiveObjectiveSignals = runs => {
     .filter(Boolean)
 }
 
-const confidenceFor = runs => {
+const confidenceFor = (runs, sportType = 'running') => {
   const completed = runs.filter(run => run.completed)
 
   if (!completed.length) {
@@ -663,38 +794,207 @@ const confidenceFor = runs => {
     }
   }
 
+  const sport = normalizeSport(sportType)
   const scoreParts = completed.map(run => {
     let score = 0
-    if (run.actual?.paceSeconds != null) score += 1
-    if (run.actual?.avgHr != null) score += 1
-    if (run.dataQuality?.hasSplits) score += 1
-    if (run.dataQuality?.hasSegments) score += 1
-    if (run.actual?.runningIndex != null) score += 0.5
-    if (run.actual?.note) score += 0.5
-    return score / 5
+    let max = 0
+
+    const add = (condition, weight = 1) => {
+      max += weight
+      if (condition) score += weight
+    }
+
+    if (sport === 'running') {
+      add(run.actual?.paceSeconds != null)
+      add(run.actual?.avgHr != null)
+      add(run.dataQuality?.hasSplits)
+      add(run.dataQuality?.hasSegments)
+      add(run.actual?.runningIndex != null, 0.5)
+      add(Boolean(run.actual?.note), 0.5)
+    } else if (sport === 'swimming') {
+      add(run.actual?.durationSeconds != null)
+      add(run.actual?.km != null)
+      add(run.actual?.avgHr != null, 0.5)
+      add(run.dataQuality?.hasStructuredBlocks, 0.75)
+      add(Boolean(run.actual?.note), 0.75)
+      add(run.actual?.trainingLoad != null, 0.5)
+    } else if (sport === 'cycling' || sport === 'mountainbike') {
+      add(run.actual?.durationSeconds != null)
+      add(run.actual?.km != null)
+      add(run.actual?.avgHr != null)
+      add(run.dataQuality?.hasStructuredBlocks, 0.75)
+      add(run.actual?.elevationGainMeters != null, 0.5)
+      add(run.actual?.trainingLoad != null, 0.75)
+      add(Boolean(run.actual?.note), 0.5)
+    } else if (sport === 'hiking') {
+      add(run.actual?.durationSeconds != null)
+      add(run.actual?.km != null)
+      add(run.actual?.elevationGainMeters != null, 0.75)
+      add(Boolean(run.actual?.note), 0.75)
+      add(run.actual?.avgHr != null, 0.5)
+    } else {
+      add(run.actual?.durationSeconds != null)
+      add(run.actual?.km != null)
+      add(run.actual?.avgHr != null)
+      add(Boolean(run.actual?.note))
+    }
+
+    return max > 0 ? score / max : 0
   })
 
   const score = Math.round(avg(scoreParts) * 100)
-
   const reasons = []
+
+  if (completed.every(run => run.actual?.durationSeconds != null)) {
+    reasons.push('Dauer für alle absolvierten Einheiten vorhanden.')
+  }
+  if (completed.every(run => run.actual?.km != null)) {
+    reasons.push(
+      sport === 'swimming'
+        ? 'Distanz für alle absolvierten Schwimmeinheiten vorhanden.'
+        : 'Distanz für alle absolvierten Einheiten vorhanden.'
+    )
+  }
   if (completed.every(run => run.dataQuality?.hasHr)) {
     reasons.push('Herzfrequenzdaten für alle absolvierten Einheiten vorhanden.')
-  } else {
-    reasons.push('Herzfrequenzdaten fehlen bei mindestens einer Einheit.')
   }
-
-  if (completed.some(run => run.dataQuality?.hasSplits)) {
+  if (sport === 'running' && completed.some(run => run.dataQuality?.hasSplits)) {
     reasons.push('Kilometer-Splits stehen für mindestens eine Einheit zur Verfügung.')
   }
-
-  if (completed.some(run => run.dataQuality?.hasSegments)) {
+  if (sport === 'running' && completed.some(run => run.dataQuality?.hasSegments)) {
     reasons.push('Phasen-/Segmentdaten stehen für mindestens eine Einheit zur Verfügung.')
+  }
+  if (sport !== 'running' && completed.some(run => run.dataQuality?.hasStructuredBlocks)) {
+    reasons.push('Strukturierte Belastungs-/Setdaten stehen für mindestens eine Einheit zur Verfügung.')
+  }
+  if (completed.some(run => run.actual?.note)) {
+    reasons.push('Subjektive Rückmeldung steht für mindestens eine Einheit zur Verfügung.')
   }
 
   return {
     level: score >= 70 ? 'high' : score >= 40 ? 'medium' : 'low',
     score,
     reasons,
+  }
+}
+
+const firstNumericFromText = (value, unitPattern) => {
+  const text = String(value || '')
+  const match = text.match(new RegExp(`(\\d+(?:[.,]\\d+)?)\\s*${unitPattern}`, 'i'))
+  return match ? Number(match[1].replace(',', '.')) : null
+}
+
+const plannedDurationForDay = day => {
+  const direct = numeric(day?.durationMinutes)
+  if (direct != null && direct > 0) return direct
+  return firstNumericFromText(day?.details, '(?:min|minute(?:n)?)\\b')
+}
+
+const plannedKmForDay = day => {
+  const direct = numeric(day?.distanceKm ?? day?.distance_km)
+  if (direct != null && direct > 0) return direct
+  const fromGuidance = firstNumericFromText(day?.distanceGuidance, 'km\\b')
+  if (fromGuidance != null) return fromGuidance
+  return firstNumericFromText(day?.details, 'km\\b')
+}
+
+const plannedMetersForSwimmingDay = day => {
+  const structured = numeric(day?.totalDistanceM)
+  if (structured != null && structured > 0) return structured
+
+  const blocks = [
+    numeric(day?.warmupDistanceM),
+    numeric(day?.mainDistanceM),
+    numeric(day?.techniqueDistanceM),
+    numeric(day?.cooldownDistanceM),
+  ].filter(Number.isFinite)
+
+  if (blocks.length) return blocks.reduce((sum, value) => sum + value, 0)
+  return firstNumericFromText(day?.details, 'm\\b')
+}
+
+const buildSportSummary = ({ sportType, plannedDays, weekRuns }) => {
+  const sport = normalizeSport(sportType)
+  const completed = weekRuns.filter(run => run.completed)
+
+  const actualKm = completed
+    .map(run => run.actual?.km)
+    .filter(Number.isFinite)
+    .reduce((sum, value) => sum + value, 0)
+
+  const actualDurationMinutes = completed
+    .map(run => run.actual?.durationSeconds)
+    .filter(Number.isFinite)
+    .reduce((sum, value) => sum + value, 0) / 60
+
+  const actualElevationGainMeters = completed
+    .map(run => run.actual?.elevationGainMeters)
+    .filter(Number.isFinite)
+    .reduce((sum, value) => sum + value, 0)
+
+  const plannedDurationMinutes = (plannedDays || [])
+    .map(plannedDurationForDay)
+    .filter(Number.isFinite)
+    .reduce((sum, value) => sum + value, 0)
+
+  const plannedKm = (plannedDays || [])
+    .map(plannedKmForDay)
+    .filter(Number.isFinite)
+    .reduce((sum, value) => sum + value, 0)
+
+  const plannedMeters = sport === 'swimming'
+    ? (plannedDays || [])
+        .map(plannedMetersForSwimmingDay)
+        .filter(Number.isFinite)
+        .reduce((sum, value) => sum + value, 0)
+    : null
+
+  const actualMeters = sport === 'swimming' && actualKm > 0
+    ? Math.round(actualKm * 1000)
+    : null
+
+  const avgHrValues = completed
+    .map(run => run.actual?.avgHr)
+    .filter(Number.isFinite)
+
+  const trainingLoadValues = completed
+    .map(run => run.actual?.trainingLoad)
+    .filter(Number.isFinite)
+
+  return {
+    sport,
+    completedCount: completed.length,
+    plannedCount: (plannedDays || []).length,
+    plannedDurationMinutes: plannedDurationMinutes > 0 ? Math.round(plannedDurationMinutes) : null,
+    actualDurationMinutes: actualDurationMinutes > 0 ? Math.round(actualDurationMinutes) : null,
+    plannedDistanceKm: sport !== 'swimming' && plannedKm > 0 ? Math.round(plannedKm * 10) / 10 : null,
+    actualDistanceKm: sport !== 'swimming' && actualKm > 0 ? Math.round(actualKm * 10) / 10 : null,
+    plannedDistanceM: plannedMeters > 0 ? Math.round(plannedMeters) : null,
+    actualDistanceM: actualMeters,
+    actualElevationGainMeters: actualElevationGainMeters > 0 ? Math.round(actualElevationGainMeters) : null,
+    averageHr: avgHrValues.length ? Math.round(avg(avgHrValues)) : null,
+    averageTrainingLoad: trainingLoadValues.length ? Math.round(avg(trainingLoadValues)) : null,
+    sessionTypes: weekRuns.map(run => ({
+      tag: run.plannedTag,
+      workout: run.workout,
+      workoutType: run.workoutType,
+      completed: run.completed,
+      skipped: run.skipped,
+      actualDate: run.actualDate,
+      durationMinutes: run.actual?.durationSeconds ? Math.round(run.actual.durationSeconds / 60) : null,
+      distanceKm: run.actual?.km ?? null,
+      avgHr: run.actual?.avgHr ?? null,
+      elevationGainMeters: run.actual?.elevationGainMeters ?? null,
+      feeling: run.actual?.feeling ?? null,
+      note: run.actual?.note ?? null,
+      plannedStructure: {
+        details: run.plannedDetails || null,
+        mainSet: run.mainSet || null,
+        restGuidance: run.restGuidance || null,
+      },
+      structuredBlocks: (run.structuredBlocks || []).slice(0, 12),
+      structuredBlockTrend: run.structuredBlockTrend || null,
+    })),
   }
 }
 
@@ -710,6 +1010,7 @@ export function buildTrainingAnalysis({
   isRegenWeek = false,
   nextIsRegenWeek = false,
   aktuelleWochenKm = null,
+  sportType = 'running',
 }) {
   const weekRuns = weekLogs.map(log =>
     analyzeRun(log, currentHFMax, currentRuheHF)
@@ -798,6 +1099,24 @@ export function buildTrainingAnalysis({
     }
   })
 
+
+  if (normalizeSport(sportType) === 'swimming') {
+    completed.forEach(run => {
+      const trend = run.structuredBlockTrend
+      if (!trend || trend.blockCount < 2) return
+
+      if (
+        Number.isFinite(trend.hrDeltaBpm) && trend.hrDeltaBpm >= 8 &&
+        Number.isFinite(trend.paceDeltaSecondsPer100m) &&
+        trend.paceDeltaSecondsPer100m > 4
+      ) {
+        fatigueSignals.push(
+          `${run.workout || run.tag}: spätere Schwimmblöcke wurden langsamer bei gleichzeitig höherer Herzfrequenz.`
+        )
+      }
+    })
+  }
+
   efficiencyCandidates
     .filter(item => item.likelyReducedEfficiency)
     .forEach(item => {
@@ -814,6 +1133,7 @@ export function buildTrainingAnalysis({
   })
   const planRealityPatterns = buildPlanRealityPattern(historyRuns)
   const subjectiveObjectiveSignals = buildSubjectiveObjectiveSignals(weekRuns)
+  const sportSummary = buildSportSummary({ sportType, plannedDays, weekRuns })
 
   const previousWeekRuns = Number.isFinite(numeric(weekNumber))
     ? historyRuns.filter(
@@ -847,9 +1167,10 @@ export function buildTrainingAnalysis({
       )
     })
 
+  const primarySport = normalizeSport(sportType)
   const nonRunningLoad = allActivityChronology.filter(
     activity =>
-      activity.sport !== 'running' &&
+      activity.sport !== primarySport &&
       activity.loadClass !== 'low'
   )
 
@@ -873,7 +1194,7 @@ export function buildTrainingAnalysis({
   }
 
   return {
-    version: 2,
+    version: 3,
     adherence: {
       plannedCount: plannedDays.length,
       loggedCount: completed.length,
@@ -917,6 +1238,8 @@ export function buildTrainingAnalysis({
     subjectiveObjectiveSignals,
     recoverySpacing,
     fatigueSignals,
-    confidence: confidenceFor(weekRuns),
+    sportType: normalizeSport(sportType),
+    sportSummary,
+    confidence: confidenceFor(weekRuns, sportType),
   }
 }

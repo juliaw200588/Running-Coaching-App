@@ -455,7 +455,7 @@ useEffect(() => {
     // blockiert werden.
     weeklyCheckKeyRef.current = null
   }
-}, [user, plan, weeklyCheckInRefresh])
+}, [user, plan, planId, weeklyCheckInRefresh])
 
   const getWeekNumber = (date) => {
     const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
@@ -465,7 +465,7 @@ useEffect(() => {
   }
 
 
-const releaseWeekAnalysisClaim = async (userId, weekStart) => {
+const releaseWeekAnalysisClaim = async (userId, weekStart, planId = null) => {
   try {
     await supabase
       .from('week_analysis_claims')
@@ -473,12 +473,13 @@ const releaseWeekAnalysisClaim = async (userId, weekStart) => {
       .eq('user_id', userId)
       .eq('week_start', weekStart)
       .eq('status', 'running')
+      .match(planId ? { plan_id: planId } : {})
   } catch (error) {
     console.warn('[WochenCoach] Claim konnte nicht freigegeben werden:', error)
   }
 }
 
-const claimWeekAnalysis = async ({ userId, weekNumber, weekStart }) => {
+const claimWeekAnalysis = async ({ userId, weekNumber, weekStart, planId = null }) => {
   const staleBefore = new Date(Date.now() - 15 * 60 * 1000).toISOString()
 
   try {
@@ -488,6 +489,7 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart }) => {
       .eq('user_id', userId)
       .eq('week_start', weekStart)
       .eq('status', 'running')
+      .match(planId ? { plan_id: planId } : {})
       .lt('claimed_at', staleBefore)
   } catch (error) {
     console.warn('[WochenCoach] Veralteter Claim konnte nicht bereinigt werden:', error)
@@ -499,6 +501,7 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart }) => {
       user_id: userId,
       week_number: weekNumber,
       week_start: weekStart,
+      plan_id: planId,
       status: 'running',
     })
 
@@ -654,7 +657,7 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart }) => {
       const { data: existingAnalyses, error: existingAnalysisError } =
         await supabase
           .from('week_analyses')
-          .select('id, week_start')
+          .select('id, week_start, plan_id')
           .eq('user_id', user.id)
           .eq('week_number', currentWeek.n)
 
@@ -673,12 +676,12 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart }) => {
       const rowsForWeek = existingAnalyses || []
 
       const exactWeekMatch = rowsForWeek.some(
-        row => row.week_start === weekStartStr
+        row => row.week_start === weekStartStr && (!row.plan_id || row.plan_id === planId)
       )
 
       const legacyFirstWeekMatch =
         analyzeWeek === 0 &&
-        rowsForWeek.some(row => row.week_start === planStartStr)
+        rowsForWeek.some(row => row.week_start === planStartStr && (!row.plan_id || row.plan_id === planId))
 
       coachDebug('DB-Prüfung week_analyses.', {
         weekNumber: currentWeek.n,
@@ -855,6 +858,7 @@ const claimAcquired = await claimWeekAnalysis({
   userId: user.id,
   weekNumber: currentWeek.n,
   weekStart: weekStartStr,
+  planId,
 })
 
 if (!claimAcquired) return
@@ -876,12 +880,17 @@ if (!claimAcquired) return
       }
 
       // Vorherige Analysen laden für Kontext
-      const { data: previousAnalyses } = await supabase
+      const { data: previousAnalysisRows } = await supabase
         .from('week_analyses')
-        .select('week_number, analysis, recommendation, next_week_adjustment, analysis_data')
+        .select('week_number, week_start, plan_id, analysis, recommendation, next_week_adjustment, analysis_data')
         .eq('user_id', user.id)
-        .order('week_number', { ascending: false })
-        .limit(3)
+        .order('week_start', { ascending: false })
+        .limit(8)
+
+      const previousAnalyses = (previousAnalysisRows || [])
+        .filter(row => row.week_start < weekStartStr)
+        .filter(row => row.plan_id === planId || (!row.plan_id && row.week_start >= planStartStr))
+        .slice(0, 4)
 
       // Schuhzustand laden
       const { data: schuhe } = await supabase
@@ -914,6 +923,7 @@ if (!claimAcquired) return
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
+          planId,
           weekLogs,
           plannedDays,
           weekNumber: currentWeek.n,
@@ -945,7 +955,7 @@ if (!claimAcquired) return
           'Wochen-Coach API Fehler:',
           result?.error || response.status
         )
-        await releaseWeekAnalysisClaim(user.id, weekStartStr)
+        await releaseWeekAnalysisClaim(user.id, weekStartStr, planId)
         return
       }
 
@@ -954,7 +964,7 @@ if (!claimAcquired) return
           'Wochen-Coach hat keine verwertbare Analyse geliefert.',
           { triggerReason, result }
         )
-        await releaseWeekAnalysisClaim(user.id, weekStartStr)
+        await releaseWeekAnalysisClaim(user.id, weekStartStr, planId)
         return
       }
 
@@ -975,16 +985,15 @@ if (!claimAcquired) return
               week.days = week.days.map((day) => {
                 if (day.optional) return day
                 const adjustedDay = result.nextWeekAdjusted.find(a => a.tag === day.tag)
-                if (adjustedDay?.adjusted) {
+                if (adjustedDay?.adjusted && adjustedDay?.day) {
                   adjusted = true
-                  return { ...day, details: adjustedDay.details, adjusted: true, adjustmentReason: adjustedDay.adjustmentReason }
-                }
-                // Auch bei unveränderten Einheiten den von der KI zurückgegebenen Text
-                // übernehmen, aber NUR wenn HF-Zonen berechnet wurden - dann könnte die KI
-                // hier lediglich den HF-Bereich ergänzt haben, ohne das Training inhaltlich
-                // zu ändern. Kein "Angepasst"-Badge dafür, am Training selbst ändert sich nichts.
-                if (currentHFMax && adjustedDay?.details) {
-                  return { ...day, details: adjustedDay.details }
+                  const { key: _transientKey, ...resolvedDay } = adjustedDay.day
+                  return {
+                    ...day,
+                    ...resolvedDay,
+                    adjusted: true,
+                    adjustmentReason: adjustedDay.adjustmentReason || resolvedDay.adjustmentReason || '',
+                  }
                 }
                 return day
               })
@@ -1011,6 +1020,7 @@ if (!claimAcquired) return
           user_id: user.id,
           week_number: currentWeek.n,
           week_start: weekStartStr,
+          plan_id: planId,
           analysis: result.analyse,
           recommendation: result.empfehlung,
           next_week_adjustment: result.anpassung,
@@ -1022,7 +1032,7 @@ if (!claimAcquired) return
           'Wochenanalyse konnte nicht gespeichert werden:',
           analysisInsertError
         )
-        await releaseWeekAnalysisClaim(user.id, weekStartStr)
+        await releaseWeekAnalysisClaim(user.id, weekStartStr, planId)
         return
       }
 
@@ -1039,6 +1049,7 @@ if (!claimAcquired) return
         })
         .eq('user_id', user.id)
         .eq('week_start', weekStartStr)
+        .match(planId ? { plan_id: planId } : {})
 
       // Glocke = Hinweis. Die vollständige Analyse bleibt dauerhaft bei der Woche im Trainingsplan.
       const message =
@@ -1054,6 +1065,7 @@ if (!claimAcquired) return
           from_user_id: user.id,
           week_number: currentWeek.n,
           week_start: weekStartStr,
+          plan_id: planId,
         })
 
       if (notificationError) {
@@ -1071,7 +1083,7 @@ if (!claimAcquired) return
     } catch (e) {
       console.error('Wochenanalyse Fehler:', e)
       if (weekStartStr) {
-        await releaseWeekAnalysisClaim(user.id, weekStartStr)
+        await releaseWeekAnalysisClaim(user.id, weekStartStr, planId)
       }
     }
   }
@@ -1229,6 +1241,7 @@ const handleOpenWeekAnalysisFromNotification = (weekNumber) => {
                     plan={plan}
                     onReset={handleReset}
                     user={user}
+                    planId={planId}
                     openWeekAnalysis={openWeekAnalysisWeek}
                     onWeekAnalysisOpened={() => setOpenWeekAnalysisWeek(null)}
                   />
@@ -1303,6 +1316,7 @@ const handleOpenWeekAnalysisFromNotification = (weekNumber) => {
               <Dashboard
                 user={user}
                 plan={plan}
+                planId={planId}
                 onOpenTraining={() => setShowTrainingPlan(true)}
                 onOpenActivities={() => setActiveTab('activities')}
                 onOpenProfile={() => setActiveTab('profile')}
