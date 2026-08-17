@@ -144,7 +144,7 @@ const buildSessionSlots=(input)=>{
   return slots
 }
 
-const buildResponseSchema=(slots)=>({
+const buildResponseSchema=()=>({
   type:'object',additionalProperties:false,
   properties:{
     meta:{
@@ -157,9 +157,8 @@ const buildResponseSchema=(slots)=>({
       required:['title','goal','name']
     },
     sessions:{
-      type:'object',additionalProperties:false,
-      properties:Object.fromEntries(slots.map(slot=>[slot.key,SESSION_SCHEMA])),
-      required:slots.map(slot=>slot.key)
+      type:'array',
+      items:SESSION_SCHEMA
     }
   },
   required:['meta','sessions']
@@ -407,16 +406,25 @@ const buildDeterministicPlan=(raw,input,slots)=>{
   const byWeek=new Map()
   for(let week=1;week<=weeksCount;week++)byWeek.set(week,[])
 
-  for(const slot of slots){
-    const session=raw.sessions[slot.key]
-    if(!session)throw new Error(`Trainingseinheit ${slot.key} fehlt.`)
+  if(!Array.isArray(raw.sessions))throw new Error('Der Schwimmplan enthält keine Trainingseinheiten.')
+
+  const expected=slots.length
+  if(raw.sessions.length<expected){
+    throw new Error(`Der Schwimmplan enthält ${raw.sessions.length} statt ${expected} Trainingseinheiten.`)
+  }
+
+  const usableSessions=raw.sessions.slice(0,expected)
+
+  slots.forEach((slot,index)=>{
+    const session=usableSessions[index]
+    if(!session)throw new Error(`Trainingseinheit ${index+1} fehlt.`)
     byWeek.get(slot.week).push({
       ...session,
       tag:slot.tag,
       sport_type:'swimming',
       optional:false
     })
-  }
+  })
 
   const phaseBuckets=phases.map(phase=>({
     id:phase.id,
@@ -562,6 +570,10 @@ const validatePlan=(plan,input)=>{
 
 export async function generateSwimmingPlan(payload={}){
   const input={...payload}
+  const requestedWeeks=n(input.weeksUntilGoal)
+  const requestedUnits=n(input.unitsPerWeek)
+  if(requestedWeeks<6||requestedWeeks>24)throw new Error('Die Planlänge muss zwischen 6 und 24 Wochen liegen.')
+  if(requestedUnits<2||requestedUnits>4)throw new Error('Es müssen 2 bis 4 Schwimmeinheiten pro Woche gewählt werden.')
   const target=n(input.targetDistanceM)
   const pool=poolMeters(input.poolLength)
   const minCooldown=pool*2
@@ -573,7 +585,7 @@ export async function generateSwimmingPlan(payload={}){
       : 'Allgemeiner Aufbau/Fitness: kein automatischer Taper. Letzte Phase heißt Festigung und führt in weiteres Training.'
 
   const system=`Du erstellst einen sicheren, konkreten Schwimmtrainingsplan.
-1. Die Wochen-, Tages- und Phasenstruktur wird serverseitig festgelegt. Du befüllst ausschließlich die vorgegebenen Session-Slots und darfst KEINEN Slot weglassen, hinzufügen oder umbenennen. Jeder Slot ist eine verbindliche Pflichteinheit; optionale Zusatzeinheiten erzeugst du nicht.
+1. Die Wochen-, Tages- und Phasenstruktur wird serverseitig festgelegt. Du erzeugst ausschließlich das sessions-Array in exakt der vorgegebenen Reihenfolge und mit exakt der vorgegebenen Anzahl. Jede Position ist eine verbindliche Pflichteinheit; optionale Zusatzeinheiten erzeugst du nicht.
 2. Jede Einheit braucht durationMinutes. Gib warmupDistanceM, mainDistanceM, techniqueDistanceM und cooldownDistanceM strukturiert aus. Die Gesamtdistanz wird serverseitig ausschließlich aus diesen Blöcken berechnet; erfinde deshalb keine davon unabhängige Gesamtdistanz. Felder, die in einer Einheit nicht benötigt werden, trotzdem schema-konform ausgeben: leere Textfelder als "", nicht vorhandene optionale Meterwerte als 0. Verwende kein null.
 3. Baue jede Einheit in dieser Reihenfolge: (a) fachlich sinnvollen Hauptreiz aus Ziel, Niveau und Einheitentyp bestimmen, (b) Einschwimmen fest einplanen, (c) Ausschwimmen fest einplanen, (d) ggf. zusätzliche Technikmeter ergänzen. currentSessionM ist dabei keine harte Obergrenze. Die Gesamteinheit ergibt sich aus allen tatsächlich geschwommenen Blöcken; der Hauptreiz darf nicht künstlich zu kurz werden, nur um exakt auf currentSessionM zu kommen.
 4. Jede einzelne Einheit braucht ein echtes Einschwimmen UND ein echtes Ausschwimmen. Bei einer ${pool}-m-Bahn muss Ausschwimmen mindestens ${minCooldown} m betragen. Verwende 25 m Ausschwimmen bei einer 25-m-Bahn NICHT als Resteverwertung. Typisch sind bei kurzen Einheiten 50–100 m, bei längeren Einheiten 100–200 m.
@@ -607,9 +619,9 @@ export async function generateSwimmingPlan(payload={}){
 AUSGABE: ausschließlich das verlangte JSON.`
 
   const slots=buildSessionSlots(input)
-  const responseSchema=buildResponseSchema(slots)
-  const slotContext=slots.map(slot=>({
-    key:slot.key,
+  const responseSchema=buildResponseSchema()
+  const slotContext=slots.map((slot,index)=>({
+    position:index+1,
     week:slot.week,
     tag:slot.tag,
     phase:slot.phaseLabel,
@@ -618,6 +630,7 @@ AUSGABE: ausschließlich das verlangte JSON.`
     plannedSessionDistanceM:slot.plannedSessionDistanceM,
     continuousLimitM:slot.continuousLimitM
   }))
+  const expectedSessionCount=slots.length
 
   const response=await fetch(ANTHROPIC_URL,{method:'POST',headers:{
     'Content-Type':'application/json',
@@ -628,7 +641,7 @@ AUSGABE: ausschließlich das verlangte JSON.`
     max_tokens:20000,
     system,
     output_config:{format:{type:'json_schema',schema:responseSchema}},
-    messages:[{role:'user',content:`Erstelle die Schwimm-Trainingsinhalte für GENAU diese festen Session-Slots. Kein Slot darf fehlen oder zusätzlich entstehen.\nSlots: ${JSON.stringify(slotContext)}\nNutzerdaten: ${JSON.stringify(input)}`}]
+    messages:[{role:'user',content:`Erstelle GENAU ${expectedSessionCount} Schwimm-Trainingseinheiten als sessions-Array. Die Reihenfolge ist verbindlich und entspricht exakt der folgenden Liste. Kein Eintrag darf fehlen; füge keine zusätzlichen Einheiten hinzu. Jede Position gehört genau zu Woche und Wochentag aus dieser Liste.\nSession-Reihenfolge: ${JSON.stringify(slotContext)}\nNutzerdaten: ${JSON.stringify(input)}`}]
   })})
 
   const data=await response.json()
