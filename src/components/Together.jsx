@@ -123,20 +123,58 @@ function Avatar({ profile, size=42 }) {
   }}>{initials(profile?.name)}</div>
 }
 
+
+const goalDraftKey = userId => `together_goal_draft_${userId || 'anon'}`
+const goalModalKey = userId => `together_goal_modal_open_${userId || 'anon'}`
+
+const loadGoalDraft = userId => {
+  try {
+    const raw = sessionStorage.getItem(goalDraftKey(userId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+const clearGoalDraft = userId => {
+  try {
+    sessionStorage.removeItem(goalDraftKey(userId))
+    sessionStorage.removeItem(goalModalKey(userId))
+  } catch {}
+}
+
 function CreateGoalModal({ user, plan, planId, onClose, onCreated }) {
-  const [step, setStep] = useState(1)
+  const restoredDraft = useMemo(() => loadGoalDraft(user?.id), [user?.id])
+
+  const [step, setStep] = useState(() => {
+    const restoredStep = Number(restoredDraft?.step)
+    return [1,2,3].includes(restoredStep) ? restoredStep : 1
+  })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [form, setForm] = useState({
-    sport_type: inferPlanSport(plan) || 'running',
-    goal_type:'event',
-    title:'',
-    target_date:'',
-    target_distance:'',
-    description:'',
-  })
+  const [form, setForm] = useState(() => ({
+    sport_type: restoredDraft?.form?.sport_type || inferPlanSport(plan) || 'running',
+    goal_type: restoredDraft?.form?.goal_type || 'event',
+    title: restoredDraft?.form?.title || '',
+    target_date: restoredDraft?.form?.target_date || '',
+    target_distance: restoredDraft?.form?.target_distance || '',
+    description: restoredDraft?.form?.description || '',
+  }))
 
   const patch = values => setForm(current => ({ ...current, ...values }))
+
+  useEffect(() => {
+    if (!user?.id) return
+    try {
+      sessionStorage.setItem(
+        goalDraftKey(user.id),
+        JSON.stringify({ step, form })
+      )
+      sessionStorage.setItem(goalModalKey(user.id), '1')
+    } catch {}
+  }, [user?.id, step, form])
   const selectedSport = SPORT_META[form.sport_type] || SPORT_META.running
   const selectedGoal = GOAL_META[form.goal_type] || GOAL_META.event
 
@@ -180,6 +218,7 @@ function CreateGoalModal({ user, plan, planId, onClose, onCreated }) {
         })
 
       if (memberError) throw memberError
+      clearGoalDraft(user?.id)
       onCreated?.(goal)
     } catch (e) {
       console.error('[Gemeinsam] Ziel konnte nicht erstellt werden:', e)
@@ -471,9 +510,36 @@ export default function Together({ user, plan, planId }) {
   const [membersByGoal, setMembersByGoal] = useState({})
   const [profilesById, setProfilesById] = useState({})
   const [sessionsByGoal, setSessionsByGoal] = useState({})
-  const [showCreate, setShowCreate] = useState(false)
+  const [showCreate, setShowCreate] = useState(() => {
+    try {
+      return sessionStorage.getItem(goalModalKey(user?.id)) === '1'
+    } catch {
+      return false
+    }
+  })
   const [sessionGoal, setSessionGoal] = useState(null)
   const [message, setMessage] = useState('')
+
+  const openCreate = () => {
+    try {
+      sessionStorage.setItem(goalModalKey(user?.id), '1')
+    } catch {}
+    setShowCreate(true)
+  }
+
+  const closeCreate = () => {
+    clearGoalDraft(user?.id)
+    setShowCreate(false)
+  }
+
+  useEffect(() => {
+    if (!user?.id) return
+    try {
+      if (sessionStorage.getItem(goalModalKey(user.id)) === '1') {
+        setShowCreate(true)
+      }
+    } catch {}
+  }, [user?.id])
 
   const currentPlanContext = useMemo(() => getCurrentPlanContext(plan), [plan])
 
@@ -735,7 +801,7 @@ export default function Together({ user, plan, planId }) {
                   }}>
                     Trainiert auf dasselbe Ziel hin, bleibt aber in euren Plänen individuell. Gemeinsame Einheiten verbinden eure Wege.
                   </p>
-                  <button type="button" onClick={() => setShowCreate(true)} style={{
+                  <button type="button" onClick={openCreate} style={{
                     marginTop:22, border:'none', borderRadius:16, padding:'15px 20px',
                     minWidth:'min(350px,100%)', color:'#fff', fontWeight:900, cursor:'pointer',
                     background:'linear-gradient(135deg,#FF8C69,#FF6B78)',
@@ -885,7 +951,7 @@ export default function Together({ user, plan, planId }) {
                 <section style={{ marginTop:24 }}>
                   <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                     <h3 style={{ margin:0, color:'#4A382E', fontFamily:"'Georgia','Times New Roman',serif", fontSize:21 }}>Weitere gemeinsame Ziele</h3>
-                    <button type="button" onClick={() => setShowCreate(true)} style={{ border:'none', background:'transparent', color:'#D16D55', fontSize:10.5, fontWeight:900, cursor:'pointer' }}>+ Neu</button>
+                    <button type="button" onClick={openCreate} style={{ border:'none', background:'transparent', color:'#D16D55', fontSize:10.5, fontWeight:900, cursor:'pointer' }}>+ Neu</button>
                   </div>
                   <div style={{ display:'grid', gap:9, marginTop:10 }}>
                     {otherGoals.map(goal => <div key={goal.id} style={{ ...card, padding:'13px 14px', display:'flex', alignItems:'center', gap:11 }}>
@@ -917,8 +983,12 @@ export default function Together({ user, plan, planId }) {
             user={user}
             plan={plan}
             planId={planId}
-            onClose={() => setShowCreate(false)}
-            onCreated={() => { setShowCreate(false); load() }}
+            onClose={closeCreate}
+            onCreated={() => {
+              clearGoalDraft(user?.id)
+              setShowCreate(false)
+              load()
+            }}
           />}
 
           {sessionGoal && <CreateSessionModal
