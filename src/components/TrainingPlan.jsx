@@ -9,6 +9,33 @@ import WeeklyAnalysis from './WeeklyAnalysis.jsx'
 
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
+const WEEKDAY_ORDER = {
+  mo:0, montag:0, monday:0, mon:0,
+  di:1, dienstag:1, tuesday:1, tue:1,
+  mi:2, mittwoch:2, wednesday:2, wed:2,
+  do:3, donnerstag:3, thursday:3, thu:3, thur:3, thurs:3,
+  fr:4, freitag:4, friday:4, fri:4,
+  sa:5, samstag:5, saturday:5, sat:5,
+  so:6, sonntag:6, sunday:6, sun:6,
+}
+
+const weekdayIndex = value => {
+  const raw = String(value || '').trim().toLowerCase()
+  return WEEKDAY_ORDER[raw] ?? 99
+}
+
+// Nur die DARSTELLUNG wird chronologisch sortiert.
+// originalIndex bleibt erhalten, damit bestehende day_keys, Logs,
+// Überspringen und Analysen weiterhin exakt zum richtigen Training gehören.
+const sortedWeekDays = week =>
+  (week?.days || [])
+    .map((day, originalIndex) => ({ day, originalIndex }))
+    .sort((a, b) => {
+      const dayDiff = weekdayIndex(a.day?.tag) - weekdayIndex(b.day?.tag)
+      return dayDiff !== 0 ? dayDiff : a.originalIndex - b.originalIndex
+    })
+
+
 const formatCyclingDuration = minutes => {
   const total = Number(minutes)
   if (!Number.isFinite(total) || total <= 0) return null
@@ -1233,8 +1260,8 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
 
                 {isOpen && (
                   <div style={{ padding: '0 16px 16px' }}>
-                    {week.days.map((day, di) => {
-                      const key = dayKey(phase.id, week.n, di)
+                    {sortedWeekDays(week).map(({ day, originalIndex }) => {
+                      const key = dayKey(phase.id, week.n, originalIndex)
                       const isDone = !!done[key]
                       const hasLog = !!logs[key]
                       const hasShot = !!screenshots[key]
