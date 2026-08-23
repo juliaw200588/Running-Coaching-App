@@ -218,6 +218,9 @@ function App() {
   const [user, setUser] = useState(null)
   const [plan, setPlan] = useState(null)
   const [planId, setPlanId] = useState(null)
+  const [primaryPlan, setPrimaryPlan] = useState(null)
+  const [primaryPlanId, setPrimaryPlanId] = useState(null)
+  const [viewingSecondaryPlan, setViewingSecondaryPlan] = useState(false)
   const [activeTab, setActiveTab] = useState('training')
   const [showTrainingPlan, setShowTrainingPlan] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
@@ -540,28 +543,114 @@ function App() {
   }
 
   const loadPlan = async (userId) => {
-    // Zuerst aus Supabase laden
-    const { data } = await supabase
+    // Der Hauptplan steuert Dashboard und den normalen Training-Reiter.
+    // Zusätzliche Pläne aus "Gemeinsam" bleiben separat gespeichert.
+    let { data, error } = await supabase
       .from('plans')
       .select('*')
       .eq('user_id', userId)
-      .order('created_at', { ascending: false })
+      .eq('is_primary', true)
+      .order('created_at', { ascending:false })
       .limit(1)
-      .single()
+      .maybeSingle()
+
+    if (error) {
+      console.error('[App] Hauptplan konnte nicht geladen werden:', error)
+    }
+
+    // Fallback für Altbestände, falls die Migration noch keinen Hauptplan gesetzt hat.
+    if (!data) {
+      const fallback = await supabase
+        .from('plans')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending:false })
+        .limit(1)
+        .maybeSingle()
+      data = fallback.data || null
+    }
 
     if (data) {
       setPlan(data.plan_data)
       setPlanId(data.id)
-      // Auch in localStorage cachen
+      setPrimaryPlan(data.plan_data)
+      setPrimaryPlanId(data.id)
+      setViewingSecondaryPlan(false)
       localStorage.setItem(`runcoaching_plan_${userId}`, JSON.stringify(data.plan_data))
     } else {
-      // Fallback: localStorage
       try {
         const saved = localStorage.getItem(`runcoaching_plan_${userId}`)
-        if (saved) setPlan(JSON.parse(saved))
-      } catch { setPlan(null) }
+        if (saved) {
+          const parsed = JSON.parse(saved)
+          setPlan(parsed)
+          setPrimaryPlan(parsed)
+        } else {
+          setPlan(null)
+          setPrimaryPlan(null)
+        }
+      } catch {
+        setPlan(null)
+        setPrimaryPlan(null)
+      }
+      setPlanId(null)
+      setPrimaryPlanId(null)
+      setViewingSecondaryPlan(false)
     }
   }
+
+  const restorePrimaryPlan = () => {
+    if (primaryPlan && primaryPlanId) {
+      setPlan(primaryPlan)
+      setPlanId(primaryPlanId)
+      setViewingSecondaryPlan(false)
+      localStorage.setItem(`runcoaching_plan_${user.id}`, JSON.stringify(primaryPlan))
+    }
+  }
+
+  const handleOpenLinkedPlan = async linkedPlanId => {
+    if (!linkedPlanId) return
+
+    if (linkedPlanId === primaryPlanId) {
+      restorePrimaryPlan()
+      setActiveTab('training')
+      setShowTrainingPlan(true)
+      return
+    }
+
+    const { data, error } = await supabase
+      .from('plans')
+      .select('id,plan_data')
+      .eq('id', linkedPlanId)
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (error || !data) {
+      console.error('[Gemeinsam] Verknüpfter Trainingsplan konnte nicht geöffnet werden:', error)
+      return
+    }
+
+    setPlan(data.plan_data)
+    setPlanId(data.id)
+    setViewingSecondaryPlan(true)
+    setActiveTab('training')
+    setShowTrainingPlan(true)
+    setOpenWeekAnalysisWeek(null)
+  }
+
+  const handleReturnToDashboard = () => {
+    restorePrimaryPlan()
+    setShowTrainingPlan(false)
+    setOpenWeekAnalysisWeek(null)
+  }
+
+  const handleMainTabChange = tab => {
+    if (tab === 'training' && viewingSecondaryPlan) {
+      restorePrimaryPlan()
+      setShowTrainingPlan(false)
+    }
+    setActiveTab(tab)
+  }
+
 
 // Wöchentliche Analyse
 //
@@ -1442,14 +1531,29 @@ if (!claimAcquired) return
 
   const handlePlanGenerated = async (newPlan) => {
     const targetGoal = sharedGoalPlanTarget
+    const hadPrimaryPlan = Boolean(primaryPlanId && primaryPlan)
 
-    // Name aus Profil holen und in Plan eintragen
     const profileName = await loadProfileName(user.id)
     if (profileName) newPlan.name = profileName
 
+    // Ein Plan aus "Gemeinsam" wird nur dann Hauptplan, wenn noch gar kein Hauptplan existiert.
+    const makePrimary = !targetGoal?.id || !hadPrimaryPlan
+
+    if (makePrimary) {
+      await supabase
+        .from('plans')
+        .update({ is_primary:false })
+        .eq('user_id', user.id)
+        .eq('is_primary', true)
+    }
+
     const { data, error:planInsertError } = await supabase
       .from('plans')
-      .insert({ user_id: user.id, plan_data: newPlan })
+      .insert({
+        user_id:user.id,
+        plan_data:newPlan,
+        is_primary:makePrimary,
+      })
       .select()
       .single()
 
@@ -1472,30 +1576,72 @@ if (!claimAcquired) return
         console.error('[Gemeinsam] Neuer Plan konnte nicht mit Ziel verbunden werden:', linkError)
       }
 
-      // Beim Gemeinsam-Flow keinen vorhandenen anderen persönlichen Plan löschen.
       setSharedGoalPlanTarget(null)
       setTogetherRefresh(value => value + 1)
-    } else if (planId) {
-      // Normale Plan-Neuerstellung außerhalb von "Gemeinsam" behält das bisherige Verhalten.
-      await supabase.from('plans').delete().eq('id', planId)
+
+      if (makePrimary) {
+        setPlan(newPlan)
+        setPlanId(newPlanId)
+        setPrimaryPlan(newPlan)
+        setPrimaryPlanId(newPlanId)
+        setViewingSecondaryPlan(false)
+        localStorage.setItem(`runcoaching_plan_${user.id}`, JSON.stringify(newPlan))
+      } else {
+        // Bestehenden Hauptplan unverändert lassen.
+        setPlan(primaryPlan)
+        setPlanId(primaryPlanId)
+        setViewingSecondaryPlan(false)
+        localStorage.setItem(`runcoaching_plan_${user.id}`, JSON.stringify(primaryPlan))
+      }
+
+      setSelectedPlanSport(null)
+      setShowTrainingPlan(false)
+      setActiveTab('together')
+      return
     }
 
-    setPlanId(newPlanId)
-    localStorage.setItem(`runcoaching_plan_${user.id}`, JSON.stringify(newPlan))
+    // Normale Plan-Neuerstellung außerhalb "Gemeinsam":
+    // bisherigen Hauptplan wie bisher ersetzen.
+    if (primaryPlanId && primaryPlanId !== newPlanId) {
+      await supabase.from('plans').delete().eq('id', primaryPlanId)
+    }
+
     setPlan(newPlan)
+    setPlanId(newPlanId)
+    setPrimaryPlan(newPlan)
+    setPrimaryPlanId(newPlanId)
+    setViewingSecondaryPlan(false)
+    localStorage.setItem(`runcoaching_plan_${user.id}`, JSON.stringify(newPlan))
     setSelectedPlanSport(null)
     setShowTrainingPlan(false)
-
-    if (targetGoal?.id) {
-      setActiveTab('together')
-    }
   }
 
   const handleReset = async () => {
-    if (planId) await supabase.from('plans').delete().eq('id', planId)
+    if (viewingSecondaryPlan) {
+      if (planId) {
+        await supabase
+          .from('shared_goal_members')
+          .update({ plan_id:null })
+          .eq('user_id', user.id)
+          .eq('plan_id', planId)
+
+        await supabase.from('plans').delete().eq('id', planId)
+      }
+      restorePrimaryPlan()
+      setSelectedPlanSport(null)
+      setOpenWeekAnalysisWeek(null)
+      setShowTrainingPlan(false)
+      setTogetherRefresh(value => value + 1)
+      return
+    }
+
+    if (primaryPlanId) await supabase.from('plans').delete().eq('id', primaryPlanId)
     localStorage.removeItem(`runcoaching_plan_${user.id}`)
     setPlan(null)
     setPlanId(null)
+    setPrimaryPlan(null)
+    setPrimaryPlanId(null)
+    setViewingSecondaryPlan(false)
     setSelectedPlanSport(null)
     setOpenWeekAnalysisWeek(null)
     setShowTrainingPlan(false)
@@ -1615,7 +1761,7 @@ const handleOpenTrainingPartnersFromNotification = () => {
                 <div style={{ position: 'relative', zIndex: 20, padding: '10px 14px 0', maxWidth: 720, margin: '0 auto' }}>
                   <button
                     type="button"
-                    onClick={() => { setShowTrainingPlan(false); setOpenWeekAnalysisWeek(null) }}
+                    onClick={handleReturnToDashboard}
                     style={{ border: '1px solid #EADFD8', background: 'rgba(255,255,255,0.94)', color: '#765F52', borderRadius: 999, padding: '8px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 14px rgba(75,52,39,0.07)' }}
                   >
                     ← Dashboard
@@ -1636,6 +1782,23 @@ const handleOpenTrainingPartnersFromNotification = () => {
                       {sharedGoalPlanTarget.target_date ? ` · ${sharedGoalPlanTarget.target_date}` : ''}
                       <br />
                       Die bekannten Zieldaten sind bereits übernommen. Ergänze jetzt nur noch deine persönlichen Trainingsangaben.
+                    </div>
+                  </div>
+                )}
+
+                {viewingSecondaryPlan && !sharedGoalPlanTarget && (
+                  <div style={{ maxWidth:720, margin:'10px auto 8px', padding:'0 16px', boxSizing:'border-box' }}>
+                    <div style={{
+                      display:'flex', justifyContent:'space-between', gap:10, alignItems:'center',
+                      padding:'10px 12px', borderRadius:14,
+                      background:'#F2F8F4', border:'1px solid #CEE5D6',
+                      color:'#5D7968', fontSize:10.5, fontFamily:'sans-serif'
+                    }}>
+                      <span><b>Zusätzlicher Plan</b> · mit einem gemeinsamen Ziel verknüpft</span>
+                      <button type="button" onClick={handleReturnToDashboard} style={{
+                        border:'none', background:'transparent', color:'#C86D55',
+                        fontWeight:900, cursor:'pointer', fontSize:10
+                      }}>Hauptplan öffnen →</button>
                     </div>
                   </div>
                 )}
@@ -1753,6 +1916,7 @@ const handleOpenTrainingPartnersFromNotification = () => {
             focusFriends={togetherFocusFriends}
             refreshToken={togetherRefresh}
             onCreatePlanForGoal={handleCreatePlanForSharedGoal}
+            onOpenLinkedPlan={handleOpenLinkedPlan}
           />
         )}
         {activeTab === 'profile' && (
@@ -1764,7 +1928,7 @@ const handleOpenTrainingPartnersFromNotification = () => {
         )}
       </div>
 
-      <BottomNav activeTab={activeTab} onChange={setActiveTab} />
+      <BottomNav activeTab={activeTab} onChange={handleMainTabChange} />
     </>
   )
 }

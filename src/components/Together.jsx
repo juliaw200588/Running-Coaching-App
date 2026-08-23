@@ -822,7 +822,7 @@ function CreateSessionModal({ goal, user, onClose, onCreated }) {
   </div>
 }
 
-export default function Together({ user, plan, planId, focusFriends = 0, refreshToken = 0, onCreatePlanForGoal }) {
+export default function Together({ user, plan, planId, focusFriends = 0, refreshToken = 0, onCreatePlanForGoal, onOpenLinkedPlan }) {
   const [loading, setLoading] = useState(true)
   const [goals, setGoals] = useState([])
   const [membersByGoal, setMembersByGoal] = useState({})
@@ -874,20 +874,41 @@ export default function Together({ user, plan, planId, focusFriends = 0, refresh
     return () => window.clearTimeout(timer)
   }, [focusFriends])
 
-  const currentPlanContext = useMemo(() => getCurrentPlanContext(plan), [plan])
+  const buildOwnSnapshot = async (snapshotPlan, snapshotPlanId) => {
+    const context = getCurrentPlanContext(snapshotPlan)
+    if (!user?.id || !snapshotPlan || !context || context.beforeStart || context.completed) return null
 
-  const buildOwnSnapshot = async () => {
-    if (!user?.id || !plan || !currentPlanContext || currentPlanContext.beforeStart || currentPlanContext.completed) return null
-
-    const { phase, week, weeks } = currentPlanContext
+    const { phase, week, weeks } = context
     const planned = (week?.days || [])
       .map((day, index) => ({ ...day, key:dayKey(phase.id, week.n, index) }))
       .filter(day => !day.optional)
 
-    const [{ data:logs }, { data:skipped }] = await Promise.all([
-      supabase.from('logs').select('day_key').eq('user_id', user.id).in('day_key', planned.map(day => day.key)),
-      supabase.from('skipped_days').select('day_key').eq('user_id', user.id).in('day_key', planned.map(day => day.key)),
-    ])
+    if (!planned.length) return {
+      week_number:week.n,
+      total_weeks:weeks.length,
+      week_completed:0,
+      week_planned:0,
+      week_decided:0,
+      progress_status:'Im Plan',
+      progress_updated_at:new Date().toISOString(),
+    }
+
+    // Bestehende Logs arbeiten derzeit noch über day_key.
+    // plan_id wird verwendet, sobald es in den jeweiligen Tabellen vorhanden ist;
+    // die Planstruktur selbst kommt aber garantiert vom verknüpften Plan.
+    let logsQuery = supabase
+      .from('logs')
+      .select('day_key')
+      .eq('user_id', user.id)
+      .in('day_key', planned.map(day => day.key))
+
+    let skippedQuery = supabase
+      .from('skipped_days')
+      .select('day_key')
+      .eq('user_id', user.id)
+      .in('day_key', planned.map(day => day.key))
+
+    const [{ data:logs }, { data:skipped }] = await Promise.all([logsQuery, skippedQuery])
 
     const completedKeys = new Set((logs || []).map(row => row.day_key))
     const skippedKeys = new Set((skipped || []).map(row => row.day_key))
@@ -895,12 +916,12 @@ export default function Together({ user, plan, planId, focusFriends = 0, refresh
     const decided = planned.filter(day => completedKeys.has(day.key) || skippedKeys.has(day.key)).length
 
     return {
-      week_number: week.n,
-      total_weeks: weeks.length,
-      week_completed: completed,
-      week_planned: planned.length,
-      week_decided: decided,
-      progress_status: decided >= planned.length && planned.length ? 'Woche abgeschlossen' : 'Im Plan',
+      week_number:week.n,
+      total_weeks:weeks.length,
+      week_completed:completed,
+      week_planned:planned.length,
+      week_decided:decided,
+      progress_status:decided >= planned.length && planned.length ? 'Woche abgeschlossen' : 'Im Plan',
       progress_updated_at:new Date().toISOString(),
     }
   }
@@ -965,32 +986,43 @@ export default function Together({ user, plan, planId, focusFriends = 0, refresh
         setProfilesById(map)
       }
 
-      const snapshot = await buildOwnSnapshot()
-      if (snapshot) {
-        const goalById = Object.fromEntries((goalRows || []).map(goal => [goal.id, goal]))
-        const currentSport = inferPlanSport(plan)
-        const ownRows = (memberships || []).filter(row => {
-          const goal = goalById[row.goal_id]
-          const sportMatches = !goal?.sport_type || goal.sport_type === currentSport
-          const planMatches = !row.plan_id || row.plan_id === planId
-          return sportMatches && planMatches
-        })
-        if (ownRows.length) {
-          await Promise.all(ownRows.map(row =>
-            supabase.from('shared_goal_members')
-              .update({ ...snapshot, plan_id:row.plan_id || planId || null })
-              .eq('goal_id', row.goal_id)
-              .eq('user_id', user.id)
-          ))
-          setMembersByGoal(current => {
-            const next = { ...current }
-            ownRows.forEach(row => {
-              next[row.goal_id] = (next[row.goal_id] || []).map(member =>
-                member.user_id === user.id ? { ...member, ...snapshot, plan_id:member.plan_id || planId || null } : member
-              )
-            })
-            return next
-          })
+      // Fortschritt immer aus dem tatsächlich mit dem gemeinsamen Ziel
+      // verknüpften Plan berechnen – nicht aus dem Hauptplan der App.
+      const ownMemberships = (memberships || []).filter(row => row.plan_id)
+      const linkedPlanIds = [...new Set(ownMemberships.map(row => row.plan_id))]
+
+      if (linkedPlanIds.length) {
+        const { data:linkedPlans, error:linkedPlansError } = await supabase
+          .from('plans')
+          .select('id,plan_data')
+          .eq('user_id', user.id)
+          .in('id', linkedPlanIds)
+
+        if (linkedPlansError) throw linkedPlansError
+
+        const linkedPlanById = Object.fromEntries(
+          (linkedPlans || []).map(row => [row.id, row.plan_data])
+        )
+
+        for (const row of ownMemberships) {
+          const linkedPlan = linkedPlanById[row.plan_id]
+          if (!linkedPlan) continue
+
+          const snapshot = await buildOwnSnapshot(linkedPlan, row.plan_id)
+          if (!snapshot) continue
+
+          await supabase
+            .from('shared_goal_members')
+            .update(snapshot)
+            .eq('goal_id', row.goal_id)
+            .eq('user_id', user.id)
+
+          setMembersByGoal(current => ({
+            ...current,
+            [row.goal_id]:(current[row.goal_id] || []).map(member =>
+              member.user_id === user.id ? { ...member, ...snapshot } : member
+            )
+          }))
         }
       }
     } catch (e) {
@@ -1231,6 +1263,20 @@ export default function Together({ user, plan, planId, focusFriends = 0, refresh
         <div style={{ marginTop:10, color:'#9A8578', fontSize:10.2, lineHeight:1.45, fontFamily:'sans-serif' }}>
           Der Trainingspartner teilt aktuell keinen Wochenfortschritt.
         </div>
+      )}
+
+      {member.user_id === user.id && member.plan_id && typeof onOpenLinkedPlan === 'function' && (
+        <button
+          type="button"
+          onClick={() => onOpenLinkedPlan(member.plan_id)}
+          style={{
+            marginTop:10, width:'100%', border:'none', borderRadius:11,
+            padding:'9px 10px', background:'#FFF1EA', color:'#C86D55',
+            fontSize:10.1, fontWeight:900, cursor:'pointer', fontFamily:'sans-serif'
+          }}
+        >
+          Plan öffnen →
+        </button>
       )}
     </div>
   }
