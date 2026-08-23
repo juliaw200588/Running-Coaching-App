@@ -17,7 +17,7 @@ const SPORT_META = {
 const GOAL_META = {
   event: { icon:'🏁', label:'Wettkampf / Event', text:'Gemeinsam auf einen festen Termin hintrainieren.' },
   distance: { icon:'🎯', label:'Distanzziel', text:'Eine Strecke gemeinsam erreichen.' },
-  consistency: { icon:'⏱️', label:'Zeitziel', text:'Über mehrere Wochen gemeinsam dranbleiben.' },
+  consistency: { icon:'🗓️', label:'Zeitraumziel', text:'Bis zu einem gemeinsamen Zeitpunkt zusammen dranbleiben.' },
   custom: { icon:'☆', label:'Freies Ziel', text:'Euer eigenes gemeinsames Vorhaben.' },
 }
 
@@ -53,6 +53,12 @@ const daysUntil = value => {
   const today = localDate(new Date())
   if (!target || !today) return null
   return Math.max(0, Math.ceil((target - today) / DAY_MS))
+}
+
+const isPastDate = value => {
+  const target = localDate(value)
+  const today = localDate(new Date())
+  return Boolean(target && today && target < today)
 }
 
 const getPlanWeeks = plan => {
@@ -181,9 +187,26 @@ function CreateGoalModal({ user, plan, planId, onClose, onCreated }) {
 
   const canUseCurrentPlan = Boolean(planId && plan && inferPlanSport(plan) === form.sport_type)
 
-  const createGoal = async () => {
+  const validateDetails = () => {
     if (!form.title.trim()) {
-      setError('Gib eurem gemeinsamen Ziel bitte einen Namen.')
+      return 'Gib eurem gemeinsamen Ziel bitte einen Namen.'
+    }
+    if (form.goal_type === 'event' && !form.target_date) {
+      return 'Für einen Wettkampf oder ein Event brauchen wir ein Zieldatum.'
+    }
+    if (form.goal_type === 'distance' && (!form.target_distance || Number(form.target_distance) <= 0)) {
+      return 'Gib bitte die gemeinsame Zieldistanz an.'
+    }
+    if (form.target_date && isPastDate(form.target_date)) {
+      return 'Das Zieldatum darf nicht in der Vergangenheit liegen.'
+    }
+    return ''
+  }
+
+  const createGoal = async () => {
+    const validationError = validateDetails()
+    if (validationError) {
+      setError(validationError)
       return
     }
 
@@ -231,9 +254,12 @@ function CreateGoalModal({ user, plan, planId, onClose, onCreated }) {
 
   const next = () => {
     setError('')
-    if (step === 2 && !form.title.trim()) {
-      setError('Gib eurem gemeinsamen Ziel bitte einen Namen.')
-      return
+    if (step === 2) {
+      const validationError = validateDetails()
+      if (validationError) {
+        setError(validationError)
+        return
+      }
     }
     setStep(current => Math.min(3, current + 1))
   }
@@ -333,7 +359,9 @@ function CreateGoalModal({ user, plan, planId, onClose, onCreated }) {
             </label>
 
             <label style={{ fontFamily:'sans-serif', fontSize:11, fontWeight:900, color:'#725F54' }}>
-              ZIELDATUM <span style={{ color:'#B39F94', fontWeight:600 }}>(optional)</span>
+              ZIELDATUM {form.goal_type === 'event'
+                ? <span style={{ color:'#D36F58', fontWeight:800 }}>(erforderlich)</span>
+                : <span style={{ color:'#B39F94', fontWeight:600 }}>(optional)</span>}
               <input type="date" value={form.target_date} onChange={e => patch({ target_date:e.target.value })}
                 style={{
                   marginTop:7, width:'100%', boxSizing:'border-box', padding:'13px 14px',
@@ -344,7 +372,9 @@ function CreateGoalModal({ user, plan, planId, onClose, onCreated }) {
 
             {(form.goal_type === 'distance' || form.goal_type === 'event') && (
               <label style={{ fontFamily:'sans-serif', fontSize:11, fontWeight:900, color:'#725F54' }}>
-                DISTANZ <span style={{ color:'#B39F94', fontWeight:600 }}>(optional)</span>
+                DISTANZ {form.goal_type === 'distance'
+                  ? <span style={{ color:'#D36F58', fontWeight:800 }}>(erforderlich)</span>
+                  : <span style={{ color:'#B39F94', fontWeight:600 }}>(optional)</span>}
                 <div style={{ position:'relative', marginTop:7 }}>
                   <input inputMode="decimal" value={form.target_distance}
                     onChange={e => patch({ target_distance:e.target.value.replace(',','.') })}
@@ -385,7 +415,7 @@ function CreateGoalModal({ user, plan, planId, onClose, onCreated }) {
                 fontSize:23, fontWeight:700, color:'#3D2B1F'
               }}>{form.title || 'Euer gemeinsames Ziel'}</div>
               <div style={{ marginTop:7, color:'#8D776A', fontSize:11.5, lineHeight:1.55, fontFamily:'sans-serif' }}>
-                Nach dem Erstellen kannst du direkt einen Trainingspartner per sicherem Link einladen.
+                Nach dem Erstellen öffnet sich direkt die Einladung. Dein Trainingspartner entscheidet selbst, ob er dem Ziel beitreten möchte.
               </div>
             </div>
 
@@ -426,9 +456,125 @@ function CreateGoalModal({ user, plan, planId, onClose, onCreated }) {
               background:'linear-gradient(135deg,#FF8C69,#FF6B78)',
               boxShadow:'0 8px 20px rgba(255,112,91,.22)'
             }}>
-            {step < 3 ? 'Weiter' : saving ? 'Wird erstellt…' : 'Ziel erstellen & Partner einladen'}
+            {step < 3 ? 'Weiter' : saving ? 'Wird erstellt…' : 'Ziel erstellen'}
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+
+function InviteGoalModal({ goal, user, onClose }) {
+  const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [error, setError] = useState('')
+
+  const buildInvite = async () => {
+    const { data, error: inviteError } = await supabase
+      .from('shared_goal_invites')
+      .insert({ goal_id:goal.id, invited_by:user.id })
+      .select('token, expires_at')
+      .single()
+
+    if (inviteError) throw inviteError
+    return {
+      link:`${window.location.origin}${window.location.pathname}?goalInvite=${data.token}`,
+      expiresAt:data.expires_at,
+    }
+  }
+
+  const share = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      const invite = await buildInvite()
+
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title:goal.title,
+            text:`Trainiere mit mir auf „${goal.title}“ hin.`,
+            url:invite.link,
+          })
+          setBusy(false)
+          return
+        } catch (shareError) {
+          if (shareError?.name === 'AbortError') {
+            setBusy(false)
+            return
+          }
+        }
+      }
+
+      await navigator.clipboard.writeText(invite.link)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 3000)
+    } catch (e) {
+      console.error('[Gemeinsam] Einladungslink konnte nicht erstellt werden:', e)
+      setError('Der Einladungslink konnte gerade nicht erstellt werden.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div style={{
+      position:'fixed', inset:0, zIndex:190, background:'rgba(42,30,23,.46)',
+      display:'flex', alignItems:'flex-end', justifyContent:'center'
+    }}>
+      <div style={{
+        width:'100%', maxWidth:720, borderRadius:'28px 28px 0 0', background:'#FFFDFC',
+        padding:'18px 18px calc(24px + env(safe-area-inset-bottom,0px))',
+        boxShadow:'0 -18px 50px rgba(54,37,27,.18)'
+      }}>
+        <div style={{ width:48, height:5, borderRadius:99, background:'#E7DCD5', margin:'0 auto 16px' }} />
+        <div style={{ textAlign:'center' }}>
+          <div style={{
+            width:62, height:62, margin:'0 auto 12px', borderRadius:'50%',
+            display:'grid', placeItems:'center', fontSize:27,
+            background:'linear-gradient(135deg,#FFF0E8,#F1F8EF)', border:'1px solid #F0DED2'
+          }}>👥</div>
+          <div style={{ fontSize:10, letterSpacing:1.15, fontWeight:900, color:'#D16D55', fontFamily:'sans-serif' }}>
+            TRAININGSPARTNER EINLADEN
+          </div>
+          <h2 style={{
+            margin:'6px auto 7px', color:'#3D2B1F', maxWidth:470,
+            fontFamily:"'Georgia','Times New Roman',serif", fontSize:27, lineHeight:1.1
+          }}>
+            {goal.title}
+          </h2>
+          <p style={{ margin:'0 auto', maxWidth:490, color:'#927B6E', fontSize:11.5, lineHeight:1.55, fontFamily:'sans-serif' }}>
+            Teile einen sicheren Link. Die eingeladene Person sieht zuerst euer Ziel und kann anschließend selbst beitreten oder ablehnen.
+          </p>
+        </div>
+
+        <div style={{ display:'grid', gap:8, marginTop:17 }}>
+          <div style={{ ...card, padding:'11px 13px', color:'#786357', fontSize:10.7, fontFamily:'sans-serif' }}>
+            ✓ Jeder behält seinen eigenen Trainingsplan
+          </div>
+          <div style={{ ...card, padding:'11px 13px', color:'#786357', fontSize:10.7, fontFamily:'sans-serif' }}>
+            ✓ Der Link ist 14 Tage gültig und nur einmal nutzbar
+          </div>
+        </div>
+
+        {error && <div style={{ marginTop:11, color:'#C6544C', fontSize:11.2, fontFamily:'sans-serif' }}>{error}</div>}
+
+        <button type="button" onClick={share} disabled={busy} style={{
+          marginTop:17, width:'100%', border:'none', borderRadius:16, padding:'14px 15px',
+          color:'#fff', fontWeight:900, cursor:busy ? 'default' : 'pointer',
+          background:'linear-gradient(135deg,#FF8C69,#FF6B78)',
+          opacity:busy ? .65 : 1, boxShadow:'0 8px 20px rgba(255,112,91,.22)'
+        }}>
+          {busy ? 'Link wird erstellt…' : copied ? '✓ Link kopiert' : '🔗 Einladungslink teilen'}
+        </button>
+
+        <button type="button" onClick={onClose} style={{
+          marginTop:9, width:'100%', border:'1.5px solid #E9DDD6', borderRadius:16,
+          padding:'12px 14px', background:'#fff', color:'#8A7468', fontWeight:800, cursor:'pointer'
+        }}>
+          Später einladen
+        </button>
       </div>
     </div>
   )
@@ -505,7 +651,7 @@ function CreateSessionModal({ goal, user, onClose, onCreated }) {
   </div>
 }
 
-export default function Together({ user, plan, planId, focusFriends = 0 }) {
+export default function Together({ user, plan, planId, focusFriends = 0, refreshToken = 0 }) {
   const [loading, setLoading] = useState(true)
   const [goals, setGoals] = useState([])
   const [membersByGoal, setMembersByGoal] = useState({})
@@ -519,6 +665,7 @@ export default function Together({ user, plan, planId, focusFriends = 0 }) {
     }
   })
   const [sessionGoal, setSessionGoal] = useState(null)
+  const [inviteGoal, setInviteGoal] = useState(null)
   const [message, setMessage] = useState('')
   const friendsSectionRef = useRef(null)
 
@@ -674,7 +821,7 @@ export default function Together({ user, plan, planId, focusFriends = 0 }) {
     }
   }
 
-  useEffect(() => { load() }, [user?.id, planId])
+  useEffect(() => { load() }, [user?.id, planId, refreshToken])
 
   const primaryGoal = useMemo(() => {
     if (!goals.length) return null
@@ -1009,11 +1156,18 @@ export default function Together({ user, plan, planId, focusFriends = 0 }) {
             plan={plan}
             planId={planId}
             onClose={closeCreate}
-            onCreated={() => {
+            onCreated={(goal) => {
               clearGoalDraft(user?.id)
               setShowCreate(false)
+              setInviteGoal(goal)
               load()
             }}
+          />}
+
+          {inviteGoal && <InviteGoalModal
+            goal={inviteGoal}
+            user={user}
+            onClose={() => setInviteGoal(null)}
           />}
 
           {sessionGoal && <CreateSessionModal

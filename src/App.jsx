@@ -112,6 +112,108 @@ function PlanSportSelection({ onSelect }) {
   )
 }
 
+
+function SharedGoalInviteModal({ invite, busy, error, onAccept, onDecline }) {
+  if (!invite) return null
+
+  const sportLabel = {
+    running:'Laufen',
+    hiking:'Wandern',
+    cycling:'Radfahren',
+    mountain_biking:'Mountainbike',
+    swimming:'Schwimmen',
+    hyrox:'HYROX',
+  }[invite.sport_type] || 'Training'
+
+  const formattedDate = invite.target_date
+    ? new Intl.DateTimeFormat('de-DE', { day:'2-digit', month:'short', year:'numeric' })
+        .format(new Date(`${invite.target_date}T12:00:00`))
+    : null
+
+  return (
+    <div style={{
+      position:'fixed', inset:0, zIndex:220, background:'rgba(52,37,29,.48)',
+      display:'flex', alignItems:'center', justifyContent:'center', padding:16
+    }}>
+      <div style={{
+        width:'100%', maxWidth:520, borderRadius:26, background:'#FFFDFC',
+        padding:'24px 20px 20px', boxSizing:'border-box',
+        boxShadow:'0 20px 60px rgba(55,38,28,.22)', textAlign:'center'
+      }}>
+        <div style={{
+          width:68, height:68, borderRadius:'50%', margin:'0 auto 13px',
+          display:'grid', placeItems:'center', fontSize:30,
+          background:'linear-gradient(135deg,#FFF0E8,#F0F8F2)', border:'1px solid #EEDFD5'
+        }}>🎉</div>
+
+        <div style={{ color:'#D16D55', fontSize:10, fontWeight:900, letterSpacing:1.1, fontFamily:'sans-serif' }}>
+          EINLADUNG ZUM GEMEINSAMEN ZIEL
+        </div>
+        <h2 style={{
+          margin:'7px auto 5px', color:'#3D2B1F',
+          fontFamily:"'Georgia','Times New Roman',serif", fontSize:27, lineHeight:1.1
+        }}>
+          {invite.inviter_name
+            ? `${invite.inviter_name} lädt dich ein`
+            : 'Du wurdest eingeladen'}
+        </h2>
+        <div style={{
+          marginTop:14, borderRadius:20, padding:'17px 15px',
+          background:'linear-gradient(145deg,#FFF0E6,#FFF8F3 55%,#F1F8EF)',
+          border:'1px solid #F0DDD1', textAlign:'left'
+        }}>
+          <div style={{ color:'#A66F5A', fontSize:10, fontWeight:900, fontFamily:'sans-serif' }}>
+            {sportLabel}
+          </div>
+          <div style={{
+            marginTop:5, color:'#3D2B1F', fontFamily:"'Georgia','Times New Roman',serif",
+            fontSize:23, fontWeight:700, lineHeight:1.15
+          }}>
+            {invite.title}
+          </div>
+          <div style={{ marginTop:7, color:'#8E776A', fontSize:10.8, lineHeight:1.5, fontFamily:'sans-serif' }}>
+            {[formattedDate, invite.target_distance ? `${invite.target_distance} ${invite.target_unit || 'km'}` : null]
+              .filter(Boolean).join(' · ') || 'Gemeinsam auf ein Ziel hinarbeiten'}
+          </div>
+        </div>
+
+        <div style={{ display:'grid', gap:8, marginTop:13, textAlign:'left' }}>
+          {[
+            'Gemeinsames Ziel & Countdown',
+            'Individueller Trainingsplan für dich',
+            'Gemeinsame Einheiten planen',
+            'Fortschritt teilen, ohne Leistungsranking',
+          ].map(text => (
+            <div key={text} style={{ color:'#756055', fontSize:10.7, fontFamily:'sans-serif' }}>
+              <span style={{ color:'#6E9A7B', fontWeight:900 }}>✓</span> {text}
+            </div>
+          ))}
+        </div>
+
+        {error && (
+          <div style={{ marginTop:12, color:'#C6544C', fontSize:11, lineHeight:1.45, fontFamily:'sans-serif' }}>
+            {error}
+          </div>
+        )}
+
+        <button type="button" disabled={busy} onClick={onAccept} style={{
+          marginTop:18, width:'100%', border:'none', borderRadius:16, padding:'14px',
+          background:'linear-gradient(135deg,#7EC8A4,#5BA88A)', color:'#fff',
+          fontWeight:900, cursor:busy ? 'default' : 'pointer', opacity:busy ? .6 : 1
+        }}>
+          {busy ? 'Wird verbunden…' : 'Beitreten'}
+        </button>
+        <button type="button" disabled={busy} onClick={onDecline} style={{
+          marginTop:9, width:'100%', border:'1.5px solid #E9DDD6', borderRadius:16, padding:'12px',
+          background:'#fff', color:'#8D776B', fontWeight:800, cursor:busy ? 'default' : 'pointer'
+        }}>
+          Ablehnen
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   const [user, setUser] = useState(null)
   const [plan, setPlan] = useState(null)
@@ -120,6 +222,10 @@ function App() {
   const [showTrainingPlan, setShowTrainingPlan] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [togetherFocusFriends, setTogetherFocusFriends] = useState(0)
+  const [togetherRefresh, setTogetherRefresh] = useState(0)
+  const [pendingGoalInvite, setPendingGoalInvite] = useState(null)
+  const [goalInviteBusy, setGoalInviteBusy] = useState(false)
+  const [goalInviteError, setGoalInviteError] = useState('')
   const [unreadCount, setUnreadCount] = useState(0)
   const [loadingAuth, setLoadingAuth] = useState(true)
   const [openWeekAnalysisWeek, setOpenWeekAnalysisWeek] = useState(null)
@@ -171,8 +277,9 @@ function App() {
     }
   }, [user])
 
-  // Sichere Einladungslinks für gemeinsame Ziele/Freundschaften annehmen.
-  // Der Link wird erst nach erfolgreichem Login verarbeitet.
+  // Einladungslinks erst nach Login auswerten.
+  // Gemeinsame Ziele werden bewusst NICHT automatisch angenommen:
+  // Der Nutzer sieht zuerst, wozu er eingeladen wurde.
   useEffect(() => {
     if (!user?.id) return
 
@@ -183,32 +290,94 @@ function App() {
 
     let cancelled = false
 
-    const acceptInvite = async () => {
+    const inspectInvite = async () => {
       try {
         if (goalInvite) {
-          const { error } = await supabase.rpc('accept_shared_goal_invite', {
+          const { data, error } = await supabase.rpc('preview_shared_goal_invite', {
             invite_token: goalInvite,
           })
           if (error) throw error
-          if (!cancelled) setActiveTab('together')
-        } else if (friendInvite) {
+
+          const preview = Array.isArray(data) ? data[0] : data
+          if (!preview) throw new Error('invite_invalid_or_expired')
+
+          if (!cancelled) {
+            setPendingGoalInvite({ ...preview, token:goalInvite })
+            setGoalInviteError('')
+          }
+          return
+        }
+
+        if (friendInvite) {
           const { error } = await supabase.rpc('accept_friend_invite', {
             invite_token: friendInvite,
           })
           if (error) throw error
-          if (!cancelled) setActiveTab('together')
+          if (!cancelled) {
+            setActiveTab('together')
+            setTogetherFocusFriends(value => value + 1)
+          }
+          const cleanUrl = `${window.location.pathname}${window.location.hash || ''}`
+          window.history.replaceState({}, '', cleanUrl)
         }
-
-        const cleanUrl = `${window.location.pathname}${window.location.hash || ''}`
-        window.history.replaceState({}, '', cleanUrl)
       } catch (error) {
-        console.error('[Gemeinsam] Einladung konnte nicht angenommen werden:', error)
+        console.error('[Gemeinsam] Einladung konnte nicht geladen werden:', error)
+        if (!cancelled) setGoalInviteError('Diese Einladung ist ungültig, abgelaufen oder wurde bereits verwendet.')
       }
     }
 
-    acceptInvite()
+    inspectInvite()
     return () => { cancelled = true }
   }, [user?.id])
+
+  const clearInviteUrl = () => {
+    const cleanUrl = `${window.location.pathname}${window.location.hash || ''}`
+    window.history.replaceState({}, '', cleanUrl)
+  }
+
+  const acceptPendingGoalInvite = async () => {
+    if (!pendingGoalInvite?.token) return
+    setGoalInviteBusy(true)
+    setGoalInviteError('')
+
+    const { error } = await supabase.rpc('accept_shared_goal_invite', {
+      invite_token: pendingGoalInvite.token,
+    })
+
+    if (error) {
+      console.error('[Gemeinsam] Ziel-Einladung annehmen fehlgeschlagen:', error)
+      setGoalInviteError('Die Einladung konnte gerade nicht angenommen werden.')
+      setGoalInviteBusy(false)
+      return
+    }
+
+    setPendingGoalInvite(null)
+    setGoalInviteBusy(false)
+    clearInviteUrl()
+    setActiveTab('together')
+    setTogetherRefresh(value => value + 1)
+  }
+
+  const declinePendingGoalInvite = async () => {
+    if (!pendingGoalInvite?.token) return
+    setGoalInviteBusy(true)
+    setGoalInviteError('')
+
+    const { error } = await supabase.rpc('decline_shared_goal_invite', {
+      invite_token: pendingGoalInvite.token,
+    })
+
+    if (error) {
+      console.error('[Gemeinsam] Ziel-Einladung ablehnen fehlgeschlagen:', error)
+      setGoalInviteError('Die Einladung konnte gerade nicht abgelehnt werden.')
+      setGoalInviteBusy(false)
+      return
+    }
+
+    setPendingGoalInvite(null)
+    setGoalInviteBusy(false)
+    clearInviteUrl()
+  }
 
   const loadProfileName = async (userId) => {
     const { data } = await supabase.from('profiles').select('name').eq('id', userId).single()
@@ -1267,6 +1436,14 @@ const handleOpenTrainingPartnersFromNotification = () => {
         />
       )}
 
+      <SharedGoalInviteModal
+        invite={pendingGoalInvite}
+        busy={goalInviteBusy}
+        error={goalInviteError}
+        onAccept={acceptPendingGoalInvite}
+        onDecline={declinePendingGoalInvite}
+      />
+
       <HikingWeeklyCheckIn
         open={Boolean(pendingHikingCheckIn)}
         user={user}
@@ -1384,7 +1561,7 @@ const handleOpenTrainingPartnersFromNotification = () => {
             )
         )}
         {activeTab === 'activities' && <Laeufe user={user} plan={plan} />}
-        {activeTab === 'together' && <Together user={user} plan={plan} planId={planId} focusFriends={togetherFocusFriends} />}
+        {activeTab === 'together' && <Together user={user} plan={plan} planId={planId} focusFriends={togetherFocusFriends} refreshToken={togetherRefresh} />}
         {activeTab === 'profile' && (
           <Profile
             user={user}
