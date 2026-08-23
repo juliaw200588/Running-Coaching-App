@@ -469,9 +469,92 @@ function InviteGoalModal({ goal, user, onClose }) {
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState('')
+  const [friends, setFriends] = useState([])
+  const [selectedIds, setSelectedIds] = useState([])
+  const [loadingFriends, setLoadingFriends] = useState(true)
+  const [sentNames, setSentNames] = useState([])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadFriends = async () => {
+      setLoadingFriends(true)
+      try {
+        const { data:friendships, error:friendshipError } = await supabase
+          .from('friendships')
+          .select('sender_id,receiver_id')
+          .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+          .eq('status','accepted')
+
+        if (friendshipError) throw friendshipError
+
+        const ids = [...new Set((friendships || []).map(row =>
+          row.sender_id === user.id ? row.receiver_id : row.sender_id
+        ))]
+
+        if (!ids.length) {
+          if (!cancelled) setFriends([])
+          return
+        }
+
+        const [{ data:profiles, error:profileError }, { data:members }] = await Promise.all([
+          supabase.from('profiles').select('id,name,avatar_url').in('id', ids),
+          supabase.from('shared_goal_members').select('user_id').eq('goal_id', goal.id).eq('status','active'),
+        ])
+
+        if (profileError) throw profileError
+        const memberIds = new Set((members || []).map(row => row.user_id))
+
+        if (!cancelled) {
+          setFriends((profiles || []).filter(profile => !memberIds.has(profile.id)))
+        }
+      } catch (e) {
+        console.error('[Gemeinsam] Trainingspartner konnten nicht geladen werden:', e)
+        if (!cancelled) setError('Deine Trainingspartner konnten gerade nicht geladen werden.')
+      } finally {
+        if (!cancelled) setLoadingFriends(false)
+      }
+    }
+
+    loadFriends()
+    return () => { cancelled = true }
+  }, [user.id, goal.id])
+
+  const toggleFriend = id => {
+    setSelectedIds(current =>
+      current.includes(id) ? current.filter(value => value !== id) : [...current, id]
+    )
+  }
+
+  const inviteSelected = async () => {
+    if (!selectedIds.length) return
+    setBusy(true)
+    setError('')
+
+    const { error:inviteError } = await supabase.rpc('invite_friends_to_shared_goal', {
+      p_goal_id:goal.id,
+      p_user_ids:selectedIds,
+    })
+
+    if (inviteError) {
+      console.error('[Gemeinsam] Direkte Einladungen fehlgeschlagen:', inviteError)
+      setError('Die ausgewählten Trainingspartner konnten gerade nicht eingeladen werden.')
+      setBusy(false)
+      return
+    }
+
+    const names = friends
+      .filter(friend => selectedIds.includes(friend.id))
+      .map(friend => friend.name || 'Trainingspartner')
+
+    setSentNames(names)
+    setFriends(current => current.filter(friend => !selectedIds.includes(friend.id)))
+    setSelectedIds([])
+    setBusy(false)
+  }
 
   const buildInvite = async () => {
-    const { data, error: inviteError } = await supabase
+    const { data, error:inviteError } = await supabase
       .from('shared_goal_invites')
       .insert({ goal_id:goal.id, invited_by:user.id })
       .select('token, expires_at')
@@ -497,13 +580,9 @@ function InviteGoalModal({ goal, user, onClose }) {
             text:`Trainiere mit mir auf „${goal.title}“ hin.`,
             url:invite.link,
           })
-          setBusy(false)
           return
         } catch (shareError) {
-          if (shareError?.name === 'AbortError') {
-            setBusy(false)
-            return
-          }
+          if (shareError?.name === 'AbortError') return
         }
       }
 
@@ -518,13 +597,19 @@ function InviteGoalModal({ goal, user, onClose }) {
     }
   }
 
+  const selectedLabel =
+    selectedIds.length === 1
+      ? '1 Trainingspartner einladen'
+      : `${selectedIds.length} Trainingspartner einladen`
+
   return (
     <div style={{
       position:'fixed', inset:0, zIndex:190, background:'rgba(42,30,23,.46)',
       display:'flex', alignItems:'flex-end', justifyContent:'center'
     }}>
       <div style={{
-        width:'100%', maxWidth:720, borderRadius:'28px 28px 0 0', background:'#FFFDFC',
+        width:'100%', maxWidth:720, maxHeight:'92vh', overflowY:'auto',
+        borderRadius:'28px 28px 0 0', background:'#FFFDFC',
         padding:'18px 18px calc(24px + env(safe-area-inset-bottom,0px))',
         boxShadow:'0 -18px 50px rgba(54,37,27,.18)'
       }}>
@@ -545,35 +630,121 @@ function InviteGoalModal({ goal, user, onClose }) {
             {goal.title}
           </h2>
           <p style={{ margin:'0 auto', maxWidth:490, color:'#927B6E', fontSize:11.5, lineHeight:1.55, fontFamily:'sans-serif' }}>
-            Teile einen sicheren Link. Die eingeladene Person sieht zuerst euer Ziel und kann anschließend selbst beitreten oder ablehnen.
+            Lade bestehende Trainingspartner direkt in der App ein – oder teile einen Link mit jemandem, mit dem du noch nicht verbunden bist.
           </p>
         </div>
 
-        <div style={{ display:'grid', gap:8, marginTop:17 }}>
-          <div style={{ ...card, padding:'11px 13px', color:'#786357', fontSize:10.7, fontFamily:'sans-serif' }}>
-            ✓ Jeder behält seinen eigenen Trainingsplan
+        {sentNames.length > 0 && (
+          <div style={{
+            marginTop:15, padding:'11px 13px', borderRadius:14,
+            background:'#EFF8F2', border:'1px solid #CFE8D8',
+            color:'#578169', fontSize:10.8, lineHeight:1.5, fontFamily:'sans-serif'
+          }}>
+            ✓ Einladung gesendet an {sentNames.join(', ')}.
           </div>
-          <div style={{ ...card, padding:'11px 13px', color:'#786357', fontSize:10.7, fontFamily:'sans-serif' }}>
-            ✓ Der Link ist 14 Tage gültig und nur einmal nutzbar
+        )}
+
+        <div style={{ marginTop:18 }}>
+          <div style={{
+            fontSize:10, fontWeight:900, letterSpacing:1,
+            color:'#826B5F', fontFamily:'sans-serif', marginBottom:9
+          }}>
+            DEINE TRAININGSPARTNER
           </div>
+
+          {loadingFriends ? (
+            <div style={{ ...card, padding:16, color:'#A28C80', fontSize:11, fontFamily:'sans-serif' }}>
+              Lade Trainingspartner…
+            </div>
+          ) : friends.length === 0 ? (
+            <div style={{ ...card, padding:16, color:'#9A8275', fontSize:10.8, lineHeight:1.5, fontFamily:'sans-serif' }}>
+              Aktuell ist kein weiterer Trainingspartner direkt auswählbar. Nutze unten den Einladungslink.
+            </div>
+          ) : (
+            <div style={{ display:'grid', gap:8 }}>
+              {friends.map(friend => {
+                const selected = selectedIds.includes(friend.id)
+                return (
+                  <button
+                    key={friend.id}
+                    type="button"
+                    onClick={() => toggleFriend(friend.id)}
+                    style={{
+                      ...card, padding:'11px 12px', cursor:'pointer',
+                      display:'flex', alignItems:'center', gap:11, textAlign:'left',
+                      border:selected ? '2px solid #FF8C69' : '1px solid #EEE3DC',
+                      background:selected ? '#FFF4EE' : '#fff'
+                    }}
+                  >
+                    <Avatar profile={friend} size={40} />
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{
+                        color:'#49372C', fontSize:11.8, fontWeight:900,
+                        fontFamily:'sans-serif', whiteSpace:'nowrap',
+                        overflow:'hidden', textOverflow:'ellipsis'
+                      }}>
+                        {friend.name || 'Trainingspartner'}
+                      </div>
+                      <div style={{ color:'#A08A7D', fontSize:9.8, marginTop:2, fontFamily:'sans-serif' }}>
+                        Direkt in der App einladen
+                      </div>
+                    </div>
+                    <div style={{
+                      width:25, height:25, borderRadius:'50%', display:'grid', placeItems:'center',
+                      border:selected ? 'none' : '1.5px solid #DCCBC1',
+                      background:selected ? 'linear-gradient(135deg,#FF8C69,#FF6B78)' : '#fff',
+                      color:'#fff', fontSize:13, fontWeight:900
+                    }}>
+                      {selected ? '✓' : ''}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {selectedIds.length > 0 && (
+            <button type="button" onClick={inviteSelected} disabled={busy} style={{
+              marginTop:10, width:'100%', border:'none', borderRadius:16, padding:'14px 15px',
+              color:'#fff', fontWeight:900, cursor:busy ? 'default' : 'pointer',
+              background:'linear-gradient(135deg,#7EC8A4,#5BA88A)',
+              opacity:busy ? .65 : 1, boxShadow:'0 8px 20px rgba(91,168,138,.18)'
+            }}>
+              {busy ? 'Einladung wird gesendet…' : selectedLabel}
+            </button>
+          )}
+        </div>
+
+        <div style={{ display:'flex', alignItems:'center', gap:10, margin:'18px 0 14px' }}>
+          <div style={{ height:1, flex:1, background:'#EEE4DE' }} />
+          <span style={{ color:'#B39D90', fontSize:9.5, fontWeight:800, fontFamily:'sans-serif' }}>ODER</span>
+          <div style={{ height:1, flex:1, background:'#EEE4DE' }} />
+        </div>
+
+        <div style={{ ...card, padding:'13px 14px' }}>
+          <div style={{ color:'#49372C', fontSize:11.5, fontWeight:900, fontFamily:'sans-serif' }}>
+            🔗 Per Link einladen
+          </div>
+          <div style={{ color:'#9B8578', fontSize:10.2, marginTop:3, lineHeight:1.45, fontFamily:'sans-serif' }}>
+            Für Personen, mit denen du noch nicht als Trainingspartner verbunden bist.
+          </div>
+          <button type="button" onClick={share} disabled={busy} style={{
+            marginTop:11, width:'100%', border:'none', borderRadius:14, padding:'12px 14px',
+            color:'#fff', fontWeight:900, cursor:busy ? 'default' : 'pointer',
+            background:'linear-gradient(135deg,#FF8C69,#FF6B78)',
+            opacity:busy ? .65 : 1
+          }}>
+            {busy ? 'Link wird erstellt…' : copied ? '✓ Link kopiert' : 'Einladungslink teilen'}
+          </button>
         </div>
 
         {error && <div style={{ marginTop:11, color:'#C6544C', fontSize:11.2, fontFamily:'sans-serif' }}>{error}</div>}
 
-        <button type="button" onClick={share} disabled={busy} style={{
-          marginTop:17, width:'100%', border:'none', borderRadius:16, padding:'14px 15px',
-          color:'#fff', fontWeight:900, cursor:busy ? 'default' : 'pointer',
-          background:'linear-gradient(135deg,#FF8C69,#FF6B78)',
-          opacity:busy ? .65 : 1, boxShadow:'0 8px 20px rgba(255,112,91,.22)'
-        }}>
-          {busy ? 'Link wird erstellt…' : copied ? '✓ Link kopiert' : '🔗 Einladungslink teilen'}
-        </button>
-
         <button type="button" onClick={onClose} style={{
-          marginTop:9, width:'100%', border:'1.5px solid #E9DDD6', borderRadius:16,
+          marginTop:10, width:'100%', border:'1.5px solid #E9DDD6', borderRadius:16,
           padding:'12px 14px', background:'#fff', color:'#8A7468', fontWeight:800, cursor:'pointer'
         }}>
-          Später einladen
+          Fertig
         </button>
       </div>
     </div>
@@ -666,6 +837,8 @@ export default function Together({ user, plan, planId, focusFriends = 0, refresh
   })
   const [sessionGoal, setSessionGoal] = useState(null)
   const [inviteGoal, setInviteGoal] = useState(null)
+  const [pendingDirectInvites, setPendingDirectInvites] = useState([])
+  const [pendingInviteBusy, setPendingInviteBusy] = useState(null)
   const [message, setMessage] = useState('')
   const friendsSectionRef = useRef(null)
 
@@ -734,6 +907,10 @@ export default function Together({ user, plan, planId, focusFriends = 0, refresh
     setLoading(true)
 
     try {
+      const { data:pendingRows, error:pendingError } = await supabase.rpc('list_pending_shared_goal_invites')
+      if (pendingError) throw pendingError
+      setPendingDirectInvites(Array.isArray(pendingRows) ? pendingRows : [])
+
       const { data:memberships, error:membershipError } = await supabase
         .from('shared_goal_members')
         .select('goal_id,user_id,role,status,plan_id,share_progress,share_next_session,week_number,total_weeks,week_completed,week_planned,week_decided,progress_status,progress_updated_at')
@@ -822,6 +999,44 @@ export default function Together({ user, plan, planId, focusFriends = 0, refresh
   }
 
   useEffect(() => { load() }, [user?.id, planId, refreshToken])
+
+
+  const acceptDirectInvite = async invite => {
+    setPendingInviteBusy(invite.token)
+    setMessage('')
+    const { error } = await supabase.rpc('accept_shared_goal_invite', {
+      invite_token:invite.token,
+    })
+
+    if (error) {
+      console.error('[Gemeinsam] Direkte Ziel-Einladung annehmen fehlgeschlagen:', error)
+      setMessage('Die Einladung konnte gerade nicht angenommen werden.')
+      setPendingInviteBusy(null)
+      return
+    }
+
+    setPendingInviteBusy(null)
+    setMessage(`Du bist „${invite.title}“ beigetreten.`)
+    await load()
+  }
+
+  const declineDirectInvite = async invite => {
+    setPendingInviteBusy(invite.token)
+    setMessage('')
+    const { error } = await supabase.rpc('decline_shared_goal_invite', {
+      invite_token:invite.token,
+    })
+
+    if (error) {
+      console.error('[Gemeinsam] Direkte Ziel-Einladung ablehnen fehlgeschlagen:', error)
+      setMessage('Die Einladung konnte gerade nicht abgelehnt werden.')
+      setPendingInviteBusy(null)
+      return
+    }
+
+    setPendingInviteBusy(null)
+    setPendingDirectInvites(current => current.filter(item => item.token !== invite.token))
+  }
 
   const primaryGoal = useMemo(() => {
     if (!goals.length) return null
@@ -924,6 +1139,81 @@ export default function Together({ user, plan, planId, focusFriends = 0, refresh
               Ziele verbinden. Training bleibt individuell.
             </p>
           </div>
+
+          {!loading && pendingDirectInvites.length > 0 && (
+            <section style={{ marginTop:22 }}>
+              <div style={{ color:'#CC755E', fontSize:10, fontWeight:900, letterSpacing:1.1, fontFamily:'sans-serif' }}>
+                EINLADUNGEN FÜR DICH
+              </div>
+              <h3 style={{
+                margin:'5px 0 11px', color:'#4A382E',
+                fontFamily:"'Georgia','Times New Roman',serif", fontSize:21
+              }}>
+                Möchtest du mittrainieren?
+              </h3>
+
+              <div style={{ display:'grid', gap:9 }}>
+                {pendingDirectInvites.map(invite => (
+                  <div key={invite.token} style={{
+                    ...card, padding:15,
+                    background:'linear-gradient(145deg,#FFF7F1,#FFFFFF 62%,#F3FAF5)'
+                  }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:11 }}>
+                      <Avatar profile={{
+                        name:invite.inviter_name,
+                        avatar_url:invite.inviter_avatar_url
+                      }} size={42} />
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ color:'#A66F5A', fontSize:9.5, fontWeight:900, fontFamily:'sans-serif' }}>
+                          {invite.inviter_name || 'Ein Trainingspartner'} lädt dich ein
+                        </div>
+                        <div style={{
+                          color:'#3D2B1F', fontSize:16, marginTop:2,
+                          fontFamily:"'Georgia','Times New Roman',serif", fontWeight:700
+                        }}>
+                          {invite.title}
+                        </div>
+                        <div style={{ color:'#9A8478', fontSize:10, marginTop:3, fontFamily:'sans-serif' }}>
+                          {[
+                            (SPORT_META[invite.sport_type] || {}).label,
+                            formatDate(invite.target_date)
+                          ].filter(Boolean).join(' · ')}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display:'flex', gap:8, marginTop:13 }}>
+                      <button
+                        type="button"
+                        disabled={pendingInviteBusy === invite.token}
+                        onClick={() => declineDirectInvite(invite)}
+                        style={{
+                          flex:1, border:'1.5px solid #E8DDD6', borderRadius:13,
+                          padding:'10px 11px', background:'#fff', color:'#917B6F',
+                          fontWeight:850, cursor:'pointer'
+                        }}
+                      >
+                        Ablehnen
+                      </button>
+                      <button
+                        type="button"
+                        disabled={pendingInviteBusy === invite.token}
+                        onClick={() => acceptDirectInvite(invite)}
+                        style={{
+                          flex:1.5, border:'none', borderRadius:13, padding:'10px 11px',
+                          background:'linear-gradient(135deg,#7EC8A4,#5BA88A)',
+                          color:'#fff', fontWeight:900, cursor:'pointer',
+                          opacity:pendingInviteBusy === invite.token ? .6 : 1
+                        }}
+                      >
+                        {pendingInviteBusy === invite.token ? '…' : 'Beitreten'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {loading ? (
             <div style={{ marginTop:26, color:'#AA9488', fontSize:12, fontFamily:'sans-serif' }}>Lade deine gemeinsamen Ziele…</div>

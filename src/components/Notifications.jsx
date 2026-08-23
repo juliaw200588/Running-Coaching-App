@@ -99,7 +99,8 @@ export default function Notifications({
 
     if (
       (notification.type === 'friend_request' ||
-       notification.type === 'friend_accepted') &&
+       notification.type === 'friend_accepted' ||
+       notification.type === 'shared_goal_invite') &&
       typeof onOpenTrainingPartners === 'function'
     ) {
       onOpenTrainingPartners()
@@ -169,7 +170,9 @@ export default function Notifications({
           {!loading && notifications.map(notification => {
             const isWeekAnalysis = notification.type === 'week_analysis'
             const isFriend = notification.type === 'friend_request' || notification.type === 'friend_accepted'
-            const isClickable = isWeekAnalysis || isFriend
+            const isGoalInvite = notification.type === 'shared_goal_invite'
+            const isSocial = isFriend || isGoalInvite
+            const isClickable = isWeekAnalysis || isSocial
 
             return (
               <div
@@ -193,8 +196,8 @@ export default function Notifications({
                   padding: '15px 38px 15px 15px',
                   marginBottom: 10,
                   borderRadius: 16,
-                  border: isWeekAnalysis ? '1px solid #FFD6C2' : isFriend ? '1px solid #CFE9DA' : '1px solid #EFE5DE',
-                  background: isWeekAnalysis ? 'linear-gradient(135deg,#FFF5EE,#FFF9F5)' : isFriend ? 'linear-gradient(135deg,#F2FAF5,#FBFFFC)' : '#FFFFFF',
+                  border: isWeekAnalysis ? '1px solid #FFD6C2' : isSocial ? '1px solid #CFE9DA' : '1px solid #EFE5DE',
+                  background: isWeekAnalysis ? 'linear-gradient(135deg,#FFF5EE,#FFF9F5)' : isSocial ? 'linear-gradient(135deg,#F2FAF5,#FBFFFC)' : '#FFFFFF',
                   cursor: isClickable ? 'pointer' : 'default',
                 }}
               >
@@ -205,10 +208,10 @@ export default function Notifications({
                   borderRadius: '50%',
                   display: 'grid',
                   placeItems: 'center',
-                  background: isWeekAnalysis ? 'linear-gradient(135deg,#FF8C69,#FF6B9D)' : isFriend ? 'linear-gradient(135deg,#7EC8A4,#5BA88A)' : '#F6EFEB',
+                  background: isWeekAnalysis ? 'linear-gradient(135deg,#FF8C69,#FF6B9D)' : isSocial ? 'linear-gradient(135deg,#7EC8A4,#5BA88A)' : '#F6EFEB',
                   fontSize: 19,
                 }}>
-                  {isWeekAnalysis ? '📊' : isFriend ? '👥' : '🔔'}
+                  {isWeekAnalysis ? '📊' : isGoalInvite ? '🎯' : isFriend ? '👥' : '🔔'}
                 </div>
 
                 <div style={{ minWidth: 0, flex: 1 }}>
@@ -222,9 +225,9 @@ export default function Notifications({
                     </div>
                   )}
 
-                  {isFriend && (
+                  {isSocial && (
                     <div style={{ marginTop: 7, color: '#4F8E73', fontSize: 10.5, fontWeight: 'bold', fontFamily: 'sans-serif' }}>
-                      Trainingspartner ansehen →
+                      {isGoalInvite ? 'Einladung ansehen →' : 'Trainingspartner ansehen →'}
                     </div>
                   )}
 
