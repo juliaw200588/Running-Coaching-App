@@ -119,6 +119,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('training')
   const [showTrainingPlan, setShowTrainingPlan] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
+  const [togetherFocusFriends, setTogetherFocusFriends] = useState(0)
   const [unreadCount, setUnreadCount] = useState(0)
   const [loadingAuth, setLoadingAuth] = useState(true)
   const [openWeekAnalysisWeek, setOpenWeekAnalysisWeek] = useState(null)
@@ -1196,6 +1197,12 @@ const handleOpenWeekAnalysisFromNotification = (weekNumber) => {
   setOpenWeekAnalysisWeek(parsedWeek)
 }
 
+const handleOpenTrainingPartnersFromNotification = () => {
+  setShowNotifications(false)
+  setActiveTab('together')
+  setTogetherFocusFriends(value => value + 1)
+}
+
   if (loadingAuth) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'linear-gradient(160deg, #FFF8F0 0%, #F0FAF4 50%, #FFF0F5 100%)', fontFamily: 'sans-serif', color: '#C4A882', fontSize: 14 }}>
       ⏳ Lade…
@@ -1256,6 +1263,7 @@ const handleOpenWeekAnalysisFromNotification = (weekNumber) => {
           user={user}
           onClose={() => setShowNotifications(false)}
           onOpenWeekAnalysis={handleOpenWeekAnalysisFromNotification}
+          onOpenTrainingPartners={handleOpenTrainingPartnersFromNotification}
         />
       )}
 
@@ -1376,7 +1384,7 @@ const handleOpenWeekAnalysisFromNotification = (weekNumber) => {
             )
         )}
         {activeTab === 'activities' && <Laeufe user={user} plan={plan} />}
-        {activeTab === 'together' && <Together user={user} plan={plan} planId={planId} />}
+        {activeTab === 'together' && <Together user={user} plan={plan} planId={planId} focusFriends={togetherFocusFriends} />}
         {activeTab === 'profile' && (
           <Profile
             user={user}

@@ -1,12 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
-import Friends from './Friends.jsx'
 import PolarConnect from './PolarConnect.jsx'
 import { supabase } from '../lib/supabase.js'
 
 const TABS = [
   { id: 'profil', label: 'Profil', icon: '👤' },
   { id: 'schuhe', label: 'Schuhe', icon: '👟' },
-  { id: 'freunde', label: 'Freunde', icon: '👥' },
   { id: 'geraete', label: 'Geräte', icon: '⌚' },
 ]
 
@@ -512,10 +510,6 @@ export default function Profile({ user, plan, onOpenActivities }) {
               💡 Laufschuhe halten ca. 600–800 km. Wir empfehlen einen Wechsel spätestens bei 700 km.
             </div>
           </>
-        )}
-
-        {activeTab === 'freunde' && (
-          <Friends user={user} />
         )}
 
         {activeTab === 'geraete' && (

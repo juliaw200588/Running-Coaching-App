@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
+import Friends from './Friends.jsx'
 
 const DAY_MS = 86400000
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
@@ -504,7 +505,7 @@ function CreateSessionModal({ goal, user, onClose, onCreated }) {
   </div>
 }
 
-export default function Together({ user, plan, planId }) {
+export default function Together({ user, plan, planId, focusFriends = 0 }) {
   const [loading, setLoading] = useState(true)
   const [goals, setGoals] = useState([])
   const [membersByGoal, setMembersByGoal] = useState({})
@@ -519,6 +520,7 @@ export default function Together({ user, plan, planId }) {
   })
   const [sessionGoal, setSessionGoal] = useState(null)
   const [message, setMessage] = useState('')
+  const friendsSectionRef = useRef(null)
 
   const openCreate = () => {
     try {
@@ -540,6 +542,14 @@ export default function Together({ user, plan, planId }) {
       }
     } catch {}
   }, [user?.id])
+
+  useEffect(() => {
+    if (!focusFriends) return
+    const timer = window.setTimeout(() => {
+      friendsSectionRef.current?.scrollIntoView({ behavior:'smooth', block:'start' })
+    }, 120)
+    return () => window.clearTimeout(timer)
+  }, [focusFriends])
 
   const currentPlanContext = useMemo(() => getCurrentPlanContext(plan), [plan])
 
@@ -971,6 +981,21 @@ export default function Together({ user, plan, planId }) {
               )}
             </>
           )}
+
+          <section ref={friendsSectionRef} style={{ marginTop:28, scrollMarginTop:18 }}>
+            <div style={{ color:'#CC755E', fontSize:10, fontWeight:900, letterSpacing:1.1, fontFamily:'sans-serif' }}>
+              TRAININGSPARTNER
+            </div>
+            <h3 style={{ margin:'5px 0 5px', color:'#4A382E', fontFamily:"'Georgia','Times New Roman',serif", fontSize:21 }}>
+              Gemeinsam trainiert es sich leichter.
+            </h3>
+            <p style={{ margin:'0 0 13px', color:'#987F72', fontSize:10.8, lineHeight:1.5, fontFamily:'sans-serif' }}>
+              Finde Trainingspartner, beantworte Anfragen oder lade jemanden ein.
+            </p>
+            <div style={{ ...card, padding:14 }}>
+              <Friends user={user} />
+            </div>
+          </section>
 
           {message && <div style={{
             position:'fixed', left:'50%', transform:'translateX(-50%)', bottom:88, zIndex:160,

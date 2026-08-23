@@ -23,6 +23,7 @@ export default function Notifications({
   user,
   onClose,
   onOpenWeekAnalysis,
+  onOpenTrainingPartners,
 }) {
   const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(true)
@@ -83,15 +84,25 @@ export default function Notifications({
   }
 
   const openNotification = notification => {
-    if (notification.type !== 'week_analysis') return
-    const weekNumber =
-      notification.week_number ?? weekFromMessage(notification.message)
+    if (notification.type === 'week_analysis') {
+      const weekNumber =
+        notification.week_number ?? weekFromMessage(notification.message)
+
+      if (
+        weekNumber != null &&
+        typeof onOpenWeekAnalysis === 'function'
+      ) {
+        onOpenWeekAnalysis(weekNumber)
+      }
+      return
+    }
 
     if (
-      weekNumber != null &&
-      typeof onOpenWeekAnalysis === 'function'
+      (notification.type === 'friend_request' ||
+       notification.type === 'friend_accepted') &&
+      typeof onOpenTrainingPartners === 'function'
     ) {
-      onOpenWeekAnalysis(weekNumber)
+      onOpenTrainingPartners()
     }
   }
 
@@ -157,16 +168,18 @@ export default function Notifications({
 
           {!loading && notifications.map(notification => {
             const isWeekAnalysis = notification.type === 'week_analysis'
+            const isFriend = notification.type === 'friend_request' || notification.type === 'friend_accepted'
+            const isClickable = isWeekAnalysis || isFriend
 
             return (
               <div
                 key={notification.id}
-                role={isWeekAnalysis ? 'button' : undefined}
-                tabIndex={isWeekAnalysis ? 0 : undefined}
+                role={isClickable ? 'button' : undefined}
+                tabIndex={isClickable ? 0 : undefined}
                 onClick={() => openNotification(notification)}
                 onKeyDown={event => {
                   if (
-                    isWeekAnalysis &&
+                    isClickable &&
                     (event.key === 'Enter' || event.key === ' ')
                   ) {
                     event.preventDefault()
@@ -180,9 +193,9 @@ export default function Notifications({
                   padding: '15px 38px 15px 15px',
                   marginBottom: 10,
                   borderRadius: 16,
-                  border: isWeekAnalysis ? '1px solid #FFD6C2' : '1px solid #EFE5DE',
-                  background: isWeekAnalysis ? 'linear-gradient(135deg,#FFF5EE,#FFF9F5)' : '#FFFFFF',
-                  cursor: isWeekAnalysis ? 'pointer' : 'default',
+                  border: isWeekAnalysis ? '1px solid #FFD6C2' : isFriend ? '1px solid #CFE9DA' : '1px solid #EFE5DE',
+                  background: isWeekAnalysis ? 'linear-gradient(135deg,#FFF5EE,#FFF9F5)' : isFriend ? 'linear-gradient(135deg,#F2FAF5,#FBFFFC)' : '#FFFFFF',
+                  cursor: isClickable ? 'pointer' : 'default',
                 }}
               >
                 <div style={{
@@ -192,10 +205,10 @@ export default function Notifications({
                   borderRadius: '50%',
                   display: 'grid',
                   placeItems: 'center',
-                  background: isWeekAnalysis ? 'linear-gradient(135deg,#FF8C69,#FF6B9D)' : '#F6EFEB',
+                  background: isWeekAnalysis ? 'linear-gradient(135deg,#FF8C69,#FF6B9D)' : isFriend ? 'linear-gradient(135deg,#7EC8A4,#5BA88A)' : '#F6EFEB',
                   fontSize: 19,
                 }}>
-                  {isWeekAnalysis ? '📊' : '🔔'}
+                  {isWeekAnalysis ? '📊' : isFriend ? '👥' : '🔔'}
                 </div>
 
                 <div style={{ minWidth: 0, flex: 1 }}>
@@ -206,6 +219,12 @@ export default function Notifications({
                   {isWeekAnalysis && (
                     <div style={{ marginTop: 7, color: '#C66B43', fontSize: 10.5, fontWeight: 'bold', fontFamily: 'sans-serif' }}>
                       Wochenanalyse ansehen →
+                    </div>
+                  )}
+
+                  {isFriend && (
+                    <div style={{ marginTop: 7, color: '#4F8E73', fontSize: 10.5, fontWeight: 'bold', fontFamily: 'sans-serif' }}>
+                      Trainingspartner ansehen →
                     </div>
                   )}
 

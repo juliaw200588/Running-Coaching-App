@@ -11,6 +11,8 @@ export default function Friends({ user }) {
   const [loading, setLoading] = useState(true)
   const [searching, setSearching] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
+  const [busyRequestId, setBusyRequestId] = useState(null)
+  const [feedback, setFeedback] = useState('')
 
   useEffect(() => {
     loadFreunde()
@@ -90,22 +92,56 @@ export default function Friends({ user }) {
   }
 
   const anfrageAnnehmen = async (friendshipId, profil) => {
-    await supabase.from('friendships').update({ status: 'accepted' }).eq('id', friendshipId)
-    // Benachrichtigung an Absender
-    const { data: myProfile } = await supabase.from('profiles').select('name').eq('id', user.id).single()
+    setBusyRequestId(friendshipId)
+    setFeedback('')
+
+    const { error } = await supabase.rpc('accept_friendship_request', {
+      request_id: friendshipId,
+    })
+
+    if (error) {
+      console.error('Freundschaftsanfrage annehmen fehlgeschlagen:', error)
+      setFeedback('Die Anfrage konnte gerade nicht angenommen werden.')
+      setBusyRequestId(null)
+      return
+    }
+
+    const { data: myProfile } = await supabase
+      .from('profiles')
+      .select('name')
+      .eq('id', user.id)
+      .single()
+
     await supabase.from('notifications').insert({
       user_id: profil.id,
       type: 'friend_accepted',
       message: `${myProfile?.name || 'Jemand'} hat deine Freundschaftsanfrage angenommen! 🎉`,
       from_user_id: user.id,
     })
+
     setAnfragen(prev => prev.filter(a => a.friendship_id !== friendshipId))
-    setFreunde(prev => [...prev, profil])
+    setFreunde(prev => prev.some(f => f.id === profil.id) ? prev : [...prev, profil])
+    setFeedback(`${profil.name || 'Trainingspartner'} ist jetzt mit dir verbunden.`)
+    setBusyRequestId(null)
   }
 
   const anfrageAblehnen = async (friendshipId) => {
-    await supabase.from('friendships').update({ status: 'declined' }).eq('id', friendshipId)
+    setBusyRequestId(friendshipId)
+    setFeedback('')
+
+    const { error } = await supabase.rpc('decline_friendship_request', {
+      request_id: friendshipId,
+    })
+
+    if (error) {
+      console.error('Freundschaftsanfrage ablehnen fehlgeschlagen:', error)
+      setFeedback('Die Anfrage konnte gerade nicht abgelehnt werden.')
+      setBusyRequestId(null)
+      return
+    }
+
     setAnfragen(prev => prev.filter(a => a.friendship_id !== friendshipId))
+    setBusyRequestId(null)
   }
 
   const freundEntfernen = async (freundId) => {
@@ -138,6 +174,13 @@ export default function Friends({ user }) {
   return (
     <div>
       {selectedFriend && <FriendProfile friendId={selectedFriend.id} currentUser={user} onClose={() => setSelectedFriend(null)} />}
+
+      {feedback && (
+        <div style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 12, background: '#F0FAF4', border: '1px solid #B8E4CC', color: '#4F8E73', fontSize: 11.5, lineHeight: 1.45, fontFamily: 'sans-serif' }}>
+          {feedback}
+        </div>
+      )}
+
       {/* Suche */}
       <div style={{ marginBottom: 20 }}>
         <label style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 1, display: 'block', marginBottom: 6, fontFamily: 'sans-serif' }}>
@@ -192,10 +235,16 @@ export default function Friends({ user }) {
                 <div style={{ fontSize: 11, color: '#C4A882', fontFamily: 'sans-serif' }}>möchte dein Freund sein</div>
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={() => anfrageAnnehmen(a.friendship_id, a)}
-                  style={{ padding: '6px 12px', borderRadius: 10, border: 'none', background: '#5BA88A', color: 'white', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>✓</button>
-                <button onClick={() => anfrageAblehnen(a.friendship_id)}
-                  style={{ padding: '6px 12px', borderRadius: 10, border: 'none', background: '#FDECEA', color: '#B85464', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>✕</button>
+                <button
+                  disabled={busyRequestId === a.friendship_id}
+                  onClick={() => anfrageAnnehmen(a.friendship_id, a)}
+                  style={{ padding: '6px 12px', borderRadius: 10, border: 'none', background: '#5BA88A', color: 'white', fontSize: 12, fontWeight: 'bold', cursor: busyRequestId === a.friendship_id ? 'default' : 'pointer', opacity: busyRequestId === a.friendship_id ? .55 : 1, fontFamily: 'sans-serif' }}>
+                  {busyRequestId === a.friendship_id ? '…' : '✓'}
+                </button>
+                <button
+                  disabled={busyRequestId === a.friendship_id}
+                  onClick={() => anfrageAblehnen(a.friendship_id)}
+                  style={{ padding: '6px 12px', borderRadius: 10, border: 'none', background: '#FDECEA', color: '#B85464', fontSize: 12, fontWeight: 'bold', cursor: busyRequestId === a.friendship_id ? 'default' : 'pointer', opacity: busyRequestId === a.friendship_id ? .55 : 1, fontFamily: 'sans-serif' }}>✕</button>
               </div>
             </div>
           ))}
@@ -221,7 +270,7 @@ export default function Friends({ user }) {
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 14, fontWeight: 'bold', color: '#3D2B1F', fontFamily: 'sans-serif' }}>{f.name || 'Kein Name'}</div>
               </div>
-              <button onClick={() => freundEntfernen(f.id)}
+              <button onClick={(event) => { event.stopPropagation(); freundEntfernen(f.id) }}
                 style={{ padding: '6px 10px', borderRadius: 10, border: '1px solid #F0E0D0', background: 'white', color: '#C4A882', fontSize: 12, cursor: 'pointer', fontFamily: 'sans-serif' }}>
                 Entfernen
               </button>
