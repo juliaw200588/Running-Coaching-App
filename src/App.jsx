@@ -1697,7 +1697,53 @@ if (!claimAcquired) return
       return
     }
 
-    if (primaryPlanId) await supabase.from('plans').delete().eq('id', primaryPlanId)
+    // "Neuen Plan erstellen" darf einen Plan, der zu einem gemeinsamen Ziel gehört,
+    // nicht löschen. Er bleibt als Zusatzplan bestehen und ist weiterhin über
+    // "Gemeinsam" erreichbar. Der danach erstellte persönliche Plan wird Hauptplan.
+    if (primaryPlanId) {
+      const { data: sharedMembership, error: sharedMembershipError } = await supabase
+        .from('shared_goal_members')
+        .select('goal_id')
+        .eq('user_id', user.id)
+        .eq('plan_id', primaryPlanId)
+        .eq('status', 'active')
+        .limit(1)
+        .maybeSingle()
+
+      if (sharedMembershipError) {
+        console.error('[App] Verknüpfung des aktuellen Plans konnte nicht geprüft werden:', sharedMembershipError)
+        return
+      }
+
+      if (sharedMembership?.goal_id) {
+        const { error: demoteError } = await supabase
+          .from('plans')
+          .update({ is_primary:false })
+          .eq('id', primaryPlanId)
+          .eq('user_id', user.id)
+
+        if (demoteError) {
+          console.error('[App] Gemeinsamer Plan konnte nicht zum Zusatzplan gemacht werden:', demoteError)
+          return
+        }
+
+        localStorage.removeItem(`runcoaching_plan_${user.id}`)
+        setPlan(null)
+        setPlanId(null)
+        setPrimaryPlan(null)
+        setPrimaryPlanId(null)
+        setViewingSecondaryPlan(false)
+        setSelectedPlanSport(null)
+        setOpenWeekAnalysisWeek(null)
+        setShowTrainingPlan(true)
+        setTogetherRefresh(value => value + 1)
+        return
+      }
+
+      // Nur ein rein persönlicher Hauptplan wird beim bewussten Neuerstellen ersetzt.
+      await supabase.from('plans').delete().eq('id', primaryPlanId).eq('user_id', user.id)
+    }
+
     localStorage.removeItem(`runcoaching_plan_${user.id}`)
     setPlan(null)
     setPlanId(null)
@@ -1706,7 +1752,7 @@ if (!claimAcquired) return
     setViewingSecondaryPlan(false)
     setSelectedPlanSport(null)
     setOpenWeekAnalysisWeek(null)
-    setShowTrainingPlan(false)
+    setShowTrainingPlan(true)
   }
 
   const handleOpenNotifications = () => {
