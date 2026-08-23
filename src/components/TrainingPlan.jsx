@@ -1551,7 +1551,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                 </button>
                 <button onClick={() => { setShowPauseModal(false); handlePausePlan() }}
                   style={{ flex: 2, padding: '15px', borderRadius: 16, border: 'none', background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)', color: 'white', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', boxShadow: '0 6px 20px rgba(255,107,157,0.4)' }}>
-                  Plan um {pausWeeks} {pauseWeeks === 1 ? 'Woche' : 'Wochen'} verschieben
+                  Plan um {pauseWeeks} {pauseWeeks === 1 ? 'Woche' : 'Wochen'} verschieben
                 </button>
               </div>
             </div>
