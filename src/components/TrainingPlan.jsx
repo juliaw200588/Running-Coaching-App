@@ -1276,7 +1276,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                       const techniqueOpen = Boolean(openTechniques[key])
 
                       return (
-                        <div key={di} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 14, marginBottom: 8, background: s.bg, border: `1px solid ${isDone ? '#B8E4CC' : isSkipped ? '#E0D8CC' : 'transparent'}`, transition: 'all 0.2s ease', opacity: day.optional ? 0.7 : isSkipped ? 0.85 : 1 }}>
+                        <div key={originalIndex} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 14, marginBottom: 8, background: s.bg, border: `1px solid ${isDone ? '#B8E4CC' : isSkipped ? '#E0D8CC' : 'transparent'}`, transition: 'all 0.2s ease', opacity: day.optional ? 0.7 : isSkipped ? 0.85 : 1 }}>
                           {!day.optional ? (
                             <button onClick={() => toggleDone(key)} style={{ width: 24, height: 24, borderRadius: '50%', border: `2px solid ${isDone ? '#5BA88A' : isSkipped ? '#C4BCAE' : '#D4C4B8'}`, background: isDone ? '#5BA88A' : isSkipped ? '#C4BCAE' : 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 12, flexShrink: 0, transition: 'all 0.2s ease' }}>
                               {isDone ? '✓' : isSkipped ? '⏭' : ''}
