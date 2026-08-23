@@ -2,6 +2,7 @@ export default function BottomNav({ activeTab, onChange }) {
   const tabs = [
     { id: 'training', label: 'Training', icon: '🏋️' },
     { id: 'activities', label: 'Aktivitäten', icon: '📋' },
+    { id: 'together', label: 'Gemeinsam', icon: '♡♡', together: true },
     { id: 'profile', label: 'Profil', icon: '👤' },
   ]
 
@@ -19,17 +20,25 @@ export default function BottomNav({ activeTab, onChange }) {
             style={{
               flex: 1, background: 'none', border: 'none', cursor: 'pointer',
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
-              padding: '4px 0',
+              padding: '4px 0', minWidth: 0,
             }}>
             <div style={{
-              width: active ? 44 : 26, height: 26, borderRadius: active ? 13 : 8, display: 'flex', alignItems: 'center',
-              justifyContent: 'center', fontSize: 15,
+              width: active ? 44 : 28, height: 26, borderRadius: active ? 13 : 8,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: tab.together ? 16 : 15,
+              letterSpacing: tab.together ? -7 : 'normal',
+              paddingRight: tab.together ? 7 : 0,
+              color: tab.together ? (active ? '#fff' : '#8D8179') : undefined,
               background: active ? 'linear-gradient(135deg,#FF8C69,#FF6B9D)' : 'transparent',
               opacity: active ? 1 : 0.45, transition: 'all 0.2s',
             }}>
               {tab.icon}
             </div>
-            <div style={{ fontSize: 10, fontWeight: 'bold', color: active ? '#FF8C69' : '#C4A882', fontFamily: 'sans-serif' }}>
+            <div style={{
+              fontSize: 9.5, fontWeight: 'bold',
+              color: active ? '#FF8C69' : '#C4A882',
+              fontFamily: 'sans-serif', whiteSpace:'nowrap'
+            }}>
               {tab.label}
             </div>
           </button>

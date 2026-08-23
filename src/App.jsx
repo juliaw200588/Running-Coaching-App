@@ -15,6 +15,7 @@ import Laeufe from './components/Laeufe.jsx'
 import Notifications from './components/Notifications.jsx'
 import BottomNav from './components/BottomNav.jsx'
 import Dashboard from './components/Dashboard.jsx'
+import Together from './components/Together.jsx'
 
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
@@ -168,6 +169,45 @@ function App() {
       setPendingHikingCheckIn(null)
     }
   }, [user])
+
+  // Sichere Einladungslinks für gemeinsame Ziele/Freundschaften annehmen.
+  // Der Link wird erst nach erfolgreichem Login verarbeitet.
+  useEffect(() => {
+    if (!user?.id) return
+
+    const params = new URLSearchParams(window.location.search)
+    const goalInvite = params.get('goalInvite')
+    const friendInvite = params.get('friendInvite')
+    if (!goalInvite && !friendInvite) return
+
+    let cancelled = false
+
+    const acceptInvite = async () => {
+      try {
+        if (goalInvite) {
+          const { error } = await supabase.rpc('accept_shared_goal_invite', {
+            invite_token: goalInvite,
+          })
+          if (error) throw error
+          if (!cancelled) setActiveTab('together')
+        } else if (friendInvite) {
+          const { error } = await supabase.rpc('accept_friend_invite', {
+            invite_token: friendInvite,
+          })
+          if (error) throw error
+          if (!cancelled) setActiveTab('together')
+        }
+
+        const cleanUrl = `${window.location.pathname}${window.location.hash || ''}`
+        window.history.replaceState({}, '', cleanUrl)
+      } catch (error) {
+        console.error('[Gemeinsam] Einladung konnte nicht angenommen werden:', error)
+      }
+    }
+
+    acceptInvite()
+    return () => { cancelled = true }
+  }, [user?.id])
 
   const loadProfileName = async (userId) => {
     const { data } = await supabase.from('profiles').select('name').eq('id', userId).single()
@@ -1336,6 +1376,7 @@ const handleOpenWeekAnalysisFromNotification = (weekNumber) => {
             )
         )}
         {activeTab === 'activities' && <Laeufe user={user} plan={plan} />}
+        {activeTab === 'together' && <Together user={user} />}
         {activeTab === 'profile' && (
           <Profile
             user={user}
