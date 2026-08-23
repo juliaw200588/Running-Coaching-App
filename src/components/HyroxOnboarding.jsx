@@ -41,6 +41,15 @@ const recommendedWeeks = form => {
   return 12
 }
 
+const readDraft = () => {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(DRAFT_KEY) || 'null')
+    return saved && typeof saved === 'object' ? saved : null
+  } catch {
+    return null
+  }
+}
+
 const initialForm = {
   name:'',
   goalType:'event',
@@ -108,19 +117,23 @@ function Choice({ active, children, onClick }) {
 }
 
 export default function HyroxOnboarding({ onPlanGenerated }) {
-  const [step, setStep] = useState(1)
+  const [step, setStep] = useState(() => {
+    const saved = readDraft()
+    const savedStep = Number(saved?.step)
+    return [1,2,3].includes(savedStep) ? savedStep : 1
+  })
+
   const [form, setForm] = useState(() => {
-    try {
-      const saved = JSON.parse(sessionStorage.getItem(DRAFT_KEY) || 'null')
-      return {
-        ...initialForm,
-        ...(saved?.form || {}),
-        equipment:Array.isArray(saved?.form?.equipment)
-          ? saved.form.equipment
-          : initialForm.equipment,
-      }
-    } catch {
-      return initialForm
+    const saved = readDraft()
+    return {
+      ...initialForm,
+      ...(saved?.form || {}),
+      preferredDays:Array.isArray(saved?.form?.preferredDays)
+        ? saved.form.preferredDays
+        : initialForm.preferredDays,
+      equipment:Array.isArray(saved?.form?.equipment)
+        ? saved.form.equipment
+        : initialForm.equipment,
     }
   })
   const [loading, setLoading] = useState(false)
@@ -130,6 +143,20 @@ export default function HyroxOnboarding({ onPlanGenerated }) {
     try {
       sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ step, form }))
     } catch {}
+  }, [step, form])
+
+  useEffect(() => {
+    const persistDraft = () => {
+      try {
+        sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ step, form }))
+      } catch {}
+    }
+
+    window.addEventListener('pagehide', persistDraft)
+    return () => {
+      persistDraft()
+      window.removeEventListener('pagehide', persistDraft)
+    }
   }, [step, form])
 
   const eventWeeks = useMemo(
