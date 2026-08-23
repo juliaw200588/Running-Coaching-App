@@ -258,10 +258,27 @@ export default function Friends({ user }) {
         </div>
 
         {freunde.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '30px 20px', color: '#B8A090', fontFamily: 'sans-serif' }}>
-            <div style={{ fontSize: 40, marginBottom: 10 }}>👟</div>
-            <div style={{ fontSize: 14, marginBottom: 4 }}>Noch keine Freunde</div>
-            <div style={{ fontSize: 12, color: '#D4C4B8' }}>Suche nach Namen oder teile deinen Link</div>
+          <div style={{ textAlign: 'center', padding: '34px 20px', color: '#B8A090', fontFamily: 'sans-serif' }}>
+            <div style={{
+              width: 58,
+              height: 58,
+              margin: '0 auto 12px',
+              borderRadius: '50%',
+              display: 'grid',
+              placeItems: 'center',
+              background: 'linear-gradient(135deg,#FFF0E8,#FFF6F1)',
+              border: '1px solid #F5DED1',
+              fontSize: 25,
+              boxShadow: '0 6px 18px rgba(120,82,60,.06)',
+            }}>
+              👥
+            </div>
+            <div style={{ fontSize: 14, marginBottom: 4, color: '#9E806F', fontWeight: 'bold' }}>
+              Noch keine Trainingspartner
+            </div>
+            <div style={{ fontSize: 12, color: '#D4B6A5' }}>
+              Suche nach Namen oder teile deinen Link
+            </div>
           </div>
         ) : (
           freunde.map(f => (
