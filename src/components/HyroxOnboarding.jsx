@@ -36,9 +36,7 @@ const recommendedWeeks = form => {
   if (form.goalType === 'event' && form.eventDate) {
     return Math.max(6, Math.min(24, weeksBetween(form.startDate, form.eventDate) || 12))
   }
-  if (form.level === 'beginner') return 14
-  if (form.level === 'experienced') return 10
-  return 12
+  return Number(form.planWeeks) || 12
 }
 
 const readDraft = () => {
@@ -62,6 +60,18 @@ const initialForm = {
   fiveKTime:'',
   currentWeeklyKm:'',
   strengthSessions:'2',
+  planWeeks:12,
+  knowsStationLoads:'no',
+  stationBaselines:{
+    sledPushKg:'',
+    sledPullKg:'',
+    farmersKgEach:'',
+    lungesKg:'',
+    wallBallKg:'',
+    wallBallUnbroken:'',
+    ski1000Time:'',
+    row1000Time:'',
+  },
   startDate:todayIso(),
   unitsPerWeek:4,
   preferredDays:DEFAULT_DAYS[4],
@@ -134,6 +144,10 @@ export default function HyroxOnboarding({ onPlanGenerated }) {
       equipment:Array.isArray(saved?.form?.equipment)
         ? saved.form.equipment
         : initialForm.equipment,
+      stationBaselines:{
+        ...initialForm.stationBaselines,
+        ...(saved?.form?.stationBaselines || {}),
+      },
     }
   })
   const [loading, setLoading] = useState(false)
@@ -172,6 +186,16 @@ export default function HyroxOnboarding({ onPlanGenerated }) {
   ])
 
   const patch = values => setForm(current => ({ ...current, ...values }))
+
+  const patchBaseline = (key, value) => {
+    setForm(current => ({
+      ...current,
+      stationBaselines:{
+        ...current.stationBaselines,
+        [key]:value,
+      },
+    }))
+  }
 
   const toggleDay = day => {
     setForm(current => {
@@ -443,6 +467,37 @@ export default function HyroxOnboarding({ onPlanGenerated }) {
               </select>
             </div>
 
+            <div style={{ marginBottom:17 }}>
+              <div style={labelStyle}>Kennst du schon deine aktuellen Stationsgewichte?</div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(2,minmax(0,1fr))', gap:8 }}>
+                <Choice active={form.knowsStationLoads === 'yes'} onClick={() => patch({ knowsStationLoads:'yes' })}>
+                  Ja, ungefähr
+                </Choice>
+                <Choice active={form.knowsStationLoads === 'no'} onClick={() => patch({ knowsStationLoads:'no' })}>
+                  Nein · im Plan testen
+                </Choice>
+              </div>
+              <div style={{ marginTop:7, color:'#9B8377', fontSize:10.5, lineHeight:1.45, fontFamily:'sans-serif' }}>
+                Kein Maximaltest: Wir suchen ein Gewicht, das fordernd, aber technisch sauber bleibt. Im Log heißt das später einfach „Wie war das Gewicht?“.
+              </div>
+            </div>
+
+            {form.knowsStationLoads === 'yes' && (
+              <div style={{ marginBottom:17 }}>
+                <div style={labelStyle}>Aktuelle Arbeitswerte <span style={{ fontWeight:500, letterSpacing:0 }}>(optional)</span></div>
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(2,minmax(0,1fr))', gap:9 }}>
+                  <input type="number" min="0" placeholder="Sled Push gesamt kg" value={form.stationBaselines.sledPushKg} onChange={e => patchBaseline('sledPushKg',e.target.value)} style={inputStyle} />
+                  <input type="number" min="0" placeholder="Sled Pull gesamt kg" value={form.stationBaselines.sledPullKg} onChange={e => patchBaseline('sledPullKg',e.target.value)} style={inputStyle} />
+                  <input type="number" min="0" placeholder="Farmers kg je Hand" value={form.stationBaselines.farmersKgEach} onChange={e => patchBaseline('farmersKgEach',e.target.value)} style={inputStyle} />
+                  <input type="number" min="0" placeholder="Lunges kg" value={form.stationBaselines.lungesKg} onChange={e => patchBaseline('lungesKg',e.target.value)} style={inputStyle} />
+                  <input type="number" min="0" placeholder="Wall Ball kg" value={form.stationBaselines.wallBallKg} onChange={e => patchBaseline('wallBallKg',e.target.value)} style={inputStyle} />
+                  <input type="number" min="0" placeholder="Wall Balls am Stück" value={form.stationBaselines.wallBallUnbroken} onChange={e => patchBaseline('wallBallUnbroken',e.target.value)} style={inputStyle} />
+                  <input placeholder="SkiErg 1000 m z. B. 4:45" value={form.stationBaselines.ski1000Time} onChange={e => patchBaseline('ski1000Time',e.target.value)} style={inputStyle} />
+                  <input placeholder="Row 1000 m z. B. 4:30" value={form.stationBaselines.row1000Time} onChange={e => patchBaseline('row1000Time',e.target.value)} style={inputStyle} />
+                </div>
+              </div>
+            )}
+
             <div>
               <label style={labelStyle}>Besonderheiten <span style={{ fontWeight:500, letterSpacing:0 }}>(optional)</span></label>
               <textarea
@@ -466,6 +521,26 @@ export default function HyroxOnboarding({ onPlanGenerated }) {
             <div style={{ marginBottom:17 }}>
               <label style={labelStyle}>Planstart</label>
               <input type="date" value={form.startDate} onChange={e => patch({ startDate:e.target.value })} style={inputStyle} />
+            </div>
+
+            <div style={{ marginBottom:17 }}>
+              <div style={labelStyle}>Planlänge</div>
+              {form.goalType === 'event' ? (
+                <div style={{
+                  padding:'11px 12px', borderRadius:13, background:'#F7F4F1',
+                  border:'1px solid #E9DDD6', color:'#806D62', fontSize:10.8, lineHeight:1.45, fontFamily:'sans-serif'
+                }}>
+                  Aus deinem Start- und Wettkampfdatum ergeben sich <b>{weeks} Wochen</b>. So endet der Plan passend mit dem Taper vor deinem Event.
+                </div>
+              ) : (
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(5,minmax(0,1fr))', gap:6 }}>
+                  {[8,10,12,16,20].map(value => (
+                    <Choice key={value} active={Number(form.planWeeks) === value} onClick={() => patch({ planWeeks:value })}>
+                      {value}
+                    </Choice>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div style={{ marginBottom:17 }}>
@@ -523,7 +598,7 @@ export default function HyroxOnboarding({ onPlanGenerated }) {
               lineHeight:1.5,
               fontFamily:'sans-serif',
             }}>
-              Geplanter Aufbau: ca. <b>{weeks} Wochen</b> · Basis → Aufbau → HYROX-spezifisch → Taper.
+              Geplanter Aufbau: <b>{weeks} Wochen</b> · Kalibrierung → Basis → Aufbau → HYROX-spezifisch → Taper. Gewichte werden zunächst sauber ermittelt und anschließend progressiv Richtung Race Load entwickelt.
             </div>
           </div>
         )}
