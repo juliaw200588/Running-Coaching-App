@@ -1376,7 +1376,7 @@ const handleOpenWeekAnalysisFromNotification = (weekNumber) => {
             )
         )}
         {activeTab === 'activities' && <Laeufe user={user} plan={plan} />}
-        {activeTab === 'together' && <Together user={user} />}
+        {activeTab === 'together' && <Together user={user} plan={plan} planId={planId} />}
         {activeTab === 'profile' && (
           <Profile
             user={user}

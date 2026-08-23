@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 
+const DAY_MS = 86400000
+const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
+
 const SPORT_META = {
   running: { icon: '🏃', label: 'Laufen' },
   hiking: { icon: '🥾', label: 'Wandern' },
@@ -10,86 +13,122 @@ const SPORT_META = {
   hyrox: { icon: '🏋️', label: 'HYROX' },
 }
 
-const formatDate = (value) => {
-  if (!value) return null
-  const date = new Date(`${value}T12:00:00`)
-  return new Intl.DateTimeFormat('de-DE', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  }).format(date)
+const GOAL_META = {
+  event: { icon:'🏁', label:'Wettkampf / Event', text:'Gemeinsam auf einen festen Termin hintrainieren.' },
+  distance: { icon:'🎯', label:'Distanzziel', text:'Eine Strecke gemeinsam erreichen.' },
+  consistency: { icon:'⏱️', label:'Zeitziel', text:'Über mehrere Wochen gemeinsam dranbleiben.' },
+  custom: { icon:'☆', label:'Freies Ziel', text:'Euer eigenes gemeinsames Vorhaben.' },
 }
 
-const daysUntil = (value) => {
+const localDate = value => {
   if (!value) return null
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const target = new Date(`${value}T00:00:00`)
-  return Math.max(0, Math.ceil((target - today) / 86400000))
+  if (value instanceof Date) {
+    const d = new Date(value)
+    d.setHours(0,0,0,0)
+    return d
+  }
+  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (match) return new Date(Number(match[1]), Number(match[2])-1, Number(match[3]))
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return null
+  d.setHours(0,0,0,0)
+  return d
 }
 
-const initials = (name = '') =>
-  name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map(part => part[0]?.toUpperCase())
-    .join('') || '♡'
+const formatDate = value => {
+  const date = localDate(value)
+  if (!date) return null
+  return new Intl.DateTimeFormat('de-DE', { day:'2-digit', month:'short', year:'numeric' }).format(date)
+}
 
-function Avatar({ profile, size = 42 }) {
+const formatShortDate = value => {
+  const date = localDate(value)
+  if (!date) return null
+  return new Intl.DateTimeFormat('de-DE', { weekday:'short', day:'2-digit', month:'short' }).format(date)
+}
+
+const daysUntil = value => {
+  const target = localDate(value)
+  const today = localDate(new Date())
+  if (!target || !today) return null
+  return Math.max(0, Math.ceil((target - today) / DAY_MS))
+}
+
+const getPlanWeeks = plan => {
+  const result = []
+  for (const phase of plan?.phases || []) {
+    for (const week of phase.weeks || []) result.push({ phase, week })
+  }
+  return result
+}
+
+const getCurrentPlanContext = plan => {
+  if (!plan?.startDate) return null
+  const start = localDate(plan.startDate)
+  const today = localDate(new Date())
+  if (!start || !today) return null
+  const days = Math.floor((today - start) / DAY_MS)
+  const weeks = getPlanWeeks(plan)
+  if (days < 0) return { beforeStart:true, weeks, start }
+  const index = Math.floor(days / 7)
+  if (index >= weeks.length) return { completed:true, weeks, start }
+  const { phase, week } = weeks[index]
+  return { index, phase, week, weeks, start }
+}
+
+const normalizeSport = value => {
+  const raw = String(value || '').toLowerCase().trim()
+  if (/mountain|mtb/.test(raw)) return 'mountain_biking'
+  if (/cycle|cycling|rad/.test(raw)) return 'cycling'
+  if (/swim|schwimm/.test(raw)) return 'swimming'
+  if (/hik|wander|marsch/.test(raw)) return 'hiking'
+  if (/hyrox/.test(raw)) return 'hyrox'
+  if (/run|lauf/.test(raw)) return 'running'
+  return raw || null
+}
+
+const inferPlanSport = plan =>
+  normalizeSport(
+    plan?.sportType ??
+    plan?.sport_type ??
+    plan?.sport ??
+    plan?.meta?.sport ??
+    plan?.meta?.sportType ??
+    plan?.goal?.sport
+  ) || 'running'
+
+const initials = (name='') =>
+  name.split(/\s+/).filter(Boolean).slice(0,2).map(part => part[0]?.toUpperCase()).join('') || '♡'
+
+const card = {
+  background:'#fff',
+  border:'1px solid #EEE3DC',
+  borderRadius:20,
+  boxShadow:'0 8px 24px rgba(74,52,39,.055)',
+  boxSizing:'border-box',
+}
+
+function Avatar({ profile, size=42 }) {
   if (profile?.avatar_url) {
-    return (
-      <img
-        src={profile.avatar_url}
-        alt=""
-        style={{
-          width:size, height:size, borderRadius:'50%', objectFit:'cover',
-          border:'2px solid rgba(255,255,255,.9)', boxShadow:'0 3px 10px rgba(72,51,38,.10)'
-        }}
-      />
-    )
+    return <img src={profile.avatar_url} alt="" style={{
+      width:size, height:size, borderRadius:'50%', objectFit:'cover',
+      border:'2px solid white', boxShadow:'0 3px 10px rgba(72,51,38,.12)'
+    }} />
   }
 
-  return (
-    <>
-
-      <style>{`
-        @media (max-width: 620px) {
-          .together-hero {
-            min-height: 440px !important;
-            background-position: 58% center !important;
-          }
-          .together-hero-content {
-            min-height: 440px !important;
-            padding: 28px 20px !important;
-            justify-content: flex-end !important;
-          }
-          .together-hero-content h2 {
-            max-width: 330px !important;
-          }
-          .together-hero-content p {
-            max-width: 335px !important;
-          }
-        }
-      `}</style>
-    <div style={{
-      width:size, height:size, borderRadius:'50%', display:'grid', placeItems:'center',
-      background:'linear-gradient(135deg,#FFE8D9,#F4F7E9)', color:'#A86652',
-      border:'2px solid rgba(255,255,255,.9)', fontWeight:900, fontSize:size*.30,
-      fontFamily:'sans-serif',
-    }}>
-      {initials(profile?.name)}
-    </div>
-    </>
-  )
+  return <div style={{
+    width:size, height:size, borderRadius:'50%', display:'grid', placeItems:'center',
+    background:'linear-gradient(135deg,#FFE8D9,#F4F7E9)', color:'#A86652',
+    border:'2px solid white', fontWeight:900, fontSize:size*.30, fontFamily:'sans-serif'
+  }}>{initials(profile?.name)}</div>
 }
 
-function CreateGoalModal({ user, onClose, onCreated }) {
+function CreateGoalModal({ user, plan, planId, onClose, onCreated }) {
   const [step, setStep] = useState(1)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [form, setForm] = useState({
-    sport_type:'running',
+    sport_type: inferPlanSport(plan) || 'running',
     goal_type:'event',
     title:'',
     target_date:'',
@@ -98,10 +137,14 @@ function CreateGoalModal({ user, onClose, onCreated }) {
   })
 
   const patch = values => setForm(current => ({ ...current, ...values }))
+  const selectedSport = SPORT_META[form.sport_type] || SPORT_META.running
+  const selectedGoal = GOAL_META[form.goal_type] || GOAL_META.event
+
+  const canUseCurrentPlan = Boolean(planId && plan && inferPlanSport(plan) === form.sport_type)
 
   const createGoal = async () => {
     if (!form.title.trim()) {
-      setError('Gib deinem gemeinsamen Ziel bitte einen Namen.')
+      setError('Gib eurem gemeinsamen Ziel bitte einen Namen.')
       return
     }
 
@@ -133,10 +176,10 @@ function CreateGoalModal({ user, onClose, onCreated }) {
           user_id:user.id,
           role:'owner',
           status:'active',
+          plan_id: canUseCurrentPlan ? planId : null,
         })
 
       if (memberError) throw memberError
-
       onCreated?.(goal)
     } catch (e) {
       console.error('[Gemeinsam] Ziel konnte nicht erstellt werden:', e)
@@ -146,88 +189,83 @@ function CreateGoalModal({ user, onClose, onCreated }) {
     }
   }
 
-  const sport = SPORT_META[form.sport_type] || SPORT_META.running
+  const next = () => {
+    setError('')
+    if (step === 2 && !form.title.trim()) {
+      setError('Gib eurem gemeinsamen Ziel bitte einen Namen.')
+      return
+    }
+    setStep(current => Math.min(3, current + 1))
+  }
 
   return (
     <div style={{
-      position:'fixed', inset:0, zIndex:180, background:'rgba(42,30,23,.38)',
-      display:'flex', alignItems:'flex-end', justifyContent:'center',
+      position:'fixed', inset:0, zIndex:180, background:'rgba(42,30,23,.42)',
+      display:'flex', alignItems:'flex-end', justifyContent:'center'
     }}>
       <div style={{
         width:'100%', maxWidth:720, maxHeight:'92vh', overflowY:'auto',
         borderRadius:'28px 28px 0 0', background:'#FFFDFC',
         boxShadow:'0 -18px 50px rgba(54,37,27,.18)',
-        padding:'18px 18px calc(24px + env(safe-area-inset-bottom,0px))',
+        padding:'18px 18px calc(24px + env(safe-area-inset-bottom,0px))'
       }}>
         <div style={{ width:48, height:5, borderRadius:99, background:'#E7DCD5', margin:'0 auto 16px' }} />
-        <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:12 }}>
+
+        <div style={{ display:'flex', justifyContent:'space-between', gap:12 }}>
           <div>
             <div style={{ fontSize:10, letterSpacing:1.2, fontWeight:900, color:'#D56D55', fontFamily:'sans-serif' }}>
-              {step} · {step === 1 ? 'ZIEL' : step === 2 ? 'DETAILS' : 'GEMEINSAM'}
+              {step} · {step === 1 ? 'ZIEL' : step === 2 ? 'DETAILS' : 'TRAININGSPARTNER'}
             </div>
             <h2 style={{
               margin:'6px 0 4px', color:'#3D2B1F',
               fontFamily:"'Georgia','Times New Roman',serif", fontSize:27, lineHeight:1.1
             }}>
-              {step === 1 ? 'Was verbindet euch?' : step === 2 ? 'Mach das Ziel konkret.' : 'Bereit für euren Weg.'}
+              {step === 1 ? 'Worauf möchtet ihr gemeinsam hinarbeiten?' : step === 2 ? 'Macht euer Ziel konkret.' : 'Euer Ziel. Eure eigenen Wege.'}
             </h2>
             <p style={{ margin:0, color:'#947E72', fontSize:12, lineHeight:1.55, fontFamily:'sans-serif' }}>
-              Jeder trainiert individuell. Das Ziel erlebt ihr gemeinsam.
+              Gleiche Sportart, gemeinsames Ziel – aber jeder trainiert passend zum eigenen Leistungsstand.
             </p>
           </div>
           <button onClick={onClose} type="button" style={{
             border:'none', background:'#F6F0EC', width:36, height:36, borderRadius:'50%',
-            cursor:'pointer', color:'#7D695D', fontSize:18
+            cursor:'pointer', color:'#7D695D', fontSize:18, flex:'0 0 auto'
           }}>×</button>
         </div>
 
         {step === 1 && (
           <>
-            <div style={{ marginTop:20, fontSize:11, fontWeight:900, color:'#725F54', fontFamily:'sans-serif' }}>
-              SPORTART
-            </div>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(2,minmax(0,1fr))', gap:10, marginTop:10 }}>
-              {Object.entries(SPORT_META).filter(([id]) => id !== 'hyrox').map(([id, item]) => {
+            <div style={{ marginTop:20, fontSize:11, fontWeight:900, color:'#725F54', fontFamily:'sans-serif' }}>SPORTART</div>
+            <div className="together-sports-grid" style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:9, marginTop:9 }}>
+              {Object.entries(SPORT_META).map(([id,item]) => {
                 const active = form.sport_type === id
-                return (
-                  <button key={id} type="button" onClick={() => patch({ sport_type:id })}
-                    style={{
-                      border:active ? '2px solid #FF9678' : '1.5px solid #EADFD8',
-                      background:active ? '#FFF2EC' : '#fff',
-                      borderRadius:18, padding:'14px 12px', textAlign:'left', cursor:'pointer'
-                    }}>
-                    <div style={{ fontSize:23 }}>{item.icon}</div>
-                    <div style={{ marginTop:6, color:'#4A382E', fontSize:13, fontWeight:900, fontFamily:'sans-serif' }}>{item.label}</div>
-                  </button>
-                )
+                return <button key={id} type="button" onClick={() => patch({ sport_type:id })}
+                  style={{
+                    minHeight:92, border:active ? '2px solid #FF8C69' : '1.5px solid #EADFD8',
+                    background:active ? '#FFF2EC' : '#fff', borderRadius:17,
+                    padding:'12px 10px', cursor:'pointer', textAlign:'center'
+                  }}>
+                  <div style={{ fontSize:24 }}>{item.icon}</div>
+                  <div style={{ marginTop:7, fontSize:11.5, fontWeight:900, color:'#49372C', fontFamily:'sans-serif' }}>{item.label}</div>
+                </button>
               })}
             </div>
 
-            <div style={{ marginTop:18, fontSize:11, fontWeight:900, color:'#725F54', fontFamily:'sans-serif' }}>
-              ZIELART
-            </div>
-            <div style={{ display:'grid', gap:9, marginTop:9 }}>
-              {[
-                ['event','🏁','Wettkampf / Event','Gemeinsam auf einen festen Termin hintrainieren.'],
-                ['distance','🎯','Distanzziel','Eine Strecke gemeinsam erreichen.'],
-                ['consistency','✨','Gemeinsamer Zeitraum','Über mehrere Wochen gemeinsam dranbleiben.'],
-                ['custom','♡','Freies Ziel','Euer eigenes gemeinsames Vorhaben.'],
-              ].map(([id, icon, title, text]) => {
+            <div style={{ marginTop:18, fontSize:11, fontWeight:900, color:'#725F54', fontFamily:'sans-serif' }}>ZIELART</div>
+            <div style={{ display:'grid', gap:8, marginTop:8 }}>
+              {Object.entries(GOAL_META).map(([id,item]) => {
                 const active = form.goal_type === id
-                return (
-                  <button key={id} type="button" onClick={() => patch({ goal_type:id })}
-                    style={{
-                      display:'flex', gap:12, alignItems:'center', textAlign:'left', cursor:'pointer',
-                      border:active ? '2px solid #FF9678' : '1.5px solid #EADFD8',
-                      background:active ? '#FFF6F1' : '#fff', borderRadius:17, padding:'12px 13px'
-                    }}>
-                    <div style={{ width:38, height:38, borderRadius:13, background:'#FFF0E7', display:'grid', placeItems:'center', fontSize:18 }}>{icon}</div>
-                    <div>
-                      <div style={{ color:'#4A382E', fontWeight:900, fontSize:12.5, fontFamily:'sans-serif' }}>{title}</div>
-                      <div style={{ color:'#9A8578', fontSize:10.5, marginTop:2, lineHeight:1.4, fontFamily:'sans-serif' }}>{text}</div>
-                    </div>
-                  </button>
-                )
+                return <button key={id} type="button" onClick={() => patch({ goal_type:id })}
+                  style={{
+                    display:'flex', alignItems:'center', gap:12, textAlign:'left', cursor:'pointer',
+                    border:active ? '2px solid #FF8C69' : '1.5px solid #EADFD8',
+                    background:active ? '#FFF5EF' : '#fff', borderRadius:16, padding:'11px 12px'
+                  }}>
+                  <div style={{ width:38, height:38, borderRadius:13, display:'grid', placeItems:'center', background:'#FFF0E7', fontSize:18 }}>{item.icon}</div>
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ color:'#49372C', fontSize:12, fontWeight:900, fontFamily:'sans-serif' }}>{item.label}</div>
+                    <div style={{ color:'#9B8578', fontSize:10.2, marginTop:2, lineHeight:1.4, fontFamily:'sans-serif' }}>{item.text}</div>
+                  </div>
+                </button>
               })}
             </div>
           </>
@@ -235,10 +273,18 @@ function CreateGoalModal({ user, onClose, onCreated }) {
 
         {step === 2 && (
           <div style={{ marginTop:20, display:'grid', gap:13 }}>
+            <div style={{
+              display:'flex', alignItems:'center', gap:10, padding:'11px 12px',
+              borderRadius:15, background:'#FFF6F0', color:'#80685B', fontFamily:'sans-serif', fontSize:11
+            }}>
+              <span style={{ fontSize:20 }}>{selectedSport.icon}</span>
+              <div><b>{selectedSport.label}</b> · {selectedGoal.label}</div>
+            </div>
+
             <label style={{ fontFamily:'sans-serif', fontSize:11, fontWeight:900, color:'#725F54' }}>
               NAME DES ZIELS
               <input value={form.title} onChange={e => patch({ title:e.target.value })}
-                placeholder={`${sport.label} – unser gemeinsames Ziel`}
+                placeholder={form.goal_type === 'event' ? 'z. B. Halbmarathon Hamburg' : 'z. B. Unser gemeinsames Ziel'}
                 style={{
                   marginTop:7, width:'100%', boxSizing:'border-box', padding:'13px 14px',
                   borderRadius:15, border:'1.5px solid #EADFD8', fontSize:13, color:'#49372C',
@@ -260,7 +306,8 @@ function CreateGoalModal({ user, onClose, onCreated }) {
               <label style={{ fontFamily:'sans-serif', fontSize:11, fontWeight:900, color:'#725F54' }}>
                 DISTANZ <span style={{ color:'#B39F94', fontWeight:600 }}>(optional)</span>
                 <div style={{ position:'relative', marginTop:7 }}>
-                  <input inputMode="decimal" value={form.target_distance} onChange={e => patch({ target_distance:e.target.value.replace(',','.') })}
+                  <input inputMode="decimal" value={form.target_distance}
+                    onChange={e => patch({ target_distance:e.target.value.replace(',','.') })}
                     placeholder="z. B. 21,1"
                     style={{
                       width:'100%', boxSizing:'border-box', padding:'13px 48px 13px 14px',
@@ -274,64 +321,72 @@ function CreateGoalModal({ user, onClose, onCreated }) {
 
             <label style={{ fontFamily:'sans-serif', fontSize:11, fontWeight:900, color:'#725F54' }}>
               KURZE NOTIZ <span style={{ color:'#B39F94', fontWeight:600 }}>(optional)</span>
-              <textarea value={form.description} onChange={e => patch({ description:e.target.value })}
+              <textarea rows={3} value={form.description} onChange={e => patch({ description:e.target.value })}
                 placeholder="Was macht dieses Ziel für euch besonders?"
-                rows={3}
                 style={{
                   marginTop:7, width:'100%', resize:'vertical', boxSizing:'border-box',
                   padding:'13px 14px', borderRadius:15, border:'1.5px solid #EADFD8',
-                  fontSize:13, color:'#49372C', outline:'none', background:'#fff',
-                  fontFamily:'sans-serif'
+                  fontSize:13, color:'#49372C', outline:'none', background:'#fff', fontFamily:'sans-serif'
                 }} />
             </label>
           </div>
         )}
 
         {step === 3 && (
-          <div style={{
-            marginTop:22, padding:18, borderRadius:22,
-            background:'linear-gradient(145deg,#FFF0E5,#FFF8F2 54%,#F2F8EF)',
-            border:'1px solid #F3D9CA'
-          }}>
-            <div style={{ fontSize:30 }}>{sport.icon}</div>
+          <div style={{ marginTop:20 }}>
             <div style={{
-              marginTop:9, fontFamily:"'Georgia','Times New Roman',serif",
-              fontSize:23, fontWeight:700, color:'#3D2B1F'
-            }}>{form.title || 'Euer gemeinsames Ziel'}</div>
-            <div style={{ marginTop:8, color:'#8D776A', fontSize:12, lineHeight:1.55, fontFamily:'sans-serif' }}>
-              Das Ziel wird zunächst für dich angelegt. Anschließend kannst du direkt einen sicheren Einladungslink teilen.
-            </div>
-            <div style={{
-              marginTop:14, padding:'11px 12px', borderRadius:14,
-              background:'rgba(255,255,255,.75)', color:'#7B665A', fontSize:11.5, fontFamily:'sans-serif'
+              padding:17, borderRadius:20,
+              background:'linear-gradient(145deg,#FFF0E5,#FFF8F2 54%,#F2F8EF)',
+              border:'1px solid #F3D9CA'
             }}>
-              ♡ Gemeinsames Ziel · individuelle Trainingssteuerung
+              <div style={{ fontSize:28 }}>{selectedSport.icon}</div>
+              <div style={{
+                marginTop:8, fontFamily:"'Georgia','Times New Roman',serif",
+                fontSize:23, fontWeight:700, color:'#3D2B1F'
+              }}>{form.title || 'Euer gemeinsames Ziel'}</div>
+              <div style={{ marginTop:7, color:'#8D776A', fontSize:11.5, lineHeight:1.55, fontFamily:'sans-serif' }}>
+                Nach dem Erstellen kannst du direkt einen Trainingspartner per sicherem Link einladen.
+              </div>
             </div>
+
+            <div style={{ display:'grid', gap:8, marginTop:11 }}>
+              <div style={{ ...card, padding:'12px 13px', fontSize:11, color:'#786357', fontFamily:'sans-serif' }}>
+                ✓ Gemeinsames Ziel und Countdown
+              </div>
+              <div style={{ ...card, padding:'12px 13px', fontSize:11, color:'#786357', fontFamily:'sans-serif' }}>
+                ✓ Individuelle Trainingspläne für jeden
+              </div>
+              <div style={{ ...card, padding:'12px 13px', fontSize:11, color:'#786357', fontFamily:'sans-serif' }}>
+                ✓ Gemeinsame Einheiten können später miteinander verknüpft werden
+              </div>
+            </div>
+
+            {canUseCurrentPlan && (
+              <div style={{
+                marginTop:11, padding:'11px 12px', borderRadius:14,
+                background:'#EFF8F2', color:'#5E806A', fontSize:10.8, lineHeight:1.5, fontFamily:'sans-serif'
+              }}>
+                Dein aktueller {selectedSport.label}-Plan wird automatisch mit deinem gemeinsamen Ziel verbunden.
+              </div>
+            )}
           </div>
         )}
 
-        {error && <div style={{ marginTop:14, color:'#C6544C', fontSize:11.5, fontFamily:'sans-serif' }}>{error}</div>}
+        {error && <div style={{ marginTop:13, color:'#C6544C', fontSize:11.5, fontFamily:'sans-serif' }}>{error}</div>}
 
         <div style={{ display:'flex', gap:9, marginTop:20 }}>
-          {step > 1 && (
-            <button type="button" onClick={() => setStep(step - 1)} disabled={saving}
-              style={{
-                flex:1, border:'1.5px solid #E5D9D2', background:'#fff', color:'#735E52',
-                borderRadius:16, padding:'13px 12px', fontWeight:900, cursor:'pointer'
-              }}>
-              Zurück
-            </button>
-          )}
-          <button type="button"
-            onClick={() => step < 3 ? setStep(step + 1) : createGoal()}
-            disabled={saving}
+          {step > 1 && <button type="button" onClick={() => setStep(step-1)} disabled={saving}
+            style={{ flex:1, border:'1.5px solid #E5D9D2', background:'#fff', color:'#735E52', borderRadius:16, padding:'13px 12px', fontWeight:900, cursor:'pointer' }}>
+            Zurück
+          </button>}
+          <button type="button" onClick={() => step < 3 ? next() : createGoal()} disabled={saving}
             style={{
               flex:2, border:'none', color:'#fff', borderRadius:16, padding:'14px 12px',
               fontWeight:900, cursor:saving ? 'default' : 'pointer',
               background:'linear-gradient(135deg,#FF8C69,#FF6B78)',
               boxShadow:'0 8px 20px rgba(255,112,91,.22)'
             }}>
-            {step < 3 ? 'Weiter' : saving ? 'Wird erstellt…' : 'Gemeinsames Ziel erstellen'}
+            {step < 3 ? 'Weiter' : saving ? 'Wird erstellt…' : 'Ziel erstellen & Partner einladen'}
           </button>
         </div>
       </div>
@@ -339,22 +394,126 @@ function CreateGoalModal({ user, onClose, onCreated }) {
   )
 }
 
-export default function Together({ user }) {
+function CreateSessionModal({ goal, user, onClose, onCreated }) {
+  const [title, setTitle] = useState('')
+  const [date, setDate] = useState('')
+  const [note, setNote] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const save = async () => {
+    if (!title.trim() || !date) {
+      setError('Bitte gib der Einheit einen Namen und ein Datum.')
+      return
+    }
+    setSaving(true)
+    setError('')
+    const { error: insertError } = await supabase.from('shared_sessions').insert({
+      goal_id:goal.id,
+      created_by:user.id,
+      title:title.trim(),
+      sport_type:goal.sport_type || null,
+      scheduled_date:date,
+      note:note.trim() || null,
+    })
+    setSaving(false)
+    if (insertError) {
+      console.error('[Gemeinsam] Einheit konnte nicht erstellt werden:', insertError)
+      setError('Die gemeinsame Einheit konnte gerade nicht gespeichert werden.')
+      return
+    }
+    onCreated?.()
+  }
+
+  return <div style={{
+    position:'fixed', inset:0, zIndex:185, background:'rgba(42,30,23,.42)',
+    display:'flex', alignItems:'flex-end', justifyContent:'center'
+  }}>
+    <div style={{
+      width:'100%', maxWidth:720, borderRadius:'28px 28px 0 0', background:'#FFFDFC',
+      padding:'18px 18px calc(24px + env(safe-area-inset-bottom,0px))',
+      boxShadow:'0 -18px 50px rgba(54,37,27,.18)'
+    }}>
+      <div style={{ width:48, height:5, borderRadius:99, background:'#E7DCD5', margin:'0 auto 16px' }} />
+      <div style={{ display:'flex', justifyContent:'space-between', gap:10 }}>
+        <div>
+          <div style={{ color:'#D16C54', fontSize:10, letterSpacing:1, fontWeight:900, fontFamily:'sans-serif' }}>GEMEINSAME EINHEIT</div>
+          <h2 style={{ margin:'6px 0 4px', fontFamily:"'Georgia','Times New Roman',serif", color:'#3D2B1F', fontSize:25 }}>Wann trainiert ihr zusammen?</h2>
+          <div style={{ color:'#947E72', fontSize:11.5, fontFamily:'sans-serif' }}>Jeder behält seine eigene Trainingsvorgabe.</div>
+        </div>
+        <button onClick={onClose} type="button" style={{ border:'none', background:'#F6F0EC', width:36, height:36, borderRadius:'50%', cursor:'pointer' }}>×</button>
+      </div>
+
+      <div style={{ display:'grid', gap:12, marginTop:18 }}>
+        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="z. B. Langer Lauf"
+          style={{ padding:'13px 14px', borderRadius:15, border:'1.5px solid #EADFD8', fontSize:13, outline:'none' }} />
+        <input type="date" value={date} onChange={e => setDate(e.target.value)}
+          style={{ padding:'13px 14px', borderRadius:15, border:'1.5px solid #EADFD8', fontSize:13, outline:'none' }} />
+        <textarea rows={3} value={note} onChange={e => setNote(e.target.value)}
+          placeholder="Optional: Uhrzeit, Treffpunkt oder Hinweis"
+          style={{ padding:'13px 14px', borderRadius:15, border:'1.5px solid #EADFD8', fontSize:13, outline:'none', resize:'vertical', fontFamily:'sans-serif' }} />
+      </div>
+
+      {error && <div style={{ color:'#C6544C', fontSize:11.5, marginTop:10, fontFamily:'sans-serif' }}>{error}</div>}
+
+      <button type="button" onClick={save} disabled={saving} style={{
+        marginTop:16, width:'100%', border:'none', borderRadius:16, padding:'14px',
+        color:'#fff', fontWeight:900, cursor:'pointer',
+        background:'linear-gradient(135deg,#FF8C69,#FF6B78)'
+      }}>{saving ? 'Speichert…' : 'Gemeinsame Einheit planen'}</button>
+    </div>
+  </div>
+}
+
+export default function Together({ user, plan, planId }) {
   const [loading, setLoading] = useState(true)
   const [goals, setGoals] = useState([])
   const [membersByGoal, setMembersByGoal] = useState({})
   const [profilesById, setProfilesById] = useState({})
+  const [sessionsByGoal, setSessionsByGoal] = useState({})
   const [showCreate, setShowCreate] = useState(false)
+  const [sessionGoal, setSessionGoal] = useState(null)
   const [message, setMessage] = useState('')
+
+  const currentPlanContext = useMemo(() => getCurrentPlanContext(plan), [plan])
+
+  const buildOwnSnapshot = async () => {
+    if (!user?.id || !plan || !currentPlanContext || currentPlanContext.beforeStart || currentPlanContext.completed) return null
+
+    const { phase, week, weeks } = currentPlanContext
+    const planned = (week?.days || [])
+      .map((day, index) => ({ ...day, key:dayKey(phase.id, week.n, index) }))
+      .filter(day => !day.optional)
+
+    const [{ data:logs }, { data:skipped }] = await Promise.all([
+      supabase.from('logs').select('day_key').eq('user_id', user.id).in('day_key', planned.map(day => day.key)),
+      supabase.from('skipped_days').select('day_key').eq('user_id', user.id).in('day_key', planned.map(day => day.key)),
+    ])
+
+    const completedKeys = new Set((logs || []).map(row => row.day_key))
+    const skippedKeys = new Set((skipped || []).map(row => row.day_key))
+    const completed = planned.filter(day => completedKeys.has(day.key)).length
+    const decided = planned.filter(day => completedKeys.has(day.key) || skippedKeys.has(day.key)).length
+
+    return {
+      week_number: week.n,
+      total_weeks: weeks.length,
+      week_completed: completed,
+      week_planned: planned.length,
+      week_decided: decided,
+      progress_status: decided >= planned.length && planned.length ? 'Woche abgeschlossen' : 'Im Plan',
+      progress_updated_at:new Date().toISOString(),
+    }
+  }
 
   const load = async () => {
     if (!user?.id) return
     setLoading(true)
 
     try {
-      const { data: memberships, error: membershipError } = await supabase
+      const { data:memberships, error:membershipError } = await supabase
         .from('shared_goal_members')
-        .select('goal_id, user_id, role, plan_id, status')
+        .select('goal_id,user_id,role,status,plan_id,share_progress,share_next_session,week_number,total_weeks,week_completed,week_planned,week_decided,progress_status,progress_updated_at')
         .eq('user_id', user.id)
         .eq('status', 'active')
 
@@ -364,50 +523,91 @@ export default function Together({ user }) {
       if (!ids.length) {
         setGoals([])
         setMembersByGoal({})
+        setSessionsByGoal({})
         setLoading(false)
         return
       }
 
-      const [{ data: goalRows, error: goalError }, { data: memberRows, error: memberError }] = await Promise.all([
-        supabase.from('shared_goals').select('*').in('id', ids).neq('status', 'archived').order('target_date', { ascending:true, nullsFirst:false }),
-        supabase.from('shared_goal_members').select('goal_id, user_id, role, plan_id, status').in('goal_id', ids).eq('status', 'active'),
+      const [{ data:goalRows, error:goalError }, { data:memberRows, error:memberError }, { data:sessionRows, error:sessionError }] = await Promise.all([
+        supabase.from('shared_goals').select('*').in('id', ids).neq('status','archived').order('target_date', { ascending:true, nullsFirst:false }),
+        supabase.from('shared_goal_members').select('goal_id,user_id,role,status,plan_id,share_progress,share_next_session,week_number,total_weeks,week_completed,week_planned,week_decided,progress_status,progress_updated_at').in('goal_id', ids).eq('status','active'),
+        supabase.from('shared_sessions').select('*').in('goal_id', ids).gte('scheduled_date', new Date().toISOString().slice(0,10)).order('scheduled_date', { ascending:true }),
       ])
 
       if (goalError) throw goalError
       if (memberError) throw memberError
+      if (sessionError) throw sessionError
 
-      const grouped = {}
+      const groupedMembers = {}
       ;(memberRows || []).forEach(row => {
-        grouped[row.goal_id] ||= []
-        grouped[row.goal_id].push(row)
+        groupedMembers[row.goal_id] ||= []
+        groupedMembers[row.goal_id].push(row)
+      })
+
+      const groupedSessions = {}
+      ;(sessionRows || []).forEach(row => {
+        groupedSessions[row.goal_id] ||= []
+        groupedSessions[row.goal_id].push(row)
       })
 
       setGoals(goalRows || [])
-      setMembersByGoal(grouped)
+      setMembersByGoal(groupedMembers)
+      setSessionsByGoal(groupedSessions)
 
       const userIds = [...new Set((memberRows || []).map(row => row.user_id))]
       if (userIds.length) {
-        const { data: profileRows } = await supabase
-          .from('profiles')
-          .select('id, name, avatar_url')
-          .in('id', userIds)
+        const { data:profileRows } = await supabase.from('profiles').select('id,name,avatar_url').in('id', userIds)
+        const map = {}
+        ;(profileRows || []).forEach(profile => { map[profile.id] = profile })
+        setProfilesById(map)
+      }
 
-        const profileMap = {}
-        ;(profileRows || []).forEach(profile => { profileMap[profile.id] = profile })
-        setProfilesById(profileMap)
+      const snapshot = await buildOwnSnapshot()
+      if (snapshot) {
+        const goalById = Object.fromEntries((goalRows || []).map(goal => [goal.id, goal]))
+        const currentSport = inferPlanSport(plan)
+        const ownRows = (memberships || []).filter(row => {
+          const goal = goalById[row.goal_id]
+          const sportMatches = !goal?.sport_type || goal.sport_type === currentSport
+          const planMatches = !row.plan_id || row.plan_id === planId
+          return sportMatches && planMatches
+        })
+        if (ownRows.length) {
+          await Promise.all(ownRows.map(row =>
+            supabase.from('shared_goal_members')
+              .update({ ...snapshot, plan_id:row.plan_id || planId || null })
+              .eq('goal_id', row.goal_id)
+              .eq('user_id', user.id)
+          ))
+          setMembersByGoal(current => {
+            const next = { ...current }
+            ownRows.forEach(row => {
+              next[row.goal_id] = (next[row.goal_id] || []).map(member =>
+                member.user_id === user.id ? { ...member, ...snapshot, plan_id:member.plan_id || planId || null } : member
+              )
+            })
+            return next
+          })
+        }
       }
     } catch (e) {
       console.error('[Gemeinsam] Daten konnten nicht geladen werden:', e)
-      // Falls die Migration noch nicht ausgeführt ist, bleibt der Screen als Empty State nutzbar.
-      setGoals([])
+      setMessage('Die gemeinsamen Ziele konnten gerade nicht vollständig geladen werden.')
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => { load() }, [user?.id])
+  useEffect(() => { load() }, [user?.id, planId])
 
-  const createInvite = async (goalId) => {
+  const primaryGoal = useMemo(() => {
+    if (!goals.length) return null
+    return goals.find(goal => goal.status === 'active') || goals[0]
+  }, [goals])
+
+  const otherGoals = primaryGoal ? goals.filter(goal => goal.id !== primaryGoal.id) : []
+
+  const createInvite = async goalId => {
     setMessage('')
     try {
       const { data, error } = await supabase
@@ -417,8 +617,8 @@ export default function Together({ user }) {
         .single()
 
       if (error) throw error
-
       const link = `${window.location.origin}${window.location.pathname}?goalInvite=${data.token}`
+
       if (navigator.share) {
         await navigator.share({
           title:'Gemeinsames Trainingsziel',
@@ -436,234 +636,299 @@ export default function Together({ user }) {
     }
   }
 
-  const primaryGoal = useMemo(() => {
-    if (!goals.length) return null
-    return goals.find(goal => goal.status === 'active') || goals[0]
-  }, [goals])
+  const renderProgress = member => {
+    const profile = profilesById[member.user_id] || { name:member.user_id === user.id ? 'Du' : 'Trainingspartner' }
+    const planned = Number(member.week_planned || 0)
+    const completed = Number(member.week_completed || 0)
+    const week = member.week_number
+    const total = member.total_weeks
+    const percent = planned > 0 ? Math.min(100, Math.round((completed / planned) * 100)) : null
 
-  const otherGoals = primaryGoal ? goals.filter(goal => goal.id !== primaryGoal.id) : []
-
-  const renderGoalCard = (goal, compact = false) => {
-    const sport = SPORT_META[goal.sport_type] || { icon:'♡', label:'Gemeinsam' }
-    const members = membersByGoal[goal.id] || []
-    const others = members.filter(member => member.user_id !== user.id)
-    const remaining = daysUntil(goal.target_date)
-
-    return (
-      <div key={goal.id} style={{
-        borderRadius:compact ? 20 : 26, overflow:'hidden',
-        border:'1.5px solid #F1D8C9',
-        background:compact ? '#fff' : 'linear-gradient(145deg,#FFE9DB 0%,#FFF6EE 52%,#EEF7EE 100%)',
-        boxShadow:'0 12px 34px rgba(82,56,42,.08)'
-      }}>
-        <div style={{ padding:compact ? 15 : 20 }}>
-          <div style={{ display:'flex', justifyContent:'space-between', gap:12, alignItems:'flex-start' }}>
-            <div>
-              <div style={{
-                display:'inline-flex', alignItems:'center', gap:6, padding:'5px 9px',
-                borderRadius:999, background:compact ? '#FFF2EA' : 'rgba(255,255,255,.72)',
-                color:'#C96951', fontSize:9.5, fontWeight:900, fontFamily:'sans-serif'
-              }}>
-                {sport.icon} GEMEINSAMES ZIEL
-              </div>
-              <h2 style={{
-                margin:'10px 0 5px', color:'#3B2A20',
-                fontFamily:"'Georgia','Times New Roman',serif",
-                fontSize:compact ? 19 : 27, lineHeight:1.08
-              }}>
-                {goal.title}
-              </h2>
-              <div style={{ color:'#8D7669', fontSize:11.5, fontFamily:'sans-serif', lineHeight:1.55 }}>
-                {[formatDate(goal.target_date), remaining != null ? `Noch ${remaining} Tage` : null].filter(Boolean).join(' · ') || sport.label}
-              </div>
-            </div>
-            <div style={{
-              width:42, height:42, borderRadius:15, display:'grid', placeItems:'center',
-              background:'rgba(255,255,255,.70)', fontSize:20
-            }}>♡</div>
+    return <div key={member.user_id} style={{ ...card, padding:13, minWidth:0 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:9 }}>
+        <Avatar profile={profile} size={36} />
+        <div style={{ minWidth:0 }}>
+          <div style={{ color:'#49372C', fontSize:11.5, fontWeight:900, fontFamily:'sans-serif', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+            {member.user_id === user.id ? 'Du' : (profile.name || 'Trainingspartner')}
           </div>
-
-          {!compact && (
-            <>
-              <div style={{ marginTop:18, display:'grid', gridTemplateColumns:'repeat(2,minmax(0,1fr))', gap:9 }}>
-                {[{ user_id:user.id }, ...others].slice(0, 2).map((member, index) => {
-                  const profile = profilesById[member.user_id] || (member.user_id === user.id ? { name:'Du' } : { name:'Trainingspartner' })
-                  return (
-                    <div key={`${member.user_id}-${index}`} style={{
-                      background:'rgba(255,255,255,.80)', borderRadius:17, padding:12,
-                      display:'flex', alignItems:'center', gap:9
-                    }}>
-                      <Avatar profile={profile} size={38} />
-                      <div style={{ minWidth:0 }}>
-                        <div style={{ color:'#49372C', fontSize:11.5, fontWeight:900, fontFamily:'sans-serif', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
-                          {member.user_id === user.id ? 'Du' : (profile?.name || 'Trainingspartner')}
-                        </div>
-                        <div style={{ color:'#9A8578', fontSize:9.8, marginTop:2, fontFamily:'sans-serif' }}>
-                          {member.user_id === user.id ? 'Dein individueller Weg' : 'Eigener Trainingsweg'}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-
-              <div style={{
-                marginTop:10, padding:'12px 13px', borderRadius:16,
-                background:'rgba(255,255,255,.72)', color:'#786357',
-                fontSize:11, lineHeight:1.5, fontFamily:'sans-serif'
-              }}>
-                {others.length
-                  ? '♡ Ihr verfolgt dasselbe Ziel – eure Trainingspläne bleiben individuell.'
-                  : 'Lade jemanden ein und macht aus deinem Ziel euer gemeinsames Ziel.'}
-              </div>
-            </>
-          )}
-
-          <button type="button" onClick={() => createInvite(goal.id)} style={{
-            width:'100%', marginTop:compact ? 12 : 14, border:'none', borderRadius:15,
-            background:compact ? '#FFF1E9' : 'linear-gradient(135deg,#FF8C69,#FF6B78)',
-            color:compact ? '#C96851' : '#fff', padding:'12px 14px', fontWeight:900,
-            cursor:'pointer', fontFamily:'sans-serif', fontSize:11.5
-          }}>
-            + Person zu diesem Ziel einladen
-          </button>
+          <div style={{ color:'#9A8578', fontSize:9.8, marginTop:2, fontFamily:'sans-serif' }}>
+            {week && total ? `Woche ${week} von ${total}` : 'Individueller Trainingsweg'}
+          </div>
         </div>
       </div>
-    )
+
+      {planned > 0 ? <>
+        <div style={{ display:'flex', justifyContent:'space-between', gap:8, marginTop:11, fontFamily:'sans-serif' }}>
+          <span style={{ color:'#806B5E', fontSize:10.2 }}>{completed} von {planned} erledigt</span>
+          <span style={{ color:'#5E806A', fontSize:10.2, fontWeight:900 }}>{member.progress_status || 'Im Plan'}</span>
+        </div>
+        <div style={{ height:6, borderRadius:99, background:'#F0E9E4', overflow:'hidden', marginTop:7 }}>
+          <div style={{ width:`${percent}%`, height:'100%', borderRadius:99, background:'linear-gradient(90deg,#FF8C69,#7FCBA2)' }} />
+        </div>
+      </> : <div style={{ marginTop:10, color:'#9A8578', fontSize:10.2, lineHeight:1.45, fontFamily:'sans-serif' }}>
+        {member.user_id === user.id ? 'Noch kein passender Plan mit diesem Ziel verbunden.' : 'Der Trainingspartner teilt aktuell keinen Wochenfortschritt.'}
+      </div>}
+    </div>
   }
 
   return (
-    <div style={{
-      minHeight:'100vh',
-      background:'linear-gradient(160deg,#FFF8F0 0%,#F2FAF4 52%,#FFF0F5 100%)',
-      padding:'34px 16px 120px', boxSizing:'border-box'
-    }}>
-      <div style={{ maxWidth:720, margin:'0 auto' }}>
-        <div>
-          <div style={{ color:'#CC755E', fontSize:10, fontWeight:900, letterSpacing:1.2, fontFamily:'sans-serif' }}>
-            GEMEINSAM
-          </div>
-          <div style={{ marginTop:4 }}>
+    <>
+      <style>{`
+        @media (max-width:620px) {
+          .together-hero { min-height:440px !important; background-position:58% center !important; }
+          .together-hero-content { min-height:440px !important; padding:28px 20px !important; justify-content:flex-end !important; }
+          .together-sports-grid { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+          .together-progress-grid { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+        }
+        @media (max-width:390px) {
+          .together-progress-grid { grid-template-columns:1fr !important; }
+        }
+      `}</style>
+
+      <div style={{
+        minHeight:'100vh',
+        background:'linear-gradient(160deg,#FFF8F0 0%,#F2FAF4 52%,#FFF0F5 100%)',
+        padding:'34px 16px 120px', boxSizing:'border-box'
+      }}>
+        <div style={{ maxWidth:720, margin:'0 auto' }}>
+          <div>
+            <div style={{ color:'#CC755E', fontSize:10, fontWeight:900, letterSpacing:1.2, fontFamily:'sans-serif' }}>GEMEINSAM</div>
             <h1 style={{
-              margin:0, color:'#3D2B1F', fontFamily:"'Georgia','Times New Roman',serif",
+              margin:'4px 0 0', color:'#3D2B1F', fontFamily:"'Georgia','Times New Roman',serif",
               fontSize:'clamp(30px,7vw,42px)', lineHeight:1.05
             }}>Trainingspartner</h1>
+            <p style={{ margin:'8px 0 0', color:'#8F796C', fontSize:12.5, lineHeight:1.55, fontFamily:'sans-serif' }}>
+              Ziele verbinden. Training bleibt individuell.
+            </p>
           </div>
-          <p style={{ margin:'8px 0 0', color:'#8F796C', fontSize:12.5, lineHeight:1.55, fontFamily:'sans-serif' }}>
-            Ziele verbinden. Training bleibt individuell.
-          </p>
-        </div>
 
-        {loading ? (
-          <div style={{ marginTop:26, color:'#AA9488', fontSize:12, fontFamily:'sans-serif' }}>Lade deine gemeinsamen Ziele…</div>
-        ) : primaryGoal ? (
-          <div style={{ marginTop:24 }}>{renderGoalCard(primaryGoal)}</div>
-        ) : (
-          <div className="together-hero" style={{
-            marginTop:24, borderRadius:26, minHeight:430,
-            border:'1.5px solid #EED7CA', boxShadow:'0 14px 38px rgba(70,49,37,.12)',
-            position:'relative', overflow:'hidden',
-            backgroundImage:"url('/gemeinsam-hero-v2.png')",
-            backgroundSize:'cover',
-            backgroundPosition:'center center',
-          }}>
-            <div style={{
-              position:'absolute', inset:0,
-              background:'linear-gradient(90deg, rgba(29,23,20,.90) 0%, rgba(29,23,20,.76) 27%, rgba(29,23,20,.48) 45%, rgba(29,23,20,.14) 64%, rgba(29,23,20,0) 82%)'
-            }} />
-            <div className="together-hero-content" style={{
-              position:'relative', zIndex:1, minHeight:430, boxSizing:'border-box',
-              padding:'34px 28px', display:'flex', flexDirection:'column',
-              justifyContent:'center', alignItems:'flex-start'
-            }}>
-              <div style={{
-                fontSize:10, fontWeight:900, letterSpacing:1.15,
-                color:'#FFB197', fontFamily:'sans-serif'
+          {loading ? (
+            <div style={{ marginTop:26, color:'#AA9488', fontSize:12, fontFamily:'sans-serif' }}>Lade deine gemeinsamen Ziele…</div>
+          ) : !primaryGoal ? (
+            <>
+              <div className="together-hero" style={{
+                marginTop:24, borderRadius:26, minHeight:430,
+                border:'1.5px solid #EED7CA', boxShadow:'0 14px 38px rgba(70,49,37,.12)',
+                position:'relative', overflow:'hidden',
+                backgroundImage:"url('/gemeinsam-hero-v2.png')",
+                backgroundSize:'cover', backgroundPosition:'center center'
               }}>
-                EUER NÄCHSTES ZIEL
-              </div>
-              <h2 style={{
-                margin:'10px 0 12px', maxWidth:430, color:'#FFFFFF',
-                fontFamily:"'Georgia','Times New Roman',serif",
-                fontSize:'clamp(30px,5.2vw,40px)', lineHeight:1.08,
-                textShadow:'0 2px 14px rgba(0,0,0,.20)'
-              }}>
-                Gemeinsam ist manches Ziel leichter.
-              </h2>
-              <p style={{
-                margin:0, maxWidth:430, color:'rgba(255,255,255,.92)',
-                fontSize:13, lineHeight:1.7, fontFamily:'sans-serif',
-                textShadow:'0 1px 8px rgba(0,0,0,.20)'
-              }}>
-                Trainiert auf dasselbe Ziel hin, bleibt aber in euren Plänen individuell. Gemeinsame Einheiten verbinden eure Wege.
-              </p>
-              <button type="button" onClick={() => setShowCreate(true)} style={{
-                marginTop:22, border:'none', borderRadius:16, padding:'15px 20px',
-                minWidth:'min(350px, 100%)',
-                color:'#fff', fontWeight:900, cursor:'pointer', fontFamily:'sans-serif',
-                background:'linear-gradient(135deg,#FF8C69,#FF6B78)',
-                boxShadow:'0 9px 22px rgba(255,112,91,.30)'
-              }}>
-                + Gemeinsames Ziel erstellen
-              </button>
-            </div>
-          </div>
-        )}
-
-        {otherGoals.length > 0 && (
-          <section style={{ marginTop:24 }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:10 }}>
-              <h3 style={{ margin:0, color:'#4A382E', fontFamily:"'Georgia','Times New Roman',serif", fontSize:20 }}>Weitere Ziele</h3>
-              <button type="button" onClick={() => setShowCreate(true)} style={{
-                border:'none', background:'transparent', color:'#D16D55', fontWeight:900, fontSize:10.5, cursor:'pointer'
-              }}>+ Neues Ziel</button>
-            </div>
-            <div style={{ display:'grid', gap:10, marginTop:11 }}>
-              {otherGoals.map(goal => renderGoalCard(goal, true))}
-            </div>
-          </section>
-        )}
-
-        {primaryGoal && (
-          <section style={{ marginTop:24 }}>
-            <h3 style={{ margin:'0 0 10px', color:'#4A382E', fontFamily:"'Georgia','Times New Roman',serif", fontSize:20 }}>
-              Als Nächstes gemeinsam
-            </h3>
-            <div style={{
-              border:'1.5px solid #E8E0DA', background:'rgba(255,255,255,.86)',
-              borderRadius:19, padding:15, display:'flex', alignItems:'center', gap:12
-            }}>
-              <div style={{ width:43, height:43, borderRadius:14, display:'grid', placeItems:'center', background:'#FFF0E7', fontSize:19 }}>🏃</div>
-              <div>
-                <div style={{ color:'#4A382E', fontSize:12, fontWeight:900, fontFamily:'sans-serif' }}>Gemeinsame Einheit planen</div>
-                <div style={{ color:'#9B8679', fontSize:10.5, marginTop:3, lineHeight:1.45, fontFamily:'sans-serif' }}>
-                  Verknüpft später eure individuellen Einheiten zu einem gemeinsamen Training.
+                <div style={{
+                  position:'absolute', inset:0,
+                  background:'linear-gradient(90deg,rgba(29,23,20,.90) 0%,rgba(29,23,20,.76) 27%,rgba(29,23,20,.48) 45%,rgba(29,23,20,.14) 64%,rgba(29,23,20,0) 82%)'
+                }} />
+                <div className="together-hero-content" style={{
+                  position:'relative', zIndex:1, minHeight:430, boxSizing:'border-box',
+                  padding:'34px 28px', display:'flex', flexDirection:'column',
+                  justifyContent:'center', alignItems:'flex-start'
+                }}>
+                  <div style={{ fontSize:10, fontWeight:900, letterSpacing:1.15, color:'#FFB197', fontFamily:'sans-serif' }}>EUER NÄCHSTES ZIEL</div>
+                  <h2 style={{
+                    margin:'10px 0 12px', maxWidth:430, color:'#fff',
+                    fontFamily:"'Georgia','Times New Roman',serif",
+                    fontSize:'clamp(30px,5.2vw,40px)', lineHeight:1.08,
+                    textShadow:'0 2px 14px rgba(0,0,0,.20)'
+                  }}>Gemeinsam ist manches Ziel leichter.</h2>
+                  <p style={{
+                    margin:0, maxWidth:430, color:'rgba(255,255,255,.92)',
+                    fontSize:13, lineHeight:1.7, fontFamily:'sans-serif'
+                  }}>
+                    Trainiert auf dasselbe Ziel hin, bleibt aber in euren Plänen individuell. Gemeinsame Einheiten verbinden eure Wege.
+                  </p>
+                  <button type="button" onClick={() => setShowCreate(true)} style={{
+                    marginTop:22, border:'none', borderRadius:16, padding:'15px 20px',
+                    minWidth:'min(350px,100%)', color:'#fff', fontWeight:900, cursor:'pointer',
+                    background:'linear-gradient(135deg,#FF8C69,#FF6B78)',
+                    boxShadow:'0 9px 22px rgba(255,112,91,.30)'
+                  }}>
+                    + Gemeinsames Ziel erstellen
+                  </button>
                 </div>
               </div>
-            </div>
-          </section>
-        )}
 
-        {message && (
-          <div style={{
+              <section style={{ marginTop:24 }}>
+                <div style={{ color:'#CC755E', fontSize:10, fontWeight:900, letterSpacing:1.1, fontFamily:'sans-serif' }}>SO FUNKTIONIERT'S</div>
+                <h3 style={{ margin:'5px 0 12px', color:'#4A382E', fontFamily:"'Georgia','Times New Roman',serif", fontSize:21 }}>
+                  Dasselbe Ziel. Dein eigener Plan.
+                </h3>
+                <div style={{ display:'grid', gap:9 }}>
+                  {[
+                    ['1','🎯','Ziel wählen','Entscheidet euch für dieselbe Sportart und ein gemeinsames Ziel.'],
+                    ['2','🔗','Trainingspartner einladen','Teile einen sicheren Link mit der Person, mit der du trainieren möchtest.'],
+                    ['3','✨','Individuell trainieren','Jeder behält seinen eigenen Plan – gemeinsame Einheiten verbinden euch.'],
+                  ].map(([n,icon,title,text]) => <div key={n} style={{ ...card, padding:'13px 14px', display:'flex', gap:12, alignItems:'center' }}>
+                    <div style={{ width:42, height:42, borderRadius:14, background:'#FFF1E9', display:'grid', placeItems:'center', fontSize:18 }}>{icon}</div>
+                    <div>
+                      <div style={{ color:'#49372C', fontSize:11.5, fontWeight:900, fontFamily:'sans-serif' }}>{n}. {title}</div>
+                      <div style={{ color:'#9B8679', fontSize:10.3, marginTop:3, lineHeight:1.45, fontFamily:'sans-serif' }}>{text}</div>
+                    </div>
+                  </div>)}
+                </div>
+              </section>
+            </>
+          ) : (
+            <>
+              <section style={{
+                marginTop:24, borderRadius:26, overflow:'hidden',
+                border:'1.5px solid #EED7CA', boxShadow:'0 14px 38px rgba(70,49,37,.12)',
+                background:"linear-gradient(90deg,rgba(28,22,19,.86),rgba(28,22,19,.45)),url('/gemeinsam-hero-v2.png') center/cover"
+              }}>
+                <div style={{ padding:'22px 20px 20px', minHeight:260, boxSizing:'border-box', display:'flex', flexDirection:'column', justifyContent:'flex-end' }}>
+                  <div style={{ display:'inline-flex', alignSelf:'flex-start', padding:'5px 9px', borderRadius:999, background:'rgba(255,255,255,.16)', color:'#FFD0BE', fontSize:9.5, fontWeight:900, fontFamily:'sans-serif' }}>
+                    {(SPORT_META[primaryGoal.sport_type] || {icon:'♡'}).icon} EUER ZIEL
+                  </div>
+                  <h2 style={{ margin:'10px 0 6px', color:'#fff', fontFamily:"'Georgia','Times New Roman',serif", fontSize:29, lineHeight:1.08 }}>
+                    {primaryGoal.title}
+                  </h2>
+                  <div style={{ color:'rgba(255,255,255,.86)', fontSize:11.5, fontFamily:'sans-serif' }}>
+                    {[formatDate(primaryGoal.target_date), daysUntil(primaryGoal.target_date) != null ? `Noch ${daysUntil(primaryGoal.target_date)} Tage` : null].filter(Boolean).join(' · ') || 'Euer gemeinsamer Weg'}
+                  </div>
+
+                  <div style={{ display:'flex', alignItems:'center', marginTop:15 }}>
+                    {(membersByGoal[primaryGoal.id] || []).slice(0,4).map((member,index) =>
+                      <div key={member.user_id} style={{ marginLeft:index ? -8 : 0 }}>
+                        <Avatar profile={profilesById[member.user_id] || { name:member.user_id === user.id ? 'Du' : 'Trainingspartner' }} size={35} />
+                      </div>
+                    )}
+                    <div style={{ marginLeft:10, color:'rgba(255,255,255,.90)', fontSize:10.5, fontFamily:'sans-serif' }}>
+                      {(membersByGoal[primaryGoal.id] || []).length > 1
+                        ? `${(membersByGoal[primaryGoal.id] || []).length} Trainingspartner`
+                        : 'Noch allein – lade deinen Trainingspartner ein'}
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section style={{ marginTop:24 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:10 }}>
+                  <div>
+                    <div style={{ color:'#CC755E', fontSize:10, fontWeight:900, letterSpacing:1.1, fontFamily:'sans-serif' }}>EURE WOCHE</div>
+                    <h3 style={{ margin:'4px 0 0', color:'#4A382E', fontFamily:"'Georgia','Times New Roman',serif", fontSize:21 }}>Jeder auf seinem Weg.</h3>
+                  </div>
+                </div>
+                <div className="together-progress-grid" style={{ display:'grid', gridTemplateColumns:'repeat(2,minmax(0,1fr))', gap:9, marginTop:11 }}>
+                  {(membersByGoal[primaryGoal.id] || []).map(renderProgress)}
+                </div>
+              </section>
+
+              <section style={{ marginTop:24 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:10 }}>
+                  <h3 style={{ margin:0, color:'#4A382E', fontFamily:"'Georgia','Times New Roman',serif", fontSize:21 }}>Nächste gemeinsame Einheit</h3>
+                  <button type="button" onClick={() => setSessionGoal(primaryGoal)} style={{
+                    border:'none', background:'transparent', color:'#D16D55', fontSize:10.5, fontWeight:900, cursor:'pointer'
+                  }}>+ Planen</button>
+                </div>
+
+                {(sessionsByGoal[primaryGoal.id] || []).length ? (
+                  <div style={{ ...card, padding:15, marginTop:10, display:'flex', gap:12, alignItems:'center' }}>
+                    <div style={{ width:46, height:46, borderRadius:15, background:'#FFF0E7', display:'grid', placeItems:'center', fontSize:20 }}>
+                      {(SPORT_META[primaryGoal.sport_type] || {icon:'🏃'}).icon}
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ color:'#49372C', fontSize:12, fontWeight:900, fontFamily:'sans-serif' }}>
+                        {(sessionsByGoal[primaryGoal.id] || [])[0].title}
+                      </div>
+                      <div style={{ color:'#9A8578', fontSize:10.5, marginTop:3, fontFamily:'sans-serif' }}>
+                        {formatShortDate((sessionsByGoal[primaryGoal.id] || [])[0].scheduled_date)}
+                      </div>
+                      {(sessionsByGoal[primaryGoal.id] || [])[0].note && <div style={{ color:'#806B5E', fontSize:10, marginTop:4, lineHeight:1.4, fontFamily:'sans-serif' }}>
+                        {(sessionsByGoal[primaryGoal.id] || [])[0].note}
+                      </div>}
+                    </div>
+                    <div style={{ color:'#6D9879', fontSize:10, fontWeight:900, fontFamily:'sans-serif' }}>Gemeinsam geplant</div>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => setSessionGoal(primaryGoal)} style={{
+                    ...card, width:'100%', marginTop:10, padding:15, display:'flex', alignItems:'center', gap:12,
+                    textAlign:'left', cursor:'pointer'
+                  }}>
+                    <div style={{ width:46, height:46, borderRadius:15, background:'#FFF0E7', display:'grid', placeItems:'center', fontSize:20 }}>🤝</div>
+                    <div>
+                      <div style={{ color:'#49372C', fontSize:12, fontWeight:900, fontFamily:'sans-serif' }}>Gemeinsame Einheit planen</div>
+                      <div style={{ color:'#9A8578', fontSize:10.4, marginTop:3, lineHeight:1.45, fontFamily:'sans-serif' }}>
+                        Verbindet zwei individuelle Trainingseinheiten zu einem gemeinsamen Termin.
+                      </div>
+                    </div>
+                  </button>
+                )}
+              </section>
+
+              <section style={{ marginTop:24 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:10 }}>
+                  <h3 style={{ margin:0, color:'#4A382E', fontFamily:"'Georgia','Times New Roman',serif", fontSize:21 }}>Trainingspartner</h3>
+                  <button type="button" onClick={() => createInvite(primaryGoal.id)} style={{
+                    border:'none', background:'transparent', color:'#D16D55', fontSize:10.5, fontWeight:900, cursor:'pointer'
+                  }}>+ Einladen</button>
+                </div>
+                <div style={{ ...card, padding:'13px 14px', marginTop:10 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:13, overflowX:'auto', paddingBottom:2 }}>
+                    {(membersByGoal[primaryGoal.id] || []).map(member => {
+                      const profile = profilesById[member.user_id] || { name:member.user_id === user.id ? 'Du' : 'Trainingspartner' }
+                      return <div key={member.user_id} style={{ minWidth:58, textAlign:'center' }}>
+                        <Avatar profile={profile} size={43} />
+                        <div style={{ marginTop:5, color:'#735F53', fontSize:9.8, fontWeight:800, fontFamily:'sans-serif', whiteSpace:'nowrap' }}>
+                          {member.user_id === user.id ? 'Du' : (profile.name || 'Partner')}
+                        </div>
+                      </div>
+                    })}
+                    <button type="button" onClick={() => createInvite(primaryGoal.id)} style={{
+                      minWidth:58, border:'none', background:'transparent', cursor:'pointer', textAlign:'center'
+                    }}>
+                      <div style={{ width:43, height:43, margin:'0 auto', borderRadius:'50%', border:'1.5px dashed #D8C7BC', color:'#D16D55', display:'grid', placeItems:'center', fontSize:22 }}>+</div>
+                      <div style={{ marginTop:5, color:'#A18779', fontSize:9.5, fontWeight:800, fontFamily:'sans-serif' }}>Einladen</div>
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              {otherGoals.length > 0 && (
+                <section style={{ marginTop:24 }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                    <h3 style={{ margin:0, color:'#4A382E', fontFamily:"'Georgia','Times New Roman',serif", fontSize:21 }}>Weitere gemeinsame Ziele</h3>
+                    <button type="button" onClick={() => setShowCreate(true)} style={{ border:'none', background:'transparent', color:'#D16D55', fontSize:10.5, fontWeight:900, cursor:'pointer' }}>+ Neu</button>
+                  </div>
+                  <div style={{ display:'grid', gap:9, marginTop:10 }}>
+                    {otherGoals.map(goal => <div key={goal.id} style={{ ...card, padding:'13px 14px', display:'flex', alignItems:'center', gap:11 }}>
+                      <div style={{ width:42, height:42, borderRadius:14, background:'#FFF0E7', display:'grid', placeItems:'center', fontSize:19 }}>
+                        {(SPORT_META[goal.sport_type] || {icon:'♡'}).icon}
+                      </div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ color:'#49372C', fontSize:11.5, fontWeight:900, fontFamily:'sans-serif', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{goal.title}</div>
+                        <div style={{ color:'#9A8578', fontSize:10, marginTop:3, fontFamily:'sans-serif' }}>
+                          {daysUntil(goal.target_date) != null ? `Noch ${daysUntil(goal.target_date)} Tage` : 'Gemeinsames Ziel'}
+                        </div>
+                      </div>
+                      <button type="button" onClick={() => createInvite(goal.id)} style={{ border:'none', background:'#FFF2EA', color:'#C96851', borderRadius:12, padding:'8px 10px', fontSize:9.5, fontWeight:900, cursor:'pointer' }}>Einladen</button>
+                    </div>)}
+                  </div>
+                </section>
+              )}
+            </>
+          )}
+
+          {message && <div style={{
             position:'fixed', left:'50%', transform:'translateX(-50%)', bottom:88, zIndex:160,
             background:'#443329', color:'#fff', padding:'10px 14px', borderRadius:999,
             fontSize:10.5, fontFamily:'sans-serif', boxShadow:'0 8px 24px rgba(0,0,0,.16)',
-            whiteSpace:'nowrap', maxWidth:'86vw', overflow:'hidden', textOverflow:'ellipsis'
-          }}>{message}</div>
-        )}
+            maxWidth:'86vw', textAlign:'center'
+          }}>{message}</div>}
 
-        {showCreate && (
-          <CreateGoalModal
+          {showCreate && <CreateGoalModal
             user={user}
+            plan={plan}
+            planId={planId}
             onClose={() => setShowCreate(false)}
-            onCreated={() => {
-              setShowCreate(false)
-              load()
-            }}
-          />
-        )}
+            onCreated={() => { setShowCreate(false); load() }}
+          />}
+
+          {sessionGoal && <CreateSessionModal
+            goal={sessionGoal}
+            user={user}
+            onClose={() => setSessionGoal(null)}
+            onCreated={() => { setSessionGoal(null); load() }}
+          />}
+        </div>
       </div>
-    </div>
+    </>
   )
 }
