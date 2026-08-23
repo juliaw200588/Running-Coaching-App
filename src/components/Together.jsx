@@ -547,7 +547,7 @@ export default function Together({ user }) {
             <h1 style={{
               margin:0, color:'#3D2B1F', fontFamily:"'Georgia','Times New Roman',serif",
               fontSize:'clamp(30px,7vw,42px)', lineHeight:1.05
-            }}>Gemeinsam</h1>
+            }}>Trainingspartner</h1>
           </div>
           <p style={{ margin:'8px 0 0', color:'#8F796C', fontSize:12.5, lineHeight:1.55, fontFamily:'sans-serif' }}>
             Ziele verbinden. Training bleibt individuell.
