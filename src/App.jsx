@@ -263,22 +263,19 @@ useEffect(() => {
 
     const dayInWeek = daysSinceStart % 7
     const isLastDay = dayInWeek === 6
-    const isFirstDaysNextWeek =
-      (dayInWeek === 0 || dayInWeek === 1 || dayInWeek === 2) &&
-      daysSinceStart > 0
-
-    if (!isLastDay && !isFirstDaysNextWeek) {
-      coachDebug('Außerhalb des Analysefensters.', {
-        dayInWeek,
-        daysSinceStart,
-      })
-      return null
-    }
-
     const currentWeekInPlan = Math.floor(daysSinceStart / 7)
+
+    // Abgeschlossene Wochen werden an jedem späteren App-Start geprüft.
+    // Damit geht eine Weekly Analyse nicht mehr verloren, wenn die App
+    // im bisherigen Mo-Mi-Nachholfenster nicht im richtigen Moment lief.
     const analyzeWeek = isLastDay
       ? currentWeekInPlan
       : currentWeekInPlan - 1
+
+    const isFirstDaysNextWeek =
+      !isLastDay &&
+      (dayInWeek === 0 || dayInWeek === 1 || dayInWeek === 2) &&
+      daysSinceStart > 0
 
     if (analyzeWeek < 0) {
       coachDebug('Noch keine abgeschlossene Trainingswoche verfügbar.')
@@ -347,7 +344,9 @@ useEffect(() => {
         context.isLastDay,
         context.weekStartStr,
         context.planStartStr,
-        reason
+        reason,
+        context.analyzeWeek,
+        context.currentWeekInPlan
       )
     ).finally(() => {
       if (weeklyCheckKeyRef.current === runKey) {
@@ -531,7 +530,9 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart, planId = null 
     isLastDay,
     weekStartStr,
     planStartStr,
-    triggerReason = 'unknown'
+    triggerReason = 'unknown',
+    forcedAnalyzeWeek = null,
+    liveWeekInPlan = null
   ) => {
     try {
       coachDebug('runWeeklyCheck()', {
@@ -617,7 +618,9 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart, planId = null 
       } catch (e) { console.error('Skipped Days laden fehlgeschlagen:', e) }
 
       const startDate = parseLocalPlanDate(plan.startDate || today)
-      const analyzeWeek = isLastDay ? currentWeekInPlan : currentWeekInPlan - 1
+      const analyzeWeek = Number.isInteger(forcedAnalyzeWeek)
+        ? forcedAnalyzeWeek
+        : (isLastDay ? currentWeekInPlan : currentWeekInPlan - 1)
 
       let currentPhase = null
       let currentWeek = null
@@ -974,8 +977,14 @@ if (!claimAcquired) return
         hasAnalysisData: Boolean(result.analysisData),
       })
 
+      // Eine verspätet nachgeholte Analyse darf den Rückblick erzeugen,
+      // aber keine inzwischen vergangene Folgewoche rückwirkend verändern.
+      const nextWeekIsCurrent =
+        Number.isInteger(liveWeekInPlan) &&
+        liveWeekInPlan === analyzeWeek + 1
+
       // Plan anpassen
-      if (nextWeek && result.nextWeekAdjusted?.length > 0) {
+      if (nextWeek && nextWeekIsCurrent && result.nextWeekAdjusted?.length > 0) {
         const currentPlan = JSON.parse(localStorage.getItem(`runcoaching_plan_${user.id}`) || '{}')
         let adjusted = false
 
@@ -1316,7 +1325,6 @@ const handleOpenWeekAnalysisFromNotification = (weekNumber) => {
               <Dashboard
                 user={user}
                 plan={plan}
-                planId={planId}
                 onOpenTraining={() => setShowTrainingPlan(true)}
                 onOpenActivities={() => setActiveTab('activities')}
                 onOpenProfile={() => setActiveTab('profile')}
