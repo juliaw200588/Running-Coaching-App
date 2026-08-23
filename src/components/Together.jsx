@@ -51,6 +51,27 @@ function Avatar({ profile, size = 42 }) {
   }
 
   return (
+    <>
+
+      <style>{`
+        @media (max-width: 620px) {
+          .together-hero {
+            min-height: 440px !important;
+            background-position: 58% center !important;
+          }
+          .together-hero-content {
+            min-height: 440px !important;
+            padding: 28px 20px !important;
+            justify-content: flex-end !important;
+          }
+          .together-hero-content h2 {
+            max-width: 330px !important;
+          }
+          .together-hero-content p {
+            max-width: 335px !important;
+          }
+        }
+      `}</style>
     <div style={{
       width:size, height:size, borderRadius:'50%', display:'grid', placeItems:'center',
       background:'linear-gradient(135deg,#FFE8D9,#F4F7E9)', color:'#A86652',
@@ -59,6 +80,7 @@ function Avatar({ profile, size = 42 }) {
     }}>
       {initials(profile?.name)}
     </div>
+    </>
   )
 }
 
@@ -537,21 +559,21 @@ export default function Together({ user }) {
         ) : primaryGoal ? (
           <div style={{ marginTop:24 }}>{renderGoalCard(primaryGoal)}</div>
         ) : (
-          <div style={{
-            marginTop:24, borderRadius:26, minHeight:360,
+          <div className="together-hero" style={{
+            marginTop:24, borderRadius:26, minHeight:430,
             border:'1.5px solid #EED7CA', boxShadow:'0 14px 38px rgba(70,49,37,.12)',
             position:'relative', overflow:'hidden',
-            backgroundImage:"url('/gemeinsam-hero-v1.png')",
+            backgroundImage:"url('/gemeinsam-hero-v2.png')",
             backgroundSize:'cover',
-            backgroundPosition:'center',
+            backgroundPosition:'center center',
           }}>
             <div style={{
               position:'absolute', inset:0,
-              background:'linear-gradient(90deg, rgba(36,27,22,.82) 0%, rgba(36,27,22,.65) 34%, rgba(36,27,22,.26) 60%, rgba(36,27,22,.05) 100%)'
+              background:'linear-gradient(90deg, rgba(29,23,20,.90) 0%, rgba(29,23,20,.76) 27%, rgba(29,23,20,.48) 45%, rgba(29,23,20,.14) 64%, rgba(29,23,20,0) 82%)'
             }} />
-            <div style={{
-              position:'relative', zIndex:1, minHeight:360, boxSizing:'border-box',
-              padding:'24px 22px', display:'flex', flexDirection:'column',
+            <div className="together-hero-content" style={{
+              position:'relative', zIndex:1, minHeight:430, boxSizing:'border-box',
+              padding:'34px 28px', display:'flex', flexDirection:'column',
               justifyContent:'center', alignItems:'flex-start'
             }}>
               <div style={{
@@ -561,23 +583,23 @@ export default function Together({ user }) {
                 EUER NÄCHSTES ZIEL
               </div>
               <h2 style={{
-                margin:'10px 0 10px', maxWidth:390, color:'#FFFFFF',
+                margin:'10px 0 12px', maxWidth:430, color:'#FFFFFF',
                 fontFamily:"'Georgia','Times New Roman',serif",
-                fontSize:'clamp(27px,5vw,34px)', lineHeight:1.08,
+                fontSize:'clamp(30px,5.2vw,40px)', lineHeight:1.08,
                 textShadow:'0 2px 14px rgba(0,0,0,.20)'
               }}>
                 Gemeinsam ist manches Ziel leichter.
               </h2>
               <p style={{
-                margin:0, maxWidth:410, color:'rgba(255,255,255,.88)',
-                fontSize:12.5, lineHeight:1.65, fontFamily:'sans-serif',
+                margin:0, maxWidth:430, color:'rgba(255,255,255,.92)',
+                fontSize:13, lineHeight:1.7, fontFamily:'sans-serif',
                 textShadow:'0 1px 8px rgba(0,0,0,.20)'
               }}>
                 Trainiert auf dasselbe Ziel hin, bleibt aber in euren Plänen individuell. Gemeinsame Einheiten verbinden eure Wege.
               </p>
               <button type="button" onClick={() => setShowCreate(true)} style={{
-                marginTop:20, border:'none', borderRadius:16, padding:'14px 18px',
-                minWidth:'min(340px, 100%)',
+                marginTop:22, border:'none', borderRadius:16, padding:'15px 20px',
+                minWidth:'min(350px, 100%)',
                 color:'#fff', fontWeight:900, cursor:'pointer', fontFamily:'sans-serif',
                 background:'linear-gradient(135deg,#FF8C69,#FF6B78)',
                 boxShadow:'0 9px 22px rgba(255,112,91,.30)'
