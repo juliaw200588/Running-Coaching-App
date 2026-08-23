@@ -837,6 +837,8 @@ export default function Together({ user, plan, planId, focusFriends = 0, refresh
   })
   const [sessionGoal, setSessionGoal] = useState(null)
   const [inviteGoal, setInviteGoal] = useState(null)
+  const [goalMenuOpen, setGoalMenuOpen] = useState(false)
+  const [goalActionBusy, setGoalActionBusy] = useState(false)
   const [pendingDirectInvites, setPendingDirectInvites] = useState([])
   const [pendingInviteBusy, setPendingInviteBusy] = useState(null)
   const [message, setMessage] = useState('')
@@ -1036,6 +1038,54 @@ export default function Together({ user, plan, planId, focusFriends = 0, refresh
 
     setPendingInviteBusy(null)
     setPendingDirectInvites(current => current.filter(item => item.token !== invite.token))
+  }
+
+  const currentMembership = goalId =>
+    (membersByGoal[goalId] || []).find(member => member.user_id === user.id)
+
+  const manageInvite = goal => {
+    setGoalMenuOpen(false)
+    setInviteGoal(goal)
+  }
+
+  const archiveGoal = async goal => {
+    if (!window.confirm(`„${goal.title}“ wirklich löschen? Dein persönlicher Trainingsplan bleibt erhalten.`)) return
+
+    setGoalActionBusy(true)
+    setMessage('')
+    const { error } = await supabase.rpc('archive_shared_goal', { p_goal_id:goal.id })
+
+    if (error) {
+      console.error('[Gemeinsam] Ziel löschen fehlgeschlagen:', error)
+      setMessage('Das gemeinsame Ziel konnte gerade nicht gelöscht werden.')
+      setGoalActionBusy(false)
+      return
+    }
+
+    setGoalMenuOpen(false)
+    setGoalActionBusy(false)
+    setMessage('Das gemeinsame Ziel wurde gelöscht. Dein persönlicher Trainingsplan bleibt erhalten.')
+    await load()
+  }
+
+  const leaveGoal = async goal => {
+    if (!window.confirm(`„${goal.title}“ wirklich verlassen? Dein persönlicher Trainingsplan bleibt erhalten.`)) return
+
+    setGoalActionBusy(true)
+    setMessage('')
+    const { error } = await supabase.rpc('leave_shared_goal', { p_goal_id:goal.id })
+
+    if (error) {
+      console.error('[Gemeinsam] Ziel verlassen fehlgeschlagen:', error)
+      setMessage('Das gemeinsame Ziel konnte gerade nicht verlassen werden.')
+      setGoalActionBusy(false)
+      return
+    }
+
+    setGoalMenuOpen(false)
+    setGoalActionBusy(false)
+    setMessage('Du hast das gemeinsame Ziel verlassen. Dein persönlicher Trainingsplan bleibt erhalten.')
+    await load()
   }
 
   const primaryGoal = useMemo(() => {
@@ -1282,10 +1332,41 @@ export default function Together({ user, plan, planId, focusFriends = 0, refresh
           ) : (
             <>
               <section style={{
-                marginTop:24, borderRadius:26, overflow:'hidden',
+                position:'relative', marginTop:24, borderRadius:26, overflow:'hidden',
                 border:'1.5px solid #EED7CA', boxShadow:'0 14px 38px rgba(70,49,37,.12)',
                 background:"linear-gradient(90deg,rgba(28,22,19,.86),rgba(28,22,19,.45)),url('/gemeinsam-hero-v2.png') center/cover"
               }}>
+                <button type="button" aria-label="Ziel verwalten" onClick={() => setGoalMenuOpen(value => !value)} style={{
+                  position:'absolute', top:14, right:14, zIndex:3, width:38, height:38, borderRadius:'50%',
+                  border:'1px solid rgba(255,255,255,.28)', background:'rgba(28,22,19,.38)',
+                  color:'#fff', fontSize:22, lineHeight:1, cursor:'pointer', backdropFilter:'blur(8px)'
+                }}>⋯</button>
+
+                {goalMenuOpen && (
+                  <div style={{
+                    position:'absolute', top:58, right:14, zIndex:4, width:220, padding:7,
+                    borderRadius:16, background:'rgba(255,253,252,.98)', boxShadow:'0 14px 34px rgba(42,29,22,.24)',
+                    border:'1px solid #E9DDD6', fontFamily:'sans-serif'
+                  }}>
+                    <button type="button" onClick={() => manageInvite(primaryGoal)} style={{
+                      width:'100%', border:'none', background:'transparent', textAlign:'left', padding:'10px 11px',
+                      borderRadius:10, color:'#5F4B40', fontWeight:800, cursor:'pointer', fontSize:10.5
+                    }}>👥 Trainingspartner einladen</button>
+
+                    {currentMembership(primaryGoal.id)?.role === 'owner' ? (
+                      <button type="button" disabled={goalActionBusy} onClick={() => archiveGoal(primaryGoal)} style={{
+                        width:'100%', border:'none', background:'#FFF3F1', textAlign:'left', padding:'10px 11px',
+                        borderRadius:10, color:'#C95F58', fontWeight:900, cursor:'pointer', fontSize:10.5
+                      }}>🗑 Gemeinsames Ziel löschen</button>
+                    ) : (
+                      <button type="button" disabled={goalActionBusy} onClick={() => leaveGoal(primaryGoal)} style={{
+                        width:'100%', border:'none', background:'#FFF3F1', textAlign:'left', padding:'10px 11px',
+                        borderRadius:10, color:'#C95F58', fontWeight:900, cursor:'pointer', fontSize:10.5
+                      }}>↩ Gemeinsames Ziel verlassen</button>
+                    )}
+                  </div>
+                )}
+
                 <div style={{ padding:'22px 20px 20px', minHeight:260, boxSizing:'border-box', display:'flex', flexDirection:'column', justifyContent:'flex-end' }}>
                   <div style={{ display:'inline-flex', alignSelf:'flex-start', padding:'5px 9px', borderRadius:999, background:'rgba(255,255,255,.16)', color:'#FFD0BE', fontSize:9.5, fontWeight:900, fontFamily:'sans-serif' }}>
                     {(SPORT_META[primaryGoal.sport_type] || {icon:'♡'}).icon} EUER ZIEL
@@ -1369,7 +1450,7 @@ export default function Together({ user, plan, planId, focusFriends = 0, refresh
               <section style={{ marginTop:24 }}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:10 }}>
                   <h3 style={{ margin:0, color:'#4A382E', fontFamily:"'Georgia','Times New Roman',serif", fontSize:21 }}>Trainingspartner</h3>
-                  <button type="button" onClick={() => createInvite(primaryGoal.id)} style={{
+                  <button type="button" onClick={() => manageInvite(primaryGoal)} style={{
                     border:'none', background:'transparent', color:'#D16D55', fontSize:10.5, fontWeight:900, cursor:'pointer'
                   }}>+ Einladen</button>
                 </div>
@@ -1384,7 +1465,7 @@ export default function Together({ user, plan, planId, focusFriends = 0, refresh
                         </div>
                       </div>
                     })}
-                    <button type="button" onClick={() => createInvite(primaryGoal.id)} style={{
+                    <button type="button" onClick={() => manageInvite(primaryGoal)} style={{
                       minWidth:58, border:'none', background:'transparent', cursor:'pointer', textAlign:'center'
                     }}>
                       <div style={{ width:43, height:43, margin:'0 auto', borderRadius:'50%', border:'1.5px dashed #D8C7BC', color:'#D16D55', display:'grid', placeItems:'center', fontSize:22 }}>+</div>
@@ -1411,7 +1492,7 @@ export default function Together({ user, plan, planId, focusFriends = 0, refresh
                           {daysUntil(goal.target_date) != null ? `Noch ${daysUntil(goal.target_date)} Tage` : 'Gemeinsames Ziel'}
                         </div>
                       </div>
-                      <button type="button" onClick={() => createInvite(goal.id)} style={{ border:'none', background:'#FFF2EA', color:'#C96851', borderRadius:12, padding:'8px 10px', fontSize:9.5, fontWeight:900, cursor:'pointer' }}>Einladen</button>
+                      <button type="button" onClick={() => manageInvite(goal)} style={{ border:'none', background:'#FFF2EA', color:'#C96851', borderRadius:12, padding:'8px 10px', fontSize:9.5, fontWeight:900, cursor:'pointer' }}>Einladen</button>
                     </div>)}
                   </div>
                 </section>
