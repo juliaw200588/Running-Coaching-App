@@ -521,12 +521,11 @@ export default function Together({ user }) {
           <div style={{ color:'#CC755E', fontSize:10, fontWeight:900, letterSpacing:1.2, fontFamily:'sans-serif' }}>
             GEMEINSAM
           </div>
-          <div style={{ display:'flex', alignItems:'center', gap:9, marginTop:4 }}>
+          <div style={{ marginTop:4 }}>
             <h1 style={{
               margin:0, color:'#3D2B1F', fontFamily:"'Georgia','Times New Roman',serif",
               fontSize:'clamp(30px,7vw,42px)', lineHeight:1.05
             }}>Gemeinsam</h1>
-            <div style={{ color:'#FF7D67', fontSize:28, letterSpacing:-10, width:36 }}>♡♡</div>
           </div>
           <p style={{ margin:'8px 0 0', color:'#8F796C', fontSize:12.5, lineHeight:1.55, fontFamily:'sans-serif' }}>
             Ziele verbinden. Training bleibt individuell.
@@ -539,30 +538,53 @@ export default function Together({ user }) {
           <div style={{ marginTop:24 }}>{renderGoalCard(primaryGoal)}</div>
         ) : (
           <div style={{
-            marginTop:24, borderRadius:26, padding:22,
-            background:'linear-gradient(145deg,#FFE7D7,#FFF4EA 60%,#F2F7E9)',
-            border:'1.5px solid #F2D8C8', boxShadow:'0 12px 34px rgba(82,56,42,.08)',
-            position:'relative', overflow:'hidden'
+            marginTop:24, borderRadius:26, minHeight:360,
+            border:'1.5px solid #EED7CA', boxShadow:'0 14px 38px rgba(70,49,37,.12)',
+            position:'relative', overflow:'hidden',
+            backgroundImage:"url('/gemeinsam-hero-v1.png')",
+            backgroundSize:'cover',
+            backgroundPosition:'center',
           }}>
-            <div style={{ position:'absolute', right:-12, top:-22, fontSize:96, opacity:.10 }}>♡</div>
-            <div style={{ fontSize:10, fontWeight:900, letterSpacing:1.1, color:'#C96C54', fontFamily:'sans-serif' }}>EUER NÄCHSTES ZIEL</div>
-            <h2 style={{
-              margin:'9px 0 8px', maxWidth:420, color:'#3D2B1F',
-              fontFamily:"'Georgia','Times New Roman',serif", fontSize:27, lineHeight:1.12
+            <div style={{
+              position:'absolute', inset:0,
+              background:'linear-gradient(90deg, rgba(36,27,22,.82) 0%, rgba(36,27,22,.65) 34%, rgba(36,27,22,.26) 60%, rgba(36,27,22,.05) 100%)'
+            }} />
+            <div style={{
+              position:'relative', zIndex:1, minHeight:360, boxSizing:'border-box',
+              padding:'24px 22px', display:'flex', flexDirection:'column',
+              justifyContent:'center', alignItems:'flex-start'
             }}>
-              Gemeinsam ist manches Ziel leichter.
-            </h2>
-            <p style={{ margin:0, maxWidth:500, color:'#876F63', fontSize:12, lineHeight:1.65, fontFamily:'sans-serif' }}>
-              Trainiert auf dasselbe Ziel hin, bleibt aber in euren Plänen individuell. Gemeinsame Einheiten verbinden eure Wege.
-            </p>
-            <button type="button" onClick={() => setShowCreate(true)} style={{
-              marginTop:18, width:'100%', border:'none', borderRadius:16, padding:'14px 15px',
-              color:'#fff', fontWeight:900, cursor:'pointer', fontFamily:'sans-serif',
-              background:'linear-gradient(135deg,#FF8C69,#FF6B78)',
-              boxShadow:'0 8px 20px rgba(255,112,91,.22)'
-            }}>
-              + Gemeinsames Ziel erstellen
-            </button>
+              <div style={{
+                fontSize:10, fontWeight:900, letterSpacing:1.15,
+                color:'#FFB197', fontFamily:'sans-serif'
+              }}>
+                EUER NÄCHSTES ZIEL
+              </div>
+              <h2 style={{
+                margin:'10px 0 10px', maxWidth:390, color:'#FFFFFF',
+                fontFamily:"'Georgia','Times New Roman',serif",
+                fontSize:'clamp(27px,5vw,34px)', lineHeight:1.08,
+                textShadow:'0 2px 14px rgba(0,0,0,.20)'
+              }}>
+                Gemeinsam ist manches Ziel leichter.
+              </h2>
+              <p style={{
+                margin:0, maxWidth:410, color:'rgba(255,255,255,.88)',
+                fontSize:12.5, lineHeight:1.65, fontFamily:'sans-serif',
+                textShadow:'0 1px 8px rgba(0,0,0,.20)'
+              }}>
+                Trainiert auf dasselbe Ziel hin, bleibt aber in euren Plänen individuell. Gemeinsame Einheiten verbinden eure Wege.
+              </p>
+              <button type="button" onClick={() => setShowCreate(true)} style={{
+                marginTop:20, border:'none', borderRadius:16, padding:'14px 18px',
+                minWidth:'min(340px, 100%)',
+                color:'#fff', fontWeight:900, cursor:'pointer', fontFamily:'sans-serif',
+                background:'linear-gradient(135deg,#FF8C69,#FF6B78)',
+                boxShadow:'0 9px 22px rgba(255,112,91,.30)'
+              }}>
+                + Gemeinsames Ziel erstellen
+              </button>
+            </div>
           </div>
         )}
 
@@ -599,24 +621,6 @@ export default function Together({ user }) {
             </div>
           </section>
         )}
-
-        <section style={{ marginTop:24 }}>
-          <h3 style={{ margin:'0 0 10px', color:'#4A382E', fontFamily:"'Georgia','Times New Roman',serif", fontSize:20 }}>
-            Trainingsmomente
-          </h3>
-          <div style={{
-            border:'1.5px solid #E8E0DA', background:'rgba(255,255,255,.72)',
-            borderRadius:19, padding:15, display:'flex', alignItems:'center', gap:12
-          }}>
-            <div style={{ width:43, height:43, borderRadius:14, display:'grid', placeItems:'center', background:'#F4F6EA', fontSize:19 }}>📷</div>
-            <div>
-              <div style={{ color:'#4A382E', fontSize:12, fontWeight:900, fontFamily:'sans-serif' }}>Eure Momente gehören zum Weg.</div>
-              <div style={{ color:'#9B8679', fontSize:10.5, marginTop:3, lineHeight:1.45, fontFamily:'sans-serif' }}>
-                Fotos und persönliche Notizen zu Trainings werden als nächster Schritt ergänzt – freiwillig und mit eigener Freigabe.
-              </div>
-            </div>
-          </div>
-        </section>
 
         {message && (
           <div style={{
