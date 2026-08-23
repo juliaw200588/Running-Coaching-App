@@ -7,6 +7,7 @@ import HikingOnboarding from './components/HikingOnboarding.jsx'
 import CyclingOnboarding from './components/CyclingOnboarding.jsx'
 import MtbOnboarding from './components/MtbOnboarding.jsx'
 import SwimmingOnboarding from './components/SwimmingOnboarding.jsx'
+import HyroxOnboarding from './components/HyroxOnboarding.jsx'
 import HikingWeeklyCheckIn from './components/HikingWeeklyCheckIn.jsx'
 import WelcomeOnboarding from './components/WelcomeOnboarding.jsx'
 import TrainingPlan from './components/TrainingPlan.jsx'
@@ -61,6 +62,7 @@ function PlanSportSelection({ onSelect }) {
     { id: 'cycling', icon: '🚴', title: 'Radfahren', text: 'Mehr Ausdauer für längere Touren und persönliche Ziele.', available: true },
     { id: 'mountain_biking', icon: '🚵', title: 'Mountainbike', text: 'Trainiere Ausdauer, Fahrtechnik und Belastbarkeit fürs Gelände.', available: true },
     { id: 'swimming', icon: '🏊', title: 'Schwimmen', text: 'Entwickle Ausdauer, Technik und längere Distanzen.', available: true },
+    { id: 'hyrox', icon: '🏋️', title: 'HYROX', text: 'Verbinde Laufen, Kraft und Race-Stations in einem strukturierten Plan.', available: true },
   ]
 
   return (
@@ -465,6 +467,19 @@ function App() {
             goalType:goalType === 'event' ? 'event' : goalType === 'distance' ? 'distance' : '',
             targetDistanceM:distanceKm ? String(Math.round(distanceKm * 1000)) : '',
             customDistanceM:distanceKm ? String(Math.round(distanceKm * 1000)) : '',
+            eventDate:targetDate,
+          }
+        }
+      }
+    }
+
+    if (sport === 'hyrox') {
+      return {
+        key:'hyrox-onboarding-draft-v1',
+        value:{
+          step:1,
+          form:{
+            goalType:targetDate ? 'event' : 'fitness',
             eventDate:targetDate,
           }
         }
@@ -1861,6 +1876,8 @@ const handleOpenTrainingPartnersFromNotification = () => {
                     <MtbOnboarding onPlanGenerated={handlePlanGenerated} />
                   ) : selectedPlanSport === 'swimming' ? (
                     <SwimmingOnboarding onPlanGenerated={handlePlanGenerated} />
+                  ) : selectedPlanSport === 'hyrox' ? (
+                    <HyroxOnboarding onPlanGenerated={handlePlanGenerated} />
                   ) : (
                     <PlanSportSelection onSelect={setSelectedPlanSport} />
                   )
@@ -1934,6 +1951,16 @@ const handleOpenTrainingPartnersFromNotification = () => {
                       </button>
                     </div>
                     <SwimmingOnboarding onPlanGenerated={handlePlanGenerated} />
+                  </div>
+                ) : selectedPlanSport === 'hyrox' ? (
+                  <div>
+                    <div style={{ maxWidth:720, margin:'0 auto', padding:'4px 16px 0' }}>
+                      <button type="button" onClick={() => setSelectedPlanSport(null)}
+                        style={{ border:'none', background:'transparent', color:'#B07A68', fontSize:11, fontWeight:800, cursor:'pointer', padding:'8px 0', fontFamily:'sans-serif' }}>
+                        ← Andere Sportart wählen
+                      </button>
+                    </div>
+                    <HyroxOnboarding onPlanGenerated={handlePlanGenerated} />
                   </div>
                 ) : (
                   <PlanSportSelection onSelect={setSelectedPlanSport} />

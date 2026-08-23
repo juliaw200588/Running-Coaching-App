@@ -2,6 +2,7 @@ import { generateHikingPlan } from '../src/lib/hikingPlanServer.js'
 import { generateCyclingPlan } from '../src/lib/cyclingPlanServer.js'
 import { generateMtbPlan } from '../src/lib/mtbPlanServer.js'
 import { generateSwimmingPlan } from '../src/lib/swimmingPlanServer.js'
+import { generateHyroxPlan } from '../src/lib/hyroxPlanServer.js'
 
 const RUNNING_PLAN_SCHEMA = {
   type: 'object',
@@ -138,6 +139,20 @@ export default async function handler(req, res) {
         error:
           error?.message ||
           'Der Schwimm-Trainingsplan konnte nicht erstellt werden.',
+      })
+    }
+  }
+
+  if (sportType === 'hyrox') {
+    try {
+      const result = await generateHyroxPlan(req.body || {})
+      return res.status(200).json(result)
+    } catch (error) {
+      console.error('[Generate Plan][HYROX] Erstellung fehlgeschlagen:', error)
+      return res.status(500).json({
+        error:
+          error?.message ||
+          'Der HYROX-Trainingsplan konnte nicht erstellt werden.',
       })
     }
   }
