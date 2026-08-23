@@ -822,7 +822,7 @@ function CreateSessionModal({ goal, user, onClose, onCreated }) {
   </div>
 }
 
-export default function Together({ user, plan, planId, focusFriends = 0, refreshToken = 0 }) {
+export default function Together({ user, plan, planId, focusFriends = 0, refreshToken = 0, onCreatePlanForGoal }) {
   const [loading, setLoading] = useState(true)
   const [goals, setGoals] = useState([])
   const [membersByGoal, setMembersByGoal] = useState({})
@@ -839,6 +839,7 @@ export default function Together({ user, plan, planId, focusFriends = 0, refresh
   const [inviteGoal, setInviteGoal] = useState(null)
   const [goalMenuOpen, setGoalMenuOpen] = useState(false)
   const [goalActionBusy, setGoalActionBusy] = useState(false)
+  const [planLinkBusy, setPlanLinkBusy] = useState(false)
   const [pendingDirectInvites, setPendingDirectInvites] = useState([])
   const [pendingInviteBusy, setPendingInviteBusy] = useState(null)
   const [message, setMessage] = useState('')
@@ -1040,6 +1041,43 @@ export default function Together({ user, plan, planId, focusFriends = 0, refresh
     setPendingDirectInvites(current => current.filter(item => item.token !== invite.token))
   }
 
+  const connectCurrentPlan = async goal => {
+    if (!planId || !plan) return
+    setPlanLinkBusy(true)
+    setMessage('')
+
+    const { error } = await supabase
+      .from('shared_goal_members')
+      .update({ plan_id:planId })
+      .eq('goal_id', goal.id)
+      .eq('user_id', user.id)
+      .eq('status', 'active')
+
+    if (error) {
+      console.error('[Gemeinsam] Plan verbinden fehlgeschlagen:', error)
+      setMessage('Der Trainingsplan konnte gerade nicht verbunden werden.')
+      setPlanLinkBusy(false)
+      return
+    }
+
+    setMembersByGoal(current => ({
+      ...current,
+      [goal.id]:(current[goal.id] || []).map(member =>
+        member.user_id === user.id ? { ...member, plan_id:planId } : member
+      )
+    }))
+    setPlanLinkBusy(false)
+    setMessage('Dein Trainingsplan ist jetzt mit dem gemeinsamen Ziel verbunden.')
+  }
+
+  const startPlanForGoal = goal => {
+    if (typeof onCreatePlanForGoal !== 'function') {
+      setMessage('Der Trainingsplan kann gerade nicht gestartet werden.')
+      return
+    }
+    onCreatePlanForGoal(goal)
+  }
+
   const currentMembership = goalId =>
     (membersByGoal[goalId] || []).find(member => member.user_id === user.id)
 
@@ -1153,9 +1191,47 @@ export default function Together({ user, plan, planId, focusFriends = 0, refresh
         <div style={{ height:6, borderRadius:99, background:'#F0E9E4', overflow:'hidden', marginTop:7 }}>
           <div style={{ width:`${percent}%`, height:'100%', borderRadius:99, background:'linear-gradient(90deg,#FF8C69,#7FCBA2)' }} />
         </div>
-      </> : <div style={{ marginTop:10, color:'#9A8578', fontSize:10.2, lineHeight:1.45, fontFamily:'sans-serif' }}>
-        {member.user_id === user.id ? 'Noch kein passender Plan mit diesem Ziel verbunden.' : 'Der Trainingspartner teilt aktuell keinen Wochenfortschritt.'}
-      </div>}
+      </> : member.user_id === user.id ? (
+        <div style={{ marginTop:10 }}>
+          <div style={{ color:'#9A8578', fontSize:10.2, lineHeight:1.45, fontFamily:'sans-serif' }}>
+            Noch kein passender Plan mit diesem Ziel verbunden.
+          </div>
+
+          {primaryGoal && plan && planId && inferPlanSport(plan) === primaryGoal.sport_type ? (
+            <button
+              type="button"
+              disabled={planLinkBusy}
+              onClick={() => connectCurrentPlan(primaryGoal)}
+              style={{
+                marginTop:9, width:'100%', border:'1.5px solid #BFDCCB',
+                borderRadius:12, padding:'9px 10px', background:'#F1F8F4',
+                color:'#578169', fontSize:10.2, fontWeight:900,
+                cursor:planLinkBusy ? 'default' : 'pointer',
+                opacity:planLinkBusy ? .6 : 1, fontFamily:'sans-serif'
+              }}
+            >
+              {planLinkBusy ? 'Wird verbunden…' : '✓ Bestehenden Plan verbinden'}
+            </button>
+          ) : primaryGoal ? (
+            <button
+              type="button"
+              onClick={() => startPlanForGoal(primaryGoal)}
+              style={{
+                marginTop:9, width:'100%', border:'none', borderRadius:12,
+                padding:'10px 11px', color:'#fff', fontSize:10.4, fontWeight:900,
+                cursor:'pointer', fontFamily:'sans-serif',
+                background:'linear-gradient(135deg,#FF8C69,#FF6B78)'
+              }}
+            >
+              Trainingsplan erstellen →
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <div style={{ marginTop:10, color:'#9A8578', fontSize:10.2, lineHeight:1.45, fontFamily:'sans-serif' }}>
+          Der Trainingspartner teilt aktuell keinen Wochenfortschritt.
+        </div>
+      )}
     </div>
   }
 

@@ -223,6 +223,7 @@ function App() {
   const [showNotifications, setShowNotifications] = useState(false)
   const [togetherFocusFriends, setTogetherFocusFriends] = useState(0)
   const [togetherRefresh, setTogetherRefresh] = useState(0)
+  const [sharedGoalPlanTarget, setSharedGoalPlanTarget] = useState(null)
   const [pendingGoalInvite, setPendingGoalInvite] = useState(null)
   const [goalInviteBusy, setGoalInviteBusy] = useState(false)
   const [goalInviteError, setGoalInviteError] = useState('')
@@ -377,6 +378,129 @@ function App() {
     setPendingGoalInvite(null)
     setGoalInviteBusy(false)
     clearInviteUrl()
+  }
+
+  const sharedGoalDraft = goal => {
+    const distanceKm = goal?.target_distance != null ? Number(goal.target_distance) : null
+    const targetDate = goal?.target_date || ''
+    const goalType = goal?.goal_type || 'custom'
+    const sport = goal?.sport_type
+
+    if (sport === 'hiking') {
+      return {
+        key:'hiking-onboarding-draft-v1',
+        value:{
+          step:1,
+          form:{
+            goalType:goalType === 'event' ? 'march' : goalType === 'distance' ? 'distance' : '',
+            targetDistanceKm:distanceKm ? String(distanceKm) : '',
+            customDistance:Boolean(distanceKm && ![20,30,50,100].includes(distanceKm)),
+            eventDate:targetDate,
+          }
+        }
+      }
+    }
+
+    if (sport === 'cycling') {
+      return {
+        key:'cycling-onboarding-draft-v1',
+        value:{
+          step:1,
+          form:{
+            goalType:goalType === 'event' ? 'event' : goalType === 'distance' ? 'distance' : '',
+            targetDistanceKm:distanceKm ? String(distanceKm) : '',
+            customDistance:Boolean(distanceKm),
+            eventDate:targetDate,
+          }
+        }
+      }
+    }
+
+    if (sport === 'mountain_biking') {
+      return {
+        key:'mtb-onboarding-draft-v1',
+        value:{
+          step:1,
+          form:{
+            goalType:goalType === 'event' ? 'event' : goalType === 'distance' ? 'distance' : '',
+            targetDistanceKm:distanceKm ? String(distanceKm) : '',
+            customDistance:Boolean(distanceKm),
+            eventDate:targetDate,
+          }
+        }
+      }
+    }
+
+    if (sport === 'swimming') {
+      return {
+        key:'swimming_onboarding_draft_v2',
+        value:{
+          step:1,
+          form:{
+            goalType:goalType === 'event' ? 'event' : goalType === 'distance' ? 'distance' : '',
+            targetDistanceM:distanceKm ? String(Math.round(distanceKm * 1000)) : '',
+            customDistanceM:distanceKm ? String(Math.round(distanceKm * 1000)) : '',
+            eventDate:targetDate,
+          }
+        }
+      }
+    }
+
+    if (sport === 'running') {
+      const knownGoal =
+        distanceKm != null && Math.abs(distanceKm - 5) < .2 ? '5 km' :
+        distanceKm != null && Math.abs(distanceKm - 10) < .2 ? '10 km' :
+        distanceKm != null && Math.abs(distanceKm - 21.1) < .5 ? 'Halbmarathon' :
+        distanceKm != null && Math.abs(distanceKm - 42.195) < .8 ? 'Marathon' :
+        /halbmarathon/i.test(goal?.title || '') ? 'Halbmarathon' :
+        /marathon/i.test(goal?.title || '') ? 'Marathon' :
+        /10\s*km/i.test(goal?.title || '') ? '10 km' :
+        /5\s*km/i.test(goal?.title || '') ? '5 km' : ''
+
+      return {
+        key:'running-onboarding-draft-v1',
+        value:{
+          step:1,
+          form:{
+            zielTyp:goalType === 'event' ? 'rennen' : goalType === 'distance' ? 'distanz' : '',
+            goal:knownGoal,
+            raceDate:targetDate,
+          }
+        }
+      }
+    }
+
+    return null
+  }
+
+  const handleCreatePlanForSharedGoal = goal => {
+    if (!goal?.id || !goal?.sport_type) return
+
+    const draft = sharedGoalDraft(goal)
+    if (draft) {
+      try {
+        const existing = JSON.parse(sessionStorage.getItem(draft.key) || 'null')
+        sessionStorage.setItem(
+          draft.key,
+          JSON.stringify({
+            ...(existing || {}),
+            ...draft.value,
+            form:{
+              ...(existing?.form || {}),
+              ...(draft.value.form || {}),
+            }
+          })
+        )
+      } catch (error) {
+        console.warn('[Gemeinsam] Onboarding-Vorbelegung konnte nicht gespeichert werden:', error)
+      }
+    }
+
+    setSharedGoalPlanTarget(goal)
+    setSelectedPlanSport(goal.sport_type)
+    setActiveTab('training')
+    setShowTrainingPlan(true)
+    setOpenWeekAnalysisWeek(null)
   }
 
   const loadProfileName = async (userId) => {
@@ -1317,27 +1441,54 @@ if (!claimAcquired) return
   }
 
   const handlePlanGenerated = async (newPlan) => {
+    const targetGoal = sharedGoalPlanTarget
+
     // Name aus Profil holen und in Plan eintragen
     const profileName = await loadProfileName(user.id)
     if (profileName) newPlan.name = profileName
-    // In Supabase speichern
-    const { data } = await supabase
+
+    const { data, error:planInsertError } = await supabase
       .from('plans')
       .insert({ user_id: user.id, plan_data: newPlan })
       .select()
       .single()
 
-    if (data) setPlanId(data.id)
+    if (planInsertError || !data) {
+      console.error('[App] Trainingsplan konnte nicht gespeichert werden:', planInsertError)
+      return
+    }
 
-    // Alten Plan löschen falls vorhanden
-    if (planId) {
+    const newPlanId = data.id
+
+    if (targetGoal?.id) {
+      const { error:linkError } = await supabase
+        .from('shared_goal_members')
+        .update({ plan_id:newPlanId })
+        .eq('goal_id', targetGoal.id)
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+
+      if (linkError) {
+        console.error('[Gemeinsam] Neuer Plan konnte nicht mit Ziel verbunden werden:', linkError)
+      }
+
+      // Beim Gemeinsam-Flow keinen vorhandenen anderen persönlichen Plan löschen.
+      setSharedGoalPlanTarget(null)
+      setTogetherRefresh(value => value + 1)
+    } else if (planId) {
+      // Normale Plan-Neuerstellung außerhalb von "Gemeinsam" behält das bisherige Verhalten.
       await supabase.from('plans').delete().eq('id', planId)
     }
 
+    setPlanId(newPlanId)
     localStorage.setItem(`runcoaching_plan_${user.id}`, JSON.stringify(newPlan))
     setPlan(newPlan)
     setSelectedPlanSport(null)
     setShowTrainingPlan(false)
+
+    if (targetGoal?.id) {
+      setActiveTab('together')
+    }
   }
 
   const handleReset = async () => {
@@ -1470,7 +1621,40 @@ const handleOpenTrainingPartnersFromNotification = () => {
                     ← Dashboard
                   </button>
                 </div>
-                {plan ? (
+                {sharedGoalPlanTarget && !plan && (
+                  <div style={{
+                    maxWidth:720, margin:'10px auto 8px', padding:'0 16px',
+                    boxSizing:'border-box'
+                  }}>
+                    <div style={{
+                      padding:'11px 13px', borderRadius:15,
+                      background:'linear-gradient(135deg,#FFF2EA,#F2F8F2)',
+                      border:'1px solid #F0DDD1', color:'#786155',
+                      fontSize:10.8, lineHeight:1.5, fontFamily:'sans-serif'
+                    }}>
+                      <b>Gemeinsames Ziel:</b> {sharedGoalPlanTarget.title}
+                      {sharedGoalPlanTarget.target_date ? ` · ${sharedGoalPlanTarget.target_date}` : ''}
+                      <br />
+                      Die bekannten Zieldaten sind bereits übernommen. Ergänze jetzt nur noch deine persönlichen Trainingsangaben.
+                    </div>
+                  </div>
+                )}
+
+                {sharedGoalPlanTarget ? (
+                  selectedPlanSport === 'running' ? (
+                    <Onboarding onPlanGenerated={handlePlanGenerated} />
+                  ) : selectedPlanSport === 'hiking' ? (
+                    <HikingOnboarding onPlanGenerated={handlePlanGenerated} />
+                  ) : selectedPlanSport === 'cycling' ? (
+                    <CyclingOnboarding onPlanGenerated={handlePlanGenerated} />
+                  ) : selectedPlanSport === 'mountain_biking' ? (
+                    <MtbOnboarding onPlanGenerated={handlePlanGenerated} />
+                  ) : selectedPlanSport === 'swimming' ? (
+                    <SwimmingOnboarding onPlanGenerated={handlePlanGenerated} />
+                  ) : (
+                    <PlanSportSelection onSelect={setSelectedPlanSport} />
+                  )
+                ) : plan ? (
                   <TrainingPlan
                     plan={plan}
                     onReset={handleReset}
@@ -1561,7 +1745,16 @@ const handleOpenTrainingPartnersFromNotification = () => {
             )
         )}
         {activeTab === 'activities' && <Laeufe user={user} plan={plan} />}
-        {activeTab === 'together' && <Together user={user} plan={plan} planId={planId} focusFriends={togetherFocusFriends} refreshToken={togetherRefresh} />}
+        {activeTab === 'together' && (
+          <Together
+            user={user}
+            plan={plan}
+            planId={planId}
+            focusFriends={togetherFocusFriends}
+            refreshToken={togetherRefresh}
+            onCreatePlanForGoal={handleCreatePlanForSharedGoal}
+          />
+        )}
         {activeTab === 'profile' && (
           <Profile
             user={user}
