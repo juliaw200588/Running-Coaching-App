@@ -21,6 +21,8 @@ const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
 const WEEK_REMINDER_HOUR = 18
 
+const SHARED_GOAL_PLAN_TARGET_KEY = 'shared_goal_plan_target_v1'
+
 const coachDebug = (...args) => {
   console.log('[WochenCoach]', ...args)
 }
@@ -226,10 +228,30 @@ function App() {
   const [showNotifications, setShowNotifications] = useState(false)
   const [togetherFocusFriends, setTogetherFocusFriends] = useState(0)
   const [togetherRefresh, setTogetherRefresh] = useState(0)
-  const [sharedGoalPlanTarget, setSharedGoalPlanTarget] = useState(null)
+  const [sharedGoalPlanTarget, setSharedGoalPlanTarget] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem(SHARED_GOAL_PLAN_TARGET_KEY)
+      return raw ? JSON.parse(raw) : null
+    } catch {
+      return null
+    }
+  })
   const [pendingGoalInvite, setPendingGoalInvite] = useState(null)
   const [goalInviteBusy, setGoalInviteBusy] = useState(false)
   const [goalInviteError, setGoalInviteError] = useState('')
+
+  useEffect(() => {
+    try {
+      if (sharedGoalPlanTarget?.id) {
+        sessionStorage.setItem(
+          SHARED_GOAL_PLAN_TARGET_KEY,
+          JSON.stringify(sharedGoalPlanTarget)
+        )
+      } else {
+        sessionStorage.removeItem(SHARED_GOAL_PLAN_TARGET_KEY)
+      }
+    } catch {}
+  }, [sharedGoalPlanTarget])
   const [unreadCount, setUnreadCount] = useState(0)
   const [loadingAuth, setLoadingAuth] = useState(true)
   const [openWeekAnalysisWeek, setOpenWeekAnalysisWeek] = useState(null)
@@ -498,6 +520,13 @@ function App() {
         console.warn('[Gemeinsam] Onboarding-Vorbelegung konnte nicht gespeichert werden:', error)
       }
     }
+
+    try {
+      sessionStorage.setItem(
+        SHARED_GOAL_PLAN_TARGET_KEY,
+        JSON.stringify(goal)
+      )
+    } catch {}
 
     setSharedGoalPlanTarget(goal)
     setSelectedPlanSport(goal.sport_type)
@@ -1530,14 +1559,24 @@ if (!claimAcquired) return
   }
 
   const handlePlanGenerated = async (newPlan) => {
-    const targetGoal = sharedGoalPlanTarget
+    let targetGoal = sharedGoalPlanTarget
+
+    // Falls während des Onboardings neu geladen wurde, bleibt der Gemeinsam-Kontext erhalten.
+    if (!targetGoal?.id) {
+      try {
+        const raw = sessionStorage.getItem(SHARED_GOAL_PLAN_TARGET_KEY)
+        if (raw) targetGoal = JSON.parse(raw)
+      } catch {}
+    }
+
     const hadPrimaryPlan = Boolean(primaryPlanId && primaryPlan)
 
     const profileName = await loadProfileName(user.id)
     if (profileName) newPlan.name = profileName
 
-    // Ein Plan aus "Gemeinsam" wird nur dann Hauptplan, wenn noch gar kein Hauptplan existiert.
-    const makePrimary = !targetGoal?.id || !hadPrimaryPlan
+    // Ein Gemeinsam-Plan wird nur dann Hauptplan, wenn noch gar kein Hauptplan existiert.
+    // Wichtig: Ein vorhandener Plan wird bei Planerstellung NIEMALS automatisch gelöscht.
+    const makePrimary = !hadPrimaryPlan
 
     if (makePrimary) {
       await supabase
@@ -1576,6 +1615,10 @@ if (!claimAcquired) return
         console.error('[Gemeinsam] Neuer Plan konnte nicht mit Ziel verbunden werden:', linkError)
       }
 
+      try {
+        sessionStorage.removeItem(SHARED_GOAL_PLAN_TARGET_KEY)
+      } catch {}
+
       setSharedGoalPlanTarget(null)
       setTogetherRefresh(value => value + 1)
 
@@ -1587,7 +1630,7 @@ if (!claimAcquired) return
         setViewingSecondaryPlan(false)
         localStorage.setItem(`runcoaching_plan_${user.id}`, JSON.stringify(newPlan))
       } else {
-        // Bestehenden Hauptplan unverändert lassen.
+        // Bestehender Hauptplan bleibt unverändert.
         setPlan(primaryPlan)
         setPlanId(primaryPlanId)
         setViewingSecondaryPlan(false)
@@ -1600,18 +1643,22 @@ if (!claimAcquired) return
       return
     }
 
-    // Normale Plan-Neuerstellung außerhalb "Gemeinsam":
-    // bisherigen Hauptplan wie bisher ersetzen.
-    if (primaryPlanId && primaryPlanId !== newPlanId) {
-      await supabase.from('plans').delete().eq('id', primaryPlanId)
+    // Auch außerhalb von "Gemeinsam" wird ein vorhandener Plan nicht mehr stillschweigend gelöscht.
+    // Wenn bereits ein Hauptplan existiert, bleibt er Hauptplan und der neue Plan wird als Zusatzplan gespeichert.
+    if (hadPrimaryPlan) {
+      setPlan(primaryPlan)
+      setPlanId(primaryPlanId)
+      setViewingSecondaryPlan(false)
+      localStorage.setItem(`runcoaching_plan_${user.id}`, JSON.stringify(primaryPlan))
+    } else {
+      setPlan(newPlan)
+      setPlanId(newPlanId)
+      setPrimaryPlan(newPlan)
+      setPrimaryPlanId(newPlanId)
+      setViewingSecondaryPlan(false)
+      localStorage.setItem(`runcoaching_plan_${user.id}`, JSON.stringify(newPlan))
     }
 
-    setPlan(newPlan)
-    setPlanId(newPlanId)
-    setPrimaryPlan(newPlan)
-    setPrimaryPlanId(newPlanId)
-    setViewingSecondaryPlan(false)
-    localStorage.setItem(`runcoaching_plan_${user.id}`, JSON.stringify(newPlan))
     setSelectedPlanSport(null)
     setShowTrainingPlan(false)
   }
