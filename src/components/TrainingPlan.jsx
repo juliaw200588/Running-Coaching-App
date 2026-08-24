@@ -230,7 +230,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
   const [screenshots, setScreenshots] = useState({})
   const [schuhe, setSchuhe] = useState([])
   const [logModal, setLogModal] = useState(null)
-  const [logInput, setLogInput] = useState({ pace: '', km: '', bpm: '', note: '', schuh_id: '' })
+  const [logInput, setLogInput] = useState({ pace: '', km: '', bpm: '', note: '', schuh_id: '', hyrox_data: {} })
   const [modalScreenshot, setModalScreenshot] = useState(null)
   const [modalPreview, setModalPreview] = useState(null)
   const [analyzing, setAnalyzing] = useState(false)
@@ -259,7 +259,8 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
   const isCyclingPlan = plan?.sport_type === 'cycling' || plan?.plan_type === 'cycling_endurance'
   const isMtbPlan = plan?.sport_type === 'mountain_biking' || plan?.plan_type === 'mtb_endurance'
   const isSwimmingPlan = plan?.sport_type === 'swimming' || plan?.plan_type === 'swimming_endurance'
-  const isRunningPlan = !isHikingPlan && !isCyclingPlan && !isMtbPlan && !isSwimmingPlan && (
+  const isHyroxPlan = plan?.sport_type === 'hyrox' || plan?.plan_type === 'hyrox'
+  const isRunningPlan = !isHikingPlan && !isCyclingPlan && !isMtbPlan && !isSwimmingPlan && !isHyroxPlan && (
     !plan?.sport_type ||
     plan?.sport_type === 'running' ||
     plan?.plan_type === 'running'
@@ -275,7 +276,9 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
         ? '/hero/swimming/03.webp'
         : isCyclingPlan
           ? '/hero/cycling/03.webp'
-          : '/hero/running/easy/02.webp'
+          : isHyroxPlan
+            ? '/hero/running/easy/02.webp'
+            : '/hero/running/easy/02.webp'
 
   const planSportLabel = isHikingPlan
     ? 'Marsch & Wandern'
@@ -285,7 +288,9 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
         ? 'Schwimmen'
         : isCyclingPlan
           ? 'Radfahren'
-          : 'Laufen'
+          : isHyroxPlan
+            ? 'HYROX'
+            : 'Laufen'
 
   const progressUnitLabel = isRunningPlan ? 'Läufe' : 'Einheiten'
 
@@ -379,6 +384,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                 kalorien: l.kalorien || '',
                 km_splits: parseJsonArray(l.km_splits),
                 run_segments: parseJsonArray(l.run_segments),
+                hyrox_data: l.hyrox_data && typeof l.hyrox_data === 'object' ? l.hyrox_data : {},
               }
             })
             setLogs(logMap)
@@ -645,12 +651,32 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
     }
   }
 
-  const openLog = (key, tag, einheit) => {
+  const openLog = (key, tag, einheit, day = null) => {
     const ex = logs[key] || {}
-    setLogInput({ pace: ex.pace || '', km: ex.km || '', bpm: ex.bpm || '', note: ex.note || '', schuh_id: ex.schuh_id || '' })
+    setLogInput({ pace: ex.pace || '', km: ex.km || '', bpm: ex.bpm || '', note: ex.note || '', schuh_id: ex.schuh_id || '', hyrox_data: ex.hyrox_data || {} })
     setModalScreenshot(screenshots[key] || null)
     setModalPreview(screenshots[key] || null)
-    setLogModal({ key, tag, einheit })
+    setLogModal({ key, tag, einheit, day })
+  }
+
+  const setHyroxField = (stationId, field, value) => {
+    setLogInput(prev => ({
+      ...prev,
+      hyrox_data: {
+        ...(prev.hyrox_data || {}),
+        [stationId]: { ...(prev.hyrox_data?.[stationId] || {}), [field]: value },
+      },
+    }))
+  }
+
+  const HYROX_FIELD_META = {
+    weight:{label:'Gewicht gesamt',placeholder:'z. B. 60',unit:'kg'},
+    weight_each:{label:'Gewicht je Hand',placeholder:'z. B. 12',unit:'kg'},
+    distance:{label:'Distanz',placeholder:'z. B. 50',unit:'m'},
+    reps:{label:'Wiederholungen',placeholder:'z. B. 12',unit:''},
+    sets:{label:'Sätze / Runden',placeholder:'z. B. 3',unit:''},
+    time:{label:'Zeit',placeholder:'z. B. 2:15',unit:''},
+    pace:{label:'Pace',placeholder:'z. B. 6:10',unit:'min/km'},
   }
 
   const handleFileChange = async (e) => {
@@ -717,6 +743,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
           bpm: logInput.bpm || null,
           note: logInput.note || null,
           schuh_id: logInput.schuh_id || null,
+          hyrox_data: isHyroxPlan ? (logInput.hyrox_data || {}) : null,
         }, { onConflict: 'user_id,day_key' })
       } catch (e) { console.error('Log Supabase Fehler:', e) }
     }
@@ -830,7 +857,34 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
               <input ref={fileRef} type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'none' }} />
             </div>
 
-            {/* Felder */}
+            {isHyroxPlan && logModal.day?.hyrox_log?.stations?.length > 0 && (
+              <div style={{display:'grid',gap:10,marginBottom:14}}>
+                <div style={{fontSize:11,fontWeight:900,color:'#8B6B5A',fontFamily:'sans-serif'}}>HYROX · Einheit dokumentieren</div>
+                {logModal.day.hyrox_log.stations.map(station => {
+                  const values = logInput.hyrox_data?.[station.id] || {}
+                  const choices = logModal.day.hyrox_log.choices || ['Zu leicht','Leicht','Passend','Schwer','Zu schwer']
+                  const techniqueChoices = logModal.day.hyrox_log.techniqueChoices || ['Sicher','Etwas unsicher','Technik schwierig']
+                  return (
+                    <div key={station.id} style={{padding:12,borderRadius:14,background:'#FFF8F5',border:'1.5px solid #F0E8E0'}}>
+                      <div style={{fontWeight:900,fontSize:13,color:'#4E6F62',marginBottom:9}}>{station.label}</div>
+                      <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:8}}>
+                        {(station.fields || []).filter(field => HYROX_FIELD_META[field]).map(field => {
+                          const meta = HYROX_FIELD_META[field]
+                          return <label key={field} style={{fontFamily:'sans-serif',fontSize:9.5,fontWeight:800,color:'#A88F7E'}}>{meta.label}
+                            <div style={{position:'relative',marginTop:4}}><input value={values[field] || ''} onChange={e=>setHyroxField(station.id,field,e.target.value)} placeholder={meta.placeholder} style={{width:'100%',boxSizing:'border-box',padding:'9px 10px',paddingRight:meta.unit?42:10,borderRadius:10,border:'1px solid #EADDD5',background:'white',fontSize:12}}/>{meta.unit&&<span style={{position:'absolute',right:9,top:10,fontSize:9,color:'#B8A090'}}>{meta.unit}</span>}</div>
+                          </label>
+                        })}
+                      </div>
+                      {(station.fields || []).includes('effort') && <div style={{marginTop:9}}><div style={{fontFamily:'sans-serif',fontSize:9.5,fontWeight:800,color:'#A88F7E',marginBottom:5}}>Belastung</div><div style={{display:'flex',gap:5,flexWrap:'wrap'}}>{choices.map(choice=><button type="button" key={choice} onClick={()=>setHyroxField(station.id,'effort',choice)} style={{border:`1px solid ${values.effort===choice?'#FF8C69':'#EADDD5'}`,background:values.effort===choice?'#FFF0E8':'white',color:values.effort===choice?'#C65E43':'#8B776A',borderRadius:99,padding:'5px 8px',fontSize:9.5,fontWeight:800}}>{choice}</button>)}</div></div>}
+                      {(station.fields || []).includes('technique') && <div style={{marginTop:8}}><div style={{fontFamily:'sans-serif',fontSize:9.5,fontWeight:800,color:'#A88F7E',marginBottom:5}}>Technik</div><div style={{display:'flex',gap:5,flexWrap:'wrap'}}>{techniqueChoices.map(choice=><button type="button" key={choice} onClick={()=>setHyroxField(station.id,'technique',choice)} style={{border:`1px solid ${values.technique===choice?'#5BA88A':'#EADDD5'}`,background:values.technique===choice?'#EEF8F3':'white',color:values.technique===choice?'#3D8B6E':'#8B776A',borderRadius:99,padding:'5px 8px',fontSize:9.5,fontWeight:800}}>{choice}</button>)}</div></div>}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Standard-Felder für Lauf/andere Sportarten bzw. HYROX-Laufeinheiten */}
+            {(!isHyroxPlan || !logModal.day?.hyrox_log?.stations?.length) && <>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
               {[{ key: 'pace', label: 'Ø Pace', placeholder: '6:19 min/km' }, { key: 'km', label: 'Distanz', placeholder: '14,2 km' }].map(f => (
                 <div key={f.key}>
@@ -847,8 +901,10 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                 style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 14, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif' }} />
             </div>
 
+            </>}
+
             {/* Schuh-Auswahl */}
-            {schuhe.length > 0 && (
+            {schuhe.length > 0 && (!isHyroxPlan || !logModal.day?.hyrox_log?.stations?.length) && (
               <div style={{ marginBottom: 10 }}>
                 <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>Laufschuhe</label>
                 <select value={logInput.schuh_id} onChange={e => setLogInput(p => ({ ...p, schuh_id: e.target.value }))}
@@ -1237,7 +1293,9 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
             const allDone = weekDone === weekTotal && weekTotal > 0
             const isOpen = !!openWeeks[wi]
             const phaseColor = phase.accent || phaseTabColors[activePhase] || '#FF8C69'
-            const weekKm = (isCyclingPlan || isMtbPlan || isSwimmingPlan) ? 0 : estimateWeekKm(week)
+            const weekKm = (isCyclingPlan || isMtbPlan || isSwimmingPlan || isHyroxPlan) ? 0 : estimateWeekKm(week)
+            const weekMinutes = isHyroxPlan ? week.days.filter(d => !d.optional).reduce((sum,d) => sum + (Number(d.durationMinutes) || 0), 0) : 0
+            const weekRunKm = isHyroxPlan ? week.days.filter(d => !d.optional).reduce((sum,d) => sum + estimateDayKm(d.details), 0) : 0
 
             return (
               <div key={week.n} style={{ background: 'white', borderRadius: 20, marginBottom: 12, overflow: 'hidden', boxShadow: isOpen ? '0 8px 32px rgba(255,140,105,0.15)' : '0 2px 12px rgba(0,0,0,0.06)', border: isOpen ? '2px solid #FFD4C0' : '2px solid transparent', transition: 'all 0.3s ease' }}>
@@ -1251,6 +1309,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                       <span style={{ fontWeight: 'bold', color: '#3D2B1F', fontSize: 15 }}>Woche {week.n}</span>
                       {week.regen && <span style={{ fontSize: 10, color: '#B8A090', background: '#F5EDE8', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>Regeneration</span>}
                       {week.race && <span style={{ fontSize: 10, color: '#A78BCA', background: '#F5F0FF', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>Rennwoche 🏁</span>}
+                      {isHyroxPlan && <span style={{ fontSize: 10, color: '#FF8C69', background: '#FFF5EE', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif', border: '1px solid #FFE0CC' }}>{weekTotal} Einheiten · ~{weekMinutes} Min{weekRunKm > 0 ? ` · ~${Math.round(weekRunKm)} km Laufanteil` : ''}</span>}
                       {weekKm > 0 && <span style={{ fontSize: 10, color: '#FF8C69', background: '#FFF5EE', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif', border: '1px solid #FFE0CC' }}>ca. {Math.round(weekKm)} km</span>}
                     </div>
                     <div style={{ color: '#B8A090', fontSize: 11, fontFamily: 'sans-serif', marginTop: 2 }}>{week.dateRange} · {weekDone}/{weekTotal} erledigt</div>
@@ -1276,7 +1335,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                       const techniqueOpen = Boolean(openTechniques[key])
 
                       return (
-                        <div key={originalIndex} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 14, marginBottom: 8, background: s.bg, border: `1px solid ${isDone ? '#B8E4CC' : isSkipped ? '#E0D8CC' : 'transparent'}`, transition: 'all 0.2s ease', opacity: day.optional ? 0.7 : isSkipped ? 0.85 : 1 }}>
+                        <div key={di} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 14, marginBottom: 8, background: s.bg, border: `1px solid ${isDone ? '#B8E4CC' : isSkipped ? '#E0D8CC' : 'transparent'}`, transition: 'all 0.2s ease', opacity: day.optional ? 0.7 : isSkipped ? 0.85 : 1 }}>
                           {!day.optional ? (
                             <button onClick={() => toggleDone(key)} style={{ width: 24, height: 24, borderRadius: '50%', border: `2px solid ${isDone ? '#5BA88A' : isSkipped ? '#C4BCAE' : '#D4C4B8'}`, background: isDone ? '#5BA88A' : isSkipped ? '#C4BCAE' : 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 12, flexShrink: 0, transition: 'all 0.2s ease' }}>
                               {isDone ? '✓' : isSkipped ? '⏭' : ''}
@@ -1430,6 +1489,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                                 {logs[key]?.running_index && <span style={{ fontSize: 10, background: '#F5F0FF', color: '#A78BCA', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>🏃 RI {logs[key].running_index}</span>}
                                 {logs[key]?.cadence && <span style={{ fontSize: 10, background: '#E8F5EF', color: '#3D8B6E', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>👣 {logs[key].cadence} spm</span>}
                                 {loggedSchuh && <span style={{ fontSize: 10, background: '#FFF5EE', color: '#C17A3A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>👟 {loggedSchuh.marke} {loggedSchuh.modell}</span>}
+                                {isHyroxPlan && logs[key]?.hyrox_data && Object.keys(logs[key].hyrox_data).length > 0 && <span style={{ fontSize: 10, background: '#EEF8F3', color: '#3D8B6E', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>🏋️ HYROX-Daten</span>}
                                 {logs[key]?.note && <span style={{ fontSize: 10, background: '#F5EDE8', color: '#8B6B5A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>💬 {logs[key].note.slice(0, 30)}{logs[key].note.length > 30 ? '…' : ''}</span>}
                                 <button onClick={() => setDetailModal({ key, tag: day.tag, einheit: day.einheit })} style={{ fontSize: 10, background: 'none', border: 'none', color: '#B8A090', fontWeight: 'bold', fontFamily: 'sans-serif', cursor: 'pointer', textDecoration: 'underline', padding: '2px 4px' }}>
                                   Details →
@@ -1440,7 +1500,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
 
                           {!day.optional && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end', flexShrink: 0 }}>
-                              <button onClick={() => openLog(key, day.tag, day.einheit)} style={{ padding: '6px 12px', borderRadius: 10, border: 'none', background: hasLog ? '#E8F5EF' : 'linear-gradient(135deg,#FF8C69,#FFB347)', color: hasLog ? '#5BA88A' : 'white', fontSize: 11, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', boxShadow: hasLog ? 'none' : '0 2px 8px rgba(255,140,105,0.4)' }}>
+                              <button onClick={() => openLog(key, day.tag, day.einheit, day)} style={{ padding: '6px 12px', borderRadius: 10, border: 'none', background: hasLog ? '#E8F5EF' : 'linear-gradient(135deg,#FF8C69,#FFB347)', color: hasLog ? '#5BA88A' : 'white', fontSize: 11, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', boxShadow: hasLog ? 'none' : '0 2px 8px rgba(255,140,105,0.4)' }}>
                                 {hasLog ? '✏️' : '+ Log'}
                               </button>
                               {!hasLog && (
