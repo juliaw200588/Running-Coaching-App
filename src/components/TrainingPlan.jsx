@@ -206,30 +206,28 @@ function findCurrentPhaseWeek(plan) {
   return { phaseIdx: 0, weekIdx: 0 }
 }
 
-
 const normalizeWorkoutText = value => String(value || '').toLowerCase()
 
 const detectGenericLogMode = day => {
   const title = normalizeWorkoutText(day?.einheit)
   const details = normalizeWorkoutText(day?.details)
-  const strength = [
+  const full = `${title} ${details}`
+
+  const strengthTokens = [
     'kraft', 'strength', 'stabilität', 'stabi', 'core',
-    'gym', 'resistance', 'functional strength'
-  ].some(token => title.includes(token) || details.includes(token))
+    'gym', 'resistance', 'kräftigung'
+  ]
+  const mobilityTokens = [
+    'mobility', 'mobilität', 'beweglichkeit', 'stretch', 'dehnen', 'yoga'
+  ]
 
-  const mobility = [
-    'mobility', 'mobilität', 'beweglichkeit', 'stretch', 'dehnen',
-    'regeneration mobility', 'yoga'
-  ].some(token => title.includes(token) || details.includes(token))
-
-  // Kraft hat Vorrang, falls eine Einheit z.B. "Kraft & Mobility" heißt.
-  if (strength) return 'strength'
-  if (mobility) return 'mobility'
+  if (strengthTokens.some(token => full.includes(token))) return 'strength'
+  if (mobilityTokens.some(token => full.includes(token))) return 'mobility'
   return null
 }
 
-const LOG_EFFORT_CHOICES = ['Sehr leicht','Leicht','Passend','Schwer','Zu schwer']
-const LOG_TECHNIQUE_CHOICES = ['Sicher','Etwas unsicher','Schwierig']
+const GENERIC_EFFORT_CHOICES = ['Sehr leicht','Leicht','Passend','Schwer','Zu schwer']
+const GENERIC_TECHNIQUE_CHOICES = ['Sicher','Etwas unsicher','Schwierig']
 
 export default function TrainingPlan({ plan, onReset, user, planId = null, openWeekAnalysis = null, onWeekAnalysisOpened }) {
   const [activePhase, setActivePhase] = useState(() => findCurrentPhaseWeek(plan).phaseIdx)
@@ -397,6 +395,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                 run_segments: parseJsonArray(l.run_segments),
                 sport_data: l.sport_data && typeof l.sport_data === 'object' ? l.sport_data : {},
                 hyrox_data: l.hyrox_data && typeof l.hyrox_data === 'object' ? l.hyrox_data : {},
+                generic_data: l.generic_data && typeof l.generic_data === 'object' ? l.generic_data : {},
               }
             })
             setLogs(logMap)
@@ -665,31 +664,26 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
 
   const openLog = (key, tag, einheit, day = null) => {
     const ex = logs[key] || {}
+    const resolvedDay = day || { einheit }
     setLogInput({
       pace: ex.pace || '', km: ex.km || '', bpm: ex.bpm || '', note: ex.note || '', schuh_id: ex.schuh_id || '',
-      sport_data: ex.sport_data || {}, hyrox_data: ex.hyrox_data || {},
+      sport_data: ex.sport_data || {}, hyrox_data: ex.hyrox_data || {}, generic_data: ex.generic_data || {},
     })
     setModalScreenshot(screenshots[key] || null)
     setModalPreview(screenshots[key] || null)
-    setLogModal({ key, tag, einheit, day })
+    setLogModal({ key, tag, einheit, day: resolvedDay, genericMode: detectGenericLogMode(resolvedDay) })
   }
 
   const setSportField = (field, value) => setLogInput(prev => ({
     ...prev, sport_data: { ...(prev.sport_data || {}), [field]: value }
   }))
 
-  
-  const setGenericField = (field, value) => {
-    setLogInput(prev => ({
-      ...prev,
-      generic_data: {
-        ...(prev.generic_data || {}),
-        [field]: value,
-      },
-    }))
-  }
+  const setGenericField = (field, value) => setLogInput(prev => ({
+    ...prev,
+    generic_data: { ...(prev.generic_data || {}), [field]: value },
+  }))
 
-const setHyroxField = (stationId, field, value) => setLogInput(prev => ({
+  const setHyroxField = (stationId, field, value) => setLogInput(prev => ({
     ...prev, hyrox_data: {
       ...(prev.hyrox_data || {}),
       [stationId]: { ...(prev.hyrox_data?.[stationId] || {}), [field]: value },
@@ -814,6 +808,7 @@ const setHyroxField = (stationId, field, value) => setLogInput(prev => ({
           schuh_id: logInput.schuh_id || null,
           sport_data: logInput.sport_data || {},
           hyrox_data: isHyroxPlan ? (logInput.hyrox_data || {}) : {},
+          generic_data: logInput.generic_data || {},
         }, { onConflict: 'user_id,day_key' })
       } catch (e) { console.error('Log Supabase Fehler:', e) }
     }
@@ -961,90 +956,87 @@ const setHyroxField = (stationId, field, value) => setLogInput(prev => ({
                   )
                 })}
               </div>
+            ) : logModal?.genericMode === 'strength' ? (
+              <div style={{marginBottom:14}}>
+                <div style={{fontSize:11,fontWeight:900,color:'#8B6B5A',fontFamily:'sans-serif',marginBottom:10}}>
+                  Krafttraining dokumentieren
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:10,marginBottom:12}}>
+                  {[
+                    ['duration','Dauer','z. B. 45 Min',''],
+                    ['weight','Gewicht','optional','kg'],
+                    ['sets','Sätze','z. B. 3',''],
+                    ['reps','Wiederholungen','z. B. 8–10',''],
+                  ].map(([key,label,placeholder,unit]) => (
+                    <label key={key} style={{fontSize:10,fontWeight:'bold',color:'#B8A090',textTransform:'uppercase',letterSpacing:.6,fontFamily:'sans-serif'}}>
+                      {label}
+                      <div style={{position:'relative',marginTop:4}}>
+                        <input
+                          value={logInput.generic_data?.[key] || ''}
+                          onChange={e=>setGenericField(key,e.target.value)}
+                          placeholder={placeholder}
+                          style={{width:'100%',padding:'10px 12px',paddingRight:unit?48:12,borderRadius:12,border:'1.5px solid #F0E8E0',fontSize:14,color:'#3D2B1F',outline:'none',boxSizing:'border-box',background:'#FFF8F5',fontFamily:'sans-serif'}}
+                        />
+                        {unit && <span style={{position:'absolute',right:10,top:11,fontSize:9,color:'#B8A090',fontFamily:'sans-serif'}}>{unit}</span>}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+
+                <div style={{marginBottom:12}}>
+                  <div style={{fontSize:10,fontWeight:800,color:'#B8A090',textTransform:'uppercase',letterSpacing:.6,marginBottom:6,fontFamily:'sans-serif'}}>Wie anstrengend war es?</div>
+                  <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                    {GENERIC_EFFORT_CHOICES.map(choice => (
+                      <button type="button" key={choice} onClick={()=>setGenericField('effort',choice)}
+                        style={{border:`1.5px solid ${logInput.generic_data?.effort===choice?'#FF8C69':'#EADDD5'}`,background:logInput.generic_data?.effort===choice?'#FFF0E8':'white',color:logInput.generic_data?.effort===choice?'#C65E43':'#8B776A',borderRadius:99,padding:'6px 9px',fontSize:9.5,fontWeight:800,cursor:'pointer'}}>
+                        {choice}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{fontSize:10,fontWeight:800,color:'#B8A090',textTransform:'uppercase',letterSpacing:.6,marginBottom:6,fontFamily:'sans-serif'}}>Technik / Ausführung</div>
+                  <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                    {GENERIC_TECHNIQUE_CHOICES.map(choice => (
+                      <button type="button" key={choice} onClick={()=>setGenericField('technique',choice)}
+                        style={{border:`1.5px solid ${logInput.generic_data?.technique===choice?'#5BA88A':'#EADDD5'}`,background:logInput.generic_data?.technique===choice?'#EEF8F3':'white',color:logInput.generic_data?.technique===choice?'#3D8B6E':'#8B776A',borderRadius:99,padding:'6px 9px',fontSize:9.5,fontWeight:800,cursor:'pointer'}}>
+                        {choice}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : logModal?.genericMode === 'mobility' ? (
+              <div style={{marginBottom:14}}>
+                <div style={{fontSize:11,fontWeight:900,color:'#8B6B5A',fontFamily:'sans-serif',marginBottom:10}}>
+                  Mobility / Beweglichkeit dokumentieren
+                </div>
+                <label style={{fontSize:10,fontWeight:'bold',color:'#B8A090',textTransform:'uppercase',letterSpacing:.6,fontFamily:'sans-serif'}}>
+                  Dauer
+                  <input
+                    value={logInput.generic_data?.duration || ''}
+                    onChange={e=>setGenericField('duration',e.target.value)}
+                    placeholder="z. B. 20 Min"
+                    style={{width:'100%',marginTop:4,padding:'10px 12px',borderRadius:12,border:'1.5px solid #F0E8E0',fontSize:14,color:'#3D2B1F',outline:'none',boxSizing:'border-box',background:'#FFF8F5',fontFamily:'sans-serif'}}
+                  />
+                </label>
+                <div style={{marginTop:12}}>
+                  <div style={{fontSize:10,fontWeight:800,color:'#B8A090',textTransform:'uppercase',letterSpacing:.6,marginBottom:6,fontFamily:'sans-serif'}}>Wie hat es sich angefühlt?</div>
+                  <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                    {['Sehr gut','Gut','Okay','Zäh'].map(choice => (
+                      <button type="button" key={choice} onClick={()=>setGenericField('feeling',choice)}
+                        style={{border:`1.5px solid ${logInput.generic_data?.feeling===choice?'#5BA88A':'#EADDD5'}`,background:logInput.generic_data?.feeling===choice?'#EEF8F3':'white',color:logInput.generic_data?.feeling===choice?'#3D8B6E':'#8B776A',borderRadius:99,padding:'6px 9px',fontSize:9.5,fontWeight:800,cursor:'pointer'}}>
+                        {choice}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             ) : (
               <>
                 <div style={{fontSize:11,fontWeight:900,color:'#8B6B5A',fontFamily:'sans-serif',marginBottom:10}}>
-                  
-              {logModal?.genericMode === 'strength' ? (
-                <div style={{marginBottom:16}}>
-                  <div style={{fontSize:11,fontWeight:900,color:'#80695C',marginBottom:10,fontFamily:'sans-serif'}}>
-                    Krafttraining dokumentieren
-                  </div>
-                  <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:10}}>
-                    <div>
-                      <label style={{fontSize:10,fontWeight:800,color:'#B19A8C',display:'block',marginBottom:5,fontFamily:'sans-serif'}}>DAUER</label>
-                      <input value={logInput.generic_data?.duration || ''} onChange={e=>setGenericField('duration',e.target.value)} placeholder="z. B. 55 Min" style={inputStyle} />
-                    </div>
-                    <div>
-                      <label style={{fontSize:10,fontWeight:800,color:'#B19A8C',display:'block',marginBottom:5,fontFamily:'sans-serif'}}>GEWICHT</label>
-                      <input value={logInput.generic_data?.weight || ''} onChange={e=>setGenericField('weight',e.target.value)} placeholder="optional" style={inputStyle} />
-                    </div>
-                    <div>
-                      <label style={{fontSize:10,fontWeight:800,color:'#B19A8C',display:'block',marginBottom:5,fontFamily:'sans-serif'}}>SÄTZE</label>
-                      <input value={logInput.generic_data?.sets || ''} onChange={e=>setGenericField('sets',e.target.value)} placeholder="z. B. 3" style={inputStyle} />
-                    </div>
-                    <div>
-                      <label style={{fontSize:10,fontWeight:800,color:'#B19A8C',display:'block',marginBottom:5,fontFamily:'sans-serif'}}>WIEDERHOLUNGEN</label>
-                      <input value={logInput.generic_data?.reps || ''} onChange={e=>setGenericField('reps',e.target.value)} placeholder="z. B. 8–10" style={inputStyle} />
-                    </div>
-                  </div>
-
-                  <div style={{marginTop:12}}>
-                    <div style={{fontSize:10,fontWeight:800,color:'#B19A8C',marginBottom:7,fontFamily:'sans-serif'}}>WIE ANSTRENGEND WAR ES?</div>
-                    <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                      {LOG_EFFORT_CHOICES.map(choice=>(
-                        <button key={choice} type="button" onClick={()=>setGenericField('effort',choice)}
-                          style={{
-                            border:logInput.generic_data?.effort===choice?'2px solid #FF8C69':'1px solid #E9DDD6',
-                            background:logInput.generic_data?.effort===choice?'#FFF1EA':'#fff',
-                            color:logInput.generic_data?.effort===choice?'#C76049':'#806E63',
-                            borderRadius:999,padding:'7px 10px',fontSize:10,fontWeight:800,cursor:'pointer',fontFamily:'sans-serif'
-                          }}>{choice}</button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div style={{marginTop:12}}>
-                    <div style={{fontSize:10,fontWeight:800,color:'#B19A8C',marginBottom:7,fontFamily:'sans-serif'}}>TECHNIK / AUSFÜHRUNG</div>
-                    <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                      {LOG_TECHNIQUE_CHOICES.map(choice=>(
-                        <button key={choice} type="button" onClick={()=>setGenericField('technique',choice)}
-                          style={{
-                            border:logInput.generic_data?.technique===choice?'2px solid #6FA88F':'1px solid #E9DDD6',
-                            background:logInput.generic_data?.technique===choice?'#EEF8F3':'#fff',
-                            color:logInput.generic_data?.technique===choice?'#4F806B':'#806E63',
-                            borderRadius:999,padding:'7px 10px',fontSize:10,fontWeight:800,cursor:'pointer',fontFamily:'sans-serif'
-                          }}>{choice}</button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ) : logModal?.genericMode === 'mobility' ? (
-                <div style={{marginBottom:16}}>
-                  <div style={{fontSize:11,fontWeight:900,color:'#80695C',marginBottom:10,fontFamily:'sans-serif'}}>
-                    Mobility / Beweglichkeit dokumentieren
-                  </div>
-                  <div>
-                    <label style={{fontSize:10,fontWeight:800,color:'#B19A8C',display:'block',marginBottom:5,fontFamily:'sans-serif'}}>DAUER</label>
-                    <input value={logInput.generic_data?.duration || ''} onChange={e=>setGenericField('duration',e.target.value)} placeholder="z. B. 20 Min" style={inputStyle} />
-                  </div>
-                  <div style={{marginTop:12}}>
-                    <div style={{fontSize:10,fontWeight:800,color:'#B19A8C',marginBottom:7,fontFamily:'sans-serif'}}>WIE HAT ES SICH ANGEFÜHLT?</div>
-                    <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                      {['Sehr gut','Gut','Okay','Zäh'].map(choice=>(
-                        <button key={choice} type="button" onClick={()=>setGenericField('feeling',choice)}
-                          style={{
-                            border:logInput.generic_data?.feeling===choice?'2px solid #6FA88F':'1px solid #E9DDD6',
-                            background:logInput.generic_data?.feeling===choice?'#EEF8F3':'#fff',
-                            color:logInput.generic_data?.feeling===choice?'#4F806B':'#806E63',
-                            borderRadius:999,padding:'7px 10px',fontSize:10,fontWeight:800,cursor:'pointer',fontFamily:'sans-serif'
-                          }}>{choice}</button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-{isSwimmingPlan ? 'Schwimmen dokumentieren' : isCyclingPlan ? 'Radtour dokumentieren' : isMtbPlan ? 'MTB-Einheit dokumentieren' : isHikingPlan ? 'Marsch / Wanderung dokumentieren' : isHyroxPlan ? 'HYROX-Laufeinheit dokumentieren' : 'Lauf dokumentieren'}
+                  {isSwimmingPlan ? 'Schwimmen dokumentieren' : isCyclingPlan ? 'Radtour dokumentieren' : isMtbPlan ? 'MTB-Einheit dokumentieren' : isHikingPlan ? 'Marsch / Wanderung dokumentieren' : isHyroxPlan ? 'HYROX-Laufeinheit dokumentieren' : 'Lauf dokumentieren'}
                 </div>
                 <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:10,marginBottom:10}}>
                   {manualLogFields.map(field => {
@@ -1065,9 +1057,7 @@ const setHyroxField = (stationId, field, value) => setLogInput(prev => ({
 
                 {schuhe.length > 0 && (isRunningPlan || (isHyroxPlan && /run|lauf/i.test(logModal.einheit || ''))) && (
                   <div style={{ marginBottom: 10 }}>
-                    
-              )}
-<label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>Laufschuhe</label>
+                    <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>Laufschuhe</label>
                     <select value={logInput.schuh_id} onChange={e => setLogInput(p => ({ ...p, schuh_id: e.target.value }))}
                       style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 14, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', cursor: 'pointer' }}>
                       <option value="">Kein Schuh ausgewählt</option>
