@@ -5,7 +5,6 @@ import PhaseTimeline from './PhaseTimeline.jsx'
 import PhaseCards from './PhaseCards.jsx'
 import SplitAccordion from './SplitAccordion.jsx'
 import StoryShareModal from './StoryShareModal.jsx'
-import WeeklyAnalysis from './WeeklyAnalysis.jsx'
 
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
@@ -19,22 +18,10 @@ const WEEKDAY_ORDER = {
   so:6, sonntag:6, sunday:6, sun:6,
 }
 
-const weekdayIndex = value => {
-  const raw = String(value || '').trim().toLowerCase()
-  return WEEKDAY_ORDER[raw] ?? 99
-}
-
-// Nur die DARSTELLUNG wird chronologisch sortiert.
-// originalIndex bleibt erhalten, damit bestehende day_keys, Logs,
-// Überspringen und Analysen weiterhin exakt zum richtigen Training gehören.
-const sortedWeekDays = week =>
-  (week?.days || [])
-    .map((day, originalIndex) => ({ day, originalIndex }))
-    .sort((a, b) => {
-      const dayDiff = weekdayIndex(a.day?.tag) - weekdayIndex(b.day?.tag)
-      return dayDiff !== 0 ? dayDiff : a.originalIndex - b.originalIndex
-    })
-
+const weekdayIndex = value => WEEKDAY_ORDER[String(value || '').trim().toLowerCase()] ?? 99
+const sortedWeekDays = week => (week?.days || [])
+  .map((day, originalIndex) => ({ day, originalIndex }))
+  .sort((a,b) => weekdayIndex(a.day?.tag) - weekdayIndex(b.day?.tag) || a.originalIndex - b.originalIndex)
 
 const formatCyclingDuration = minutes => {
   const total = Number(minutes)
@@ -218,7 +205,7 @@ function findCurrentPhaseWeek(plan) {
   return { phaseIdx: 0, weekIdx: 0 }
 }
 
-export default function TrainingPlan({ plan, onReset, user, planId = null, openWeekAnalysis = null, onWeekAnalysisOpened }) {
+export default function TrainingPlan({ plan, onReset, user }) {
   const [activePhase, setActivePhase] = useState(() => findCurrentPhaseWeek(plan).phaseIdx)
   const [showPauseModal, setShowPauseModal] = useState(false)
   const [pauseWeeks, setPauseWeeks] = useState(1)
@@ -230,7 +217,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
   const [screenshots, setScreenshots] = useState({})
   const [schuhe, setSchuhe] = useState([])
   const [logModal, setLogModal] = useState(null)
-  const [logInput, setLogInput] = useState({ pace: '', km: '', bpm: '', note: '', schuh_id: '', hyrox_data: {} })
+  const [logInput, setLogInput] = useState({ pace: '', km: '', bpm: '', note: '', schuh_id: '', sport_data: {}, hyrox_data: {} })
   const [modalScreenshot, setModalScreenshot] = useState(null)
   const [modalPreview, setModalPreview] = useState(null)
   const [analyzing, setAnalyzing] = useState(false)
@@ -241,18 +228,8 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
   const [routeMapLoading, setRouteMapLoading] = useState(false)
   const [routeMapError, setRouteMapError] = useState(null)
   const [storyOpen, setStoryOpen] = useState(false)
-  const [weekAnalyses, setWeekAnalyses] = useState({})
-  const [analysisModal, setAnalysisModal] = useState(null)
   const [skipReasonInput, setSkipReasonInput] = useState('')
   const fileRef = useRef()
-
-  useEffect(() => {
-    if (openWeekAnalysis == null) return
-    const analysis = weekAnalyses[Number(openWeekAnalysis)]
-    if (!analysis) return
-    setAnalysisModal(analysis)
-    if (typeof onWeekAnalysisOpened === 'function') onWeekAnalysisOpened()
-  }, [openWeekAnalysis, weekAnalyses, onWeekAnalysisOpened])
 
   const phases = plan.phases || []
   const isHikingPlan = plan?.sport_type === 'hiking' || plan?.plan_type === 'hiking_march'
@@ -276,9 +253,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
         ? '/hero/swimming/03.webp'
         : isCyclingPlan
           ? '/hero/cycling/03.webp'
-          : isHyroxPlan
-            ? '/hero/running/easy/02.webp'
-            : '/hero/running/easy/02.webp'
+          : '/hero/running/easy/02.webp'
 
   const planSportLabel = isHikingPlan
     ? 'Marsch & Wandern'
@@ -384,6 +359,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                 kalorien: l.kalorien || '',
                 km_splits: parseJsonArray(l.km_splits),
                 run_segments: parseJsonArray(l.run_segments),
+                sport_data: l.sport_data && typeof l.sport_data === 'object' ? l.sport_data : {},
                 hyrox_data: l.hyrox_data && typeof l.hyrox_data === 'object' ? l.hyrox_data : {},
               }
             })
@@ -397,45 +373,6 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
         }
       } else {
         try { const l = await window.storage.get('laufplan_logs'); if (l) setLogs(JSON.parse(l.value)) } catch {}
-      }
-
-      // Wochenanalysen planfest laden. Neue Analysen tragen plan_id;
-      // ältere Analysen ohne plan_id werden nur übernommen, wenn week_start
-      // exakt zur Wochenposition dieses Plans passt.
-      if (user) {
-        try {
-          let analysisQuery = supabase
-            .from('week_analyses')
-            .select('id, plan_id, week_number, week_start, analysis, recommendation, next_week_adjustment, analysis_data')
-            .eq('user_id', user.id)
-            .order('week_start', { ascending: true })
-
-          if (planId) analysisQuery = analysisQuery.or(`plan_id.eq.${planId},plan_id.is.null`)
-
-          const { data: analysisRows } = await analysisQuery
-          const expectedStarts = {}
-          const planStart = new Date(`${String(plan.startDate || '').slice(0,10)}T12:00:00`)
-          let sequentialWeek = 0
-          for (const phase of plan.phases || []) {
-            for (const week of phase.weeks || []) {
-              const d = new Date(planStart)
-              d.setDate(d.getDate() + sequentialWeek * 7)
-              expectedStarts[week.n] = d.toISOString().slice(0,10)
-              sequentialWeek += 1
-            }
-          }
-
-          const analysisMap = {}
-          ;(analysisRows || []).forEach(row => {
-            const belongsToPlan = row.plan_id
-              ? row.plan_id === planId
-              : row.week_start === expectedStarts[row.week_number]
-            if (belongsToPlan) analysisMap[row.week_number] = row
-          })
-          setWeekAnalyses(analysisMap)
-        } catch (error) {
-          console.error('Wochenanalysen laden fehlgeschlagen:', error)
-        }
       }
 
       // Screenshots: zuerst aus Supabase, dann localStorage als Fallback
@@ -505,7 +442,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
       }
     }
     load()
-  }, [user, planId, plan])
+  }, [user])
 
   useEffect(() => {
     if (!detailModal) {
@@ -653,21 +590,25 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
 
   const openLog = (key, tag, einheit, day = null) => {
     const ex = logs[key] || {}
-    setLogInput({ pace: ex.pace || '', km: ex.km || '', bpm: ex.bpm || '', note: ex.note || '', schuh_id: ex.schuh_id || '', hyrox_data: ex.hyrox_data || {} })
+    setLogInput({
+      pace: ex.pace || '', km: ex.km || '', bpm: ex.bpm || '', note: ex.note || '', schuh_id: ex.schuh_id || '',
+      sport_data: ex.sport_data || {}, hyrox_data: ex.hyrox_data || {},
+    })
     setModalScreenshot(screenshots[key] || null)
     setModalPreview(screenshots[key] || null)
     setLogModal({ key, tag, einheit, day })
   }
 
-  const setHyroxField = (stationId, field, value) => {
-    setLogInput(prev => ({
-      ...prev,
-      hyrox_data: {
-        ...(prev.hyrox_data || {}),
-        [stationId]: { ...(prev.hyrox_data?.[stationId] || {}), [field]: value },
-      },
-    }))
-  }
+  const setSportField = (field, value) => setLogInput(prev => ({
+    ...prev, sport_data: { ...(prev.sport_data || {}), [field]: value }
+  }))
+
+  const setHyroxField = (stationId, field, value) => setLogInput(prev => ({
+    ...prev, hyrox_data: {
+      ...(prev.hyrox_data || {}),
+      [stationId]: { ...(prev.hyrox_data?.[stationId] || {}), [field]: value },
+    },
+  }))
 
   const HYROX_FIELD_META = {
     weight:{label:'Gewicht gesamt',placeholder:'z. B. 60',unit:'kg'},
@@ -678,6 +619,48 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
     time:{label:'Zeit',placeholder:'z. B. 2:15',unit:''},
     pace:{label:'Pace',placeholder:'z. B. 6:10',unit:'min/km'},
   }
+
+  const manualLogFields = isSwimmingPlan
+    ? [
+        {key:'swim_distance_m',label:'Distanz',placeholder:'z. B. 1800',unit:'m'},
+        {key:'duration',label:'Dauer',placeholder:'z. B. 45:00',unit:''},
+        {key:'swim_pace',label:'Ø Tempo',placeholder:'z. B. 2:15',unit:'min/100 m'},
+        {key:'bpm',label:'Ø Herzfrequenz',placeholder:'z. B. 128',unit:'bpm',root:true},
+        {key:'stroke_rate',label:'Schlagfrequenz',placeholder:'z. B. 28',unit:'/min'},
+        {key:'swolf',label:'SWOLF',placeholder:'z. B. 48',unit:''},
+      ]
+    : isCyclingPlan
+      ? [
+          {key:'km',label:'Distanz',placeholder:'z. B. 42,5',unit:'km',root:true},
+          {key:'duration',label:'Dauer',placeholder:'z. B. 1:45:00',unit:''},
+          {key:'avg_speed',label:'Ø Geschwindigkeit',placeholder:'z. B. 24,3',unit:'km/h'},
+          {key:'elevation',label:'Höhenmeter',placeholder:'z. B. 420',unit:'m'},
+          {key:'bpm',label:'Ø Herzfrequenz',placeholder:'z. B. 138',unit:'bpm',root:true},
+          {key:'cadence',label:'Ø Kadenz',placeholder:'z. B. 82',unit:'rpm'},
+        ]
+      : isMtbPlan
+        ? [
+            {key:'km',label:'Distanz',placeholder:'z. B. 28,4',unit:'km',root:true},
+            {key:'duration',label:'Dauer',placeholder:'z. B. 2:10:00',unit:''},
+            {key:'elevation',label:'Höhenmeter',placeholder:'z. B. 690',unit:'m'},
+            {key:'bpm',label:'Ø Herzfrequenz',placeholder:'z. B. 142',unit:'bpm',root:true},
+            {key:'avg_speed',label:'Ø Geschwindigkeit',placeholder:'z. B. 16,8',unit:'km/h'},
+            {key:'cadence',label:'Ø Kadenz',placeholder:'optional',unit:'rpm'},
+          ]
+        : isHikingPlan
+          ? [
+              {key:'km',label:'Distanz',placeholder:'z. B. 12,5',unit:'km',root:true},
+              {key:'duration',label:'Dauer',placeholder:'z. B. 2:35:00',unit:''},
+              {key:'elevation',label:'Höhenmeter',placeholder:'z. B. 280',unit:'m'},
+              {key:'pace',label:'Ø Pace',placeholder:'optional',unit:'min/km',root:true},
+              {key:'bpm',label:'Ø Herzfrequenz',placeholder:'optional',unit:'bpm',root:true},
+              {key:'backpack_kg',label:'Rucksackgewicht',placeholder:'optional',unit:'kg'},
+            ]
+          : [
+              {key:'pace',label:'Ø Pace',placeholder:'6:19',unit:'min/km',root:true},
+              {key:'km',label:'Distanz',placeholder:'14,2',unit:'km',root:true},
+              {key:'bpm',label:'Ø Herzfrequenz',placeholder:'158',unit:'bpm',root:true},
+            ]
 
   const handleFileChange = async (e) => {
     const file = e.target.files[0]
@@ -743,7 +726,8 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
           bpm: logInput.bpm || null,
           note: logInput.note || null,
           schuh_id: logInput.schuh_id || null,
-          hyrox_data: isHyroxPlan ? (logInput.hyrox_data || {}) : null,
+          sport_data: logInput.sport_data || {},
+          hyrox_data: isHyroxPlan ? (logInput.hyrox_data || {}) : {},
         }, { onConflict: 'user_id,day_key' })
       } catch (e) { console.error('Log Supabase Fehler:', e) }
     }
@@ -857,7 +841,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
               <input ref={fileRef} type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'none' }} />
             </div>
 
-            {isHyroxPlan && logModal.day?.hyrox_log?.stations?.length > 0 && (
+            {isHyroxPlan && logModal.day?.hyrox_log?.stations?.length > 0 ? (
               <div style={{display:'grid',gap:10,marginBottom:14}}>
                 <div style={{fontSize:11,fontWeight:900,color:'#8B6B5A',fontFamily:'sans-serif'}}>HYROX · Einheit dokumentieren</div>
                 {logModal.day.hyrox_log.stations.map(station => {
@@ -871,50 +855,59 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                         {(station.fields || []).filter(field => HYROX_FIELD_META[field]).map(field => {
                           const meta = HYROX_FIELD_META[field]
                           return <label key={field} style={{fontFamily:'sans-serif',fontSize:9.5,fontWeight:800,color:'#A88F7E'}}>{meta.label}
-                            <div style={{position:'relative',marginTop:4}}><input value={values[field] || ''} onChange={e=>setHyroxField(station.id,field,e.target.value)} placeholder={meta.placeholder} style={{width:'100%',boxSizing:'border-box',padding:'9px 10px',paddingRight:meta.unit?42:10,borderRadius:10,border:'1px solid #EADDD5',background:'white',fontSize:12}}/>{meta.unit&&<span style={{position:'absolute',right:9,top:10,fontSize:9,color:'#B8A090'}}>{meta.unit}</span>}</div>
+                            <div style={{position:'relative',marginTop:4}}>
+                              <input value={values[field] || ''} onChange={e=>setHyroxField(station.id,field,e.target.value)} placeholder={meta.placeholder}
+                                style={{width:'100%',boxSizing:'border-box',padding:'9px 10px',paddingRight:meta.unit?48:10,borderRadius:10,border:'1px solid #EADDD5',background:'white',fontSize:12}} />
+                              {meta.unit && <span style={{position:'absolute',right:9,top:10,fontSize:9,color:'#B8A090'}}>{meta.unit}</span>}
+                            </div>
                           </label>
                         })}
                       </div>
-                      {(station.fields || []).includes('effort') && <div style={{marginTop:9}}><div style={{fontFamily:'sans-serif',fontSize:9.5,fontWeight:800,color:'#A88F7E',marginBottom:5}}>Belastung</div><div style={{display:'flex',gap:5,flexWrap:'wrap'}}>{choices.map(choice=><button type="button" key={choice} onClick={()=>setHyroxField(station.id,'effort',choice)} style={{border:`1px solid ${values.effort===choice?'#FF8C69':'#EADDD5'}`,background:values.effort===choice?'#FFF0E8':'white',color:values.effort===choice?'#C65E43':'#8B776A',borderRadius:99,padding:'5px 8px',fontSize:9.5,fontWeight:800}}>{choice}</button>)}</div></div>}
-                      {(station.fields || []).includes('technique') && <div style={{marginTop:8}}><div style={{fontFamily:'sans-serif',fontSize:9.5,fontWeight:800,color:'#A88F7E',marginBottom:5}}>Technik</div><div style={{display:'flex',gap:5,flexWrap:'wrap'}}>{techniqueChoices.map(choice=><button type="button" key={choice} onClick={()=>setHyroxField(station.id,'technique',choice)} style={{border:`1px solid ${values.technique===choice?'#5BA88A':'#EADDD5'}`,background:values.technique===choice?'#EEF8F3':'white',color:values.technique===choice?'#3D8B6E':'#8B776A',borderRadius:99,padding:'5px 8px',fontSize:9.5,fontWeight:800}}>{choice}</button>)}</div></div>}
+                      {(station.fields || []).includes('effort') && <div style={{marginTop:9}}>
+                        <div style={{fontFamily:'sans-serif',fontSize:9.5,fontWeight:800,color:'#A88F7E',marginBottom:5}}>Wie war die Belastung?</div>
+                        <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>{choices.map(choice=><button type="button" key={choice} onClick={()=>setHyroxField(station.id,'effort',choice)} style={{border:`1px solid ${values.effort===choice?'#FF8C69':'#EADDD5'}`,background:values.effort===choice?'#FFF0E8':'white',color:values.effort===choice?'#C65E43':'#8B776A',borderRadius:99,padding:'5px 8px',fontSize:9.5,fontWeight:800}}>{choice}</button>)}</div>
+                      </div>}
+                      {(station.fields || []).includes('technique') && <div style={{marginTop:8}}>
+                        <div style={{fontFamily:'sans-serif',fontSize:9.5,fontWeight:800,color:'#A88F7E',marginBottom:5}}>Wie sauber war die Technik?</div>
+                        <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>{techniqueChoices.map(choice=><button type="button" key={choice} onClick={()=>setHyroxField(station.id,'technique',choice)} style={{border:`1px solid ${values.technique===choice?'#5BA88A':'#EADDD5'}`,background:values.technique===choice?'#EEF8F3':'white',color:values.technique===choice?'#3D8B6E':'#8B776A',borderRadius:99,padding:'5px 8px',fontSize:9.5,fontWeight:800}}>{choice}</button>)}</div>
+                      </div>}
                     </div>
                   )
                 })}
               </div>
-            )}
-
-            {/* Standard-Felder für Lauf/andere Sportarten bzw. HYROX-Laufeinheiten */}
-            {(!isHyroxPlan || !logModal.day?.hyrox_log?.stations?.length) && <>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-              {[{ key: 'pace', label: 'Ø Pace', placeholder: '6:19 min/km' }, { key: 'km', label: 'Distanz', placeholder: '14,2 km' }].map(f => (
-                <div key={f.key}>
-                  <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>{f.label}</label>
-                  <input value={logInput[f.key]} onChange={e => setLogInput(p => ({ ...p, [f.key]: e.target.value }))} placeholder={f.placeholder}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 14, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif' }} />
+            ) : (
+              <>
+                <div style={{fontSize:11,fontWeight:900,color:'#8B6B5A',fontFamily:'sans-serif',marginBottom:10}}>
+                  {isSwimmingPlan ? 'Schwimmen dokumentieren' : isCyclingPlan ? 'Radtour dokumentieren' : isMtbPlan ? 'MTB-Einheit dokumentieren' : isHikingPlan ? 'Marsch / Wanderung dokumentieren' : isHyroxPlan ? 'HYROX-Laufeinheit dokumentieren' : 'Lauf dokumentieren'}
                 </div>
-              ))}
-            </div>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:10,marginBottom:10}}>
+                  {manualLogFields.map(field => {
+                    const value = field.root ? (logInput[field.key] || '') : (logInput.sport_data?.[field.key] || '')
+                    const change = value => field.root
+                      ? setLogInput(prev => ({...prev,[field.key]:value}))
+                      : setSportField(field.key,value)
+                    return <label key={field.key} style={{fontSize:10,fontWeight:'bold',color:'#B8A090',textTransform:'uppercase',letterSpacing:.6,fontFamily:'sans-serif'}}>
+                      {field.label}
+                      <div style={{position:'relative',marginTop:4}}>
+                        <input value={value} onChange={e=>change(e.target.value)} placeholder={field.placeholder}
+                          style={{width:'100%',padding:'10px 12px',paddingRight:field.unit?58:12,borderRadius:12,border:'1.5px solid #F0E8E0',fontSize:14,color:'#3D2B1F',outline:'none',boxSizing:'border-box',background:'#FFF8F5',fontFamily:'sans-serif'}} />
+                        {field.unit && <span style={{position:'absolute',right:10,top:11,fontSize:9,color:'#B8A090',fontFamily:'sans-serif'}}>{field.unit}</span>}
+                      </div>
+                    </label>
+                  })}
+                </div>
 
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>Ø Herzfrequenz</label>
-              <input value={logInput.bpm} onChange={e => setLogInput(p => ({ ...p, bpm: e.target.value }))} placeholder="158 bpm"
-                style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 14, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif' }} />
-            </div>
-
-            </>}
-
-            {/* Schuh-Auswahl */}
-            {schuhe.length > 0 && (!isHyroxPlan || !logModal.day?.hyrox_log?.stations?.length) && (
-              <div style={{ marginBottom: 10 }}>
-                <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>Laufschuhe</label>
-                <select value={logInput.schuh_id} onChange={e => setLogInput(p => ({ ...p, schuh_id: e.target.value }))}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 14, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', cursor: 'pointer' }}>
-                  <option value="">Kein Schuh ausgewählt</option>
-                  {schuhe.map(s => (
-                    <option key={s.id} value={s.id}>{s.marke} {s.modell} ({Math.round(s.start_km || 0)} km)</option>
-                  ))}
-                </select>
-              </div>
+                {schuhe.length > 0 && (isRunningPlan || (isHyroxPlan && /run|lauf/i.test(logModal.einheit || ''))) && (
+                  <div style={{ marginBottom: 10 }}>
+                    <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>Laufschuhe</label>
+                    <select value={logInput.schuh_id} onChange={e => setLogInput(p => ({ ...p, schuh_id: e.target.value }))}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 14, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', cursor: 'pointer' }}>
+                      <option value="">Kein Schuh ausgewählt</option>
+                      {schuhe.map(s => <option key={s.id} value={s.id}>{s.marke} {s.modell} ({Math.round(s.start_km || 0)} km)</option>)}
+                    </select>
+                  </div>
+                )}
+              </>
             )}
 
             <div style={{ marginBottom: 20 }}>
@@ -1119,14 +1112,6 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
         logoSrc="/route-icon.png"
       />
 
-      {analysisModal && (
-        <WeeklyAnalysis
-          analysis={analysisModal}
-          weekNumber={analysisModal.week_number}
-          onClose={() => setAnalysisModal(null)}
-        />
-      )}
-
       {/* Einheitlicher Trainingsplan-Hero */}
       <div style={{ position:'relative', overflow:'hidden', minHeight:300, boxShadow:'0 8px 32px rgba(55,45,35,.18)' }}>
         <div
@@ -1295,7 +1280,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
             const phaseColor = phase.accent || phaseTabColors[activePhase] || '#FF8C69'
             const weekKm = (isCyclingPlan || isMtbPlan || isSwimmingPlan || isHyroxPlan) ? 0 : estimateWeekKm(week)
             const weekMinutes = isHyroxPlan ? week.days.filter(d => !d.optional).reduce((sum,d) => sum + (Number(d.durationMinutes) || 0), 0) : 0
-            const weekRunKm = isHyroxPlan ? week.days.filter(d => !d.optional).reduce((sum,d) => sum + estimateDayKm(d.details), 0) : 0
+            const weekRunKm = isHyroxPlan ? week.days.filter(d => !d.optional).reduce((sum,d) => sum + (/run|lauf/i.test(`${d.einheit || ''} ${d.details || ''}`) ? estimateDayKm(d.details) : 0), 0) : 0
 
             return (
               <div key={week.n} style={{ background: 'white', borderRadius: 20, marginBottom: 12, overflow: 'hidden', boxShadow: isOpen ? '0 8px 32px rgba(255,140,105,0.15)' : '0 2px 12px rgba(0,0,0,0.06)', border: isOpen ? '2px solid #FFD4C0' : '2px solid transparent', transition: 'all 0.3s ease' }}>
@@ -1309,8 +1294,8 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                       <span style={{ fontWeight: 'bold', color: '#3D2B1F', fontSize: 15 }}>Woche {week.n}</span>
                       {week.regen && <span style={{ fontSize: 10, color: '#B8A090', background: '#F5EDE8', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>Regeneration</span>}
                       {week.race && <span style={{ fontSize: 10, color: '#A78BCA', background: '#F5F0FF', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>Rennwoche 🏁</span>}
-                      {isHyroxPlan && <span style={{ fontSize: 10, color: '#FF8C69', background: '#FFF5EE', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif', border: '1px solid #FFE0CC' }}>{weekTotal} Einheiten · ~{weekMinutes} Min{weekRunKm > 0 ? ` · ~${Math.round(weekRunKm)} km Laufanteil` : ''}</span>}
                       {weekKm > 0 && <span style={{ fontSize: 10, color: '#FF8C69', background: '#FFF5EE', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif', border: '1px solid #FFE0CC' }}>ca. {Math.round(weekKm)} km</span>}
+                      {isHyroxPlan && <span style={{ fontSize: 10, color: '#FF8C69', background: '#FFF5EE', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif', border: '1px solid #FFE0CC' }}>{weekTotal} Einheiten · ~{weekMinutes} Min{weekRunKm > 0 ? ` · ~${Math.round(weekRunKm)} km Laufanteil` : ''}</span>}
                     </div>
                     <div style={{ color: '#B8A090', fontSize: 11, fontFamily: 'sans-serif', marginTop: 2 }}>{week.dateRange} · {weekDone}/{weekTotal} erledigt</div>
                   </div>
@@ -1319,8 +1304,8 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
 
                 {isOpen && (
                   <div style={{ padding: '0 16px 16px' }}>
-                    {sortedWeekDays(week).map(({ day, originalIndex }) => {
-                      const key = dayKey(phase.id, week.n, originalIndex)
+                    {sortedWeekDays(week).map(({ day, originalIndex: di }) => {
+                      const key = dayKey(phase.id, week.n, di)
                       const isDone = !!done[key]
                       const hasLog = !!logs[key]
                       const hasShot = !!screenshots[key]
@@ -1430,7 +1415,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                             {isSwimmingPlan && (
                               <div style={{marginTop:8,display:'grid',gap:7,fontFamily:'sans-serif'}}>
                                 <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                                  {(day.durationRange || day.durationMinutes) && <span style={{fontSize:9.5,background:'#EDF7F7',color:'#4F8580',padding:'3px 8px',borderRadius:99,fontWeight:800,border:'1px solid #D5E9E7'}}>⏱ {isSwimmingPlan && day.durationRange ? day.durationRange : `${day.durationMinutes} Min`}</span>}
+                                  {day.durationMinutes && <span style={{fontSize:9.5,background:'#EDF7F7',color:'#4F8580',padding:'3px 8px',borderRadius:99,fontWeight:800,border:'1px solid #D5E9E7'}}>⏱ {day.durationMinutes} Min</span>}
                                   {day.totalDistanceM && <span style={{fontSize:9.5,background:'#EEF3FA',color:'#58738F',padding:'3px 8px',borderRadius:99,fontWeight:800,border:'1px solid #DCE5F0'}}>🏊 {Number(day.totalDistanceM).toLocaleString('de-DE')} m gesamt</span>}
                                    {day.targetSegmentM && <span style={{fontSize:9.5,background:'#FFF5EE',color:'#A46C43',padding:'3px 8px',borderRadius:99,fontWeight:800,border:'1px solid #F1DDCC'}}>🎯 {Number(day.targetSegmentM).toLocaleString('de-DE')} m am Stück</span>}
                                   {day.intensity && <span style={{fontSize:9.5,background:'#F5F2FA',color:'#6F6384',padding:'3px 8px',borderRadius:99,fontWeight:800,border:'1px solid #E2DAEC'}}>{day.intensity}</span>}
@@ -1488,8 +1473,11 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                                 {logs[key]?.bpm && <span style={{ fontSize: 10, background: '#FDECEA', color: '#B85464', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>❤️ {logs[key].bpm}</span>}
                                 {logs[key]?.running_index && <span style={{ fontSize: 10, background: '#F5F0FF', color: '#A78BCA', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>🏃 RI {logs[key].running_index}</span>}
                                 {logs[key]?.cadence && <span style={{ fontSize: 10, background: '#E8F5EF', color: '#3D8B6E', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>👣 {logs[key].cadence} spm</span>}
-                                {loggedSchuh && <span style={{ fontSize: 10, background: '#FFF5EE', color: '#C17A3A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>👟 {loggedSchuh.marke} {loggedSchuh.modell}</span>}
+                                {logs[key]?.sport_data?.duration && <span style={{ fontSize: 10, background: '#EEF3FA', color: '#58738F', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>⏱ {logs[key].sport_data.duration}</span>}
+                                {logs[key]?.sport_data?.elevation && <span style={{ fontSize: 10, background: '#F2F7F1', color: '#61745F', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>⛰ {logs[key].sport_data.elevation} m</span>}
+                                {logs[key]?.sport_data?.swim_distance_m && <span style={{ fontSize: 10, background: '#EDF7F7', color: '#4F8580', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>🏊 {logs[key].sport_data.swim_distance_m} m</span>}
                                 {isHyroxPlan && logs[key]?.hyrox_data && Object.keys(logs[key].hyrox_data).length > 0 && <span style={{ fontSize: 10, background: '#EEF8F3', color: '#3D8B6E', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>🏋️ HYROX-Daten</span>}
+                                {loggedSchuh && <span style={{ fontSize: 10, background: '#FFF5EE', color: '#C17A3A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>👟 {loggedSchuh.marke} {loggedSchuh.modell}</span>}
                                 {logs[key]?.note && <span style={{ fontSize: 10, background: '#F5EDE8', color: '#8B6B5A', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>💬 {logs[key].note.slice(0, 30)}{logs[key].note.length > 30 ? '…' : ''}</span>}
                                 <button onClick={() => setDetailModal({ key, tag: day.tag, einheit: day.einheit })} style={{ fontSize: 10, background: 'none', border: 'none', color: '#B8A090', fontWeight: 'bold', fontFamily: 'sans-serif', cursor: 'pointer', textDecoration: 'underline', padding: '2px 4px' }}>
                                   Details →
@@ -1519,28 +1507,6 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                         </div>
                       )
                     })}
-
-                    {weekAnalyses[week.n] && (
-                      <button
-                        type="button"
-                        onClick={() => setAnalysisModal(weekAnalyses[week.n])}
-                        style={{
-                          width:'100%', marginTop:10, padding:'12px 13px', borderRadius:14,
-                          border:'1.5px solid #DDE9E2', background:'linear-gradient(135deg,#F3FBF7,#FFF8F1)',
-                          color:'#527E67', fontSize:11, fontWeight:'bold', fontFamily:'sans-serif',
-                          cursor:'pointer', textAlign:'left', display:'flex', alignItems:'center',
-                          justifyContent:'space-between', gap:10
-                        }}
-                      >
-                        <span>
-                          📊 Coach-Rückblick ansehen
-                          {weekAnalyses[week.n]?.analysis_data?.coach?.nextWeekFocus?.title
-                            ? ` · Nächster Fokus: ${weekAnalyses[week.n].analysis_data.coach.nextWeekFocus.title}`
-                            : ''}
-                        </span>
-                        <span style={{color:'#94AA9D'}}>→</span>
-                      </button>
-                    )}
                   </div>
                 )}
               </div>
