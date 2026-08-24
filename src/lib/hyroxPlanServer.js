@@ -100,219 +100,233 @@ const phaseMeta = id => ({
   taper:{ label:'Taper', sub:'Frische & Schärfe', icon:'✨', description:'Umfang reduzieren, Race-Gefühl erhalten und erholt starten.', accent:'#8B7BAA' },
 }[id])
 
-const effortHint = `Beim Loggen: „Wie war das Gewicht?“ → Zu leicht · Leicht · Passend · Schwer · Zu schwer. Ziel ist meist „Passend“: fordernd, aber technisch sauber.`
+const effortHint = `Beim Loggen: „Wie war das Gewicht?“ → Zu leicht · Leicht · Passend · Schwer · Zu schwer. Zusätzlich: „Wie sauber war die Technik?“ → Sicher · Etwas unsicher · Technik schwierig.`
 
 const stationAlternative = (input, station) => {
-  if (station === 'sled' && !has(input,'sled')) return 'Kein Sled vorhanden: 4×10 schwere Step-ups je Bein + 4×12 Cable/Band Rows als Ersatz.'
-  if (station === 'farmers' && !has(input,'kettlebells')) return 'Kein passendes Carry-Gewicht vorhanden: schweres Tragen mit verfügbaren Kurzhanteln/Gewichten.'
-  if (station === 'lunges' && !has(input,'sandbag')) return 'Kein Sandbag vorhanden: Walking Lunges mit Kurzhanteln/Kettlebells.'
-  if (station === 'wall' && !has(input,'wallBall')) return 'Kein Wall Ball vorhanden: Thruster mit leichtem Gewicht, gleiche Wiederholungsstruktur.'
-  if (station === 'ski' && !has(input,'skiErg')) return has(input,'rower') ? 'SkiErg ersetzen durch Rower mit gleicher Arbeitszeit.' : 'SkiErg ersetzen durch 4×2 Min zügiges Ergometer/Bike.'
-  if (station === 'row' && !has(input,'rower')) return has(input,'skiErg') ? 'Rower ersetzen durch SkiErg mit gleicher Arbeitszeit.' : 'Rower ersetzen durch 4×2 Min zügiges Ergometer/Bike.'
+  if (station === 'sled' && !has(input,'sled')) return 'Kein Sled: schwere Step-ups + Zugübung als Ersatz'
+  if (station === 'farmers' && !has(input,'kettlebells')) return 'Farmers Carry mit verfügbaren Kurzhanteln/Gewichten'
+  if (station === 'lunges' && !has(input,'sandbag')) return 'Walking Lunges mit Kurzhanteln/Kettlebells'
+  if (station === 'wall' && !has(input,'wallBall')) return 'Thruster mit leichtem Gewicht'
+  if (station === 'ski' && !has(input,'skiErg')) return has(input,'rower') ? 'Rower mit gleicher Arbeitszeit' : 'Ergometer/Bike'
+  if (station === 'row' && !has(input,'rower')) return has(input,'skiErg') ? 'SkiErg mit gleicher Arbeitszeit' : 'Ergometer/Bike'
   return ''
 }
 
-const calibrationText = (input,race) => {
-  const known = input.stationBaselines
-  const push = known.sledPushKg || roundLoad(race.sledPush*.6)
-  const pull = known.sledPullKg || roundLoad(race.sledPull*.6)
-  const farmers = known.farmersKgEach || roundLoad(race.farmersEach*.7)
-  const lunges = known.lungesKg || roundLoad(race.lunges*.7)
-  const wall = known.wallBallKg || race.wallBall
-
-  return `Kalibrierung ohne Maximaltest: Sled Push 4×12,5 m @ ca. ${push} kg gesamt; Sled Pull 4×12,5 m @ ca. ${pull} kg gesamt; Farmers Carry 3×50 m @ ca. ${farmers} kg je Hand; Sandbag Lunges 3×20 m @ ca. ${lunges} kg; Wall Balls 4×10 @ ca. ${wall} kg. Zwischen den Blöcken 90–120 s Pause. Wenn die Technik kippt, Gewicht reduzieren. ${effortHint}`
+const runningProfile = input => {
+  const km = input.currentWeeklyKm || 0
+  const level = input.level
+  if (km < 10 || level === 'beginner') return 'needs_run_base'
+  if (km >= 25) return 'run_established'
+  return 'balanced'
 }
 
-const strengthText = (input,week,totalWeeks,phaseId,race) => {
+const isHyroxBeginner = input =>
+  input.hyroxExperience === 'none' || input.level === 'beginner'
+
+const startsFor = (input,race) => ({
+  push:startLoad(input.stationBaselines.sledPushKg,.58,race.sledPush),
+  pull:startLoad(input.stationBaselines.sledPullKg,.58,race.sledPull),
+  farmers:startLoad(input.stationBaselines.farmersKgEach,.65,race.farmersEach),
+  lunges:startLoad(input.stationBaselines.lungesKg,.65,race.lunges),
+  wall:input.stationBaselines.wallBallKg || race.wallBall,
+})
+
+const currentLoads = (input,race,week,totalWeeks,phaseId) => {
+  const s = startsFor(input,race)
   const taper = phaseId === 'taper'
-  const starts = {
-    push:startLoad(input.stationBaselines.sledPushKg,.62,race.sledPush),
-    pull:startLoad(input.stationBaselines.sledPullKg,.62,race.sledPull),
-    farmers:startLoad(input.stationBaselines.farmersKgEach,.7,race.farmersEach),
-    lunges:startLoad(input.stationBaselines.lungesKg,.7,race.lunges),
+  return {
+    push:loadAtWeek({start:s.push,race:race.sledPush,week,totalWeeks,taper}),
+    pull:loadAtWeek({start:s.pull,race:race.sledPull,week,totalWeeks,taper}),
+    farmers:loadAtWeek({start:s.farmers,race:race.farmersEach,week,totalWeeks,taper}),
+    lunges:loadAtWeek({start:s.lunges,race:race.lunges,week,totalWeeks,taper}),
+    wall:Math.min(race.wallBall,s.wall),
   }
-  const push = loadAtWeek({start:starts.push,race:race.sledPush,week,totalWeeks,taper})
-  const pull = loadAtWeek({start:starts.pull,race:race.sledPull,week,totalWeeks,taper})
-  const farmers = loadAtWeek({start:starts.farmers,race:race.farmersEach,week,totalWeeks,taper})
-  const lunges = loadAtWeek({start:starts.lunges,race:race.lunges,week,totalWeeks,taper})
+}
+
+const calibrationA = (input,race) => {
+  const l = startsFor(input,race)
+  return `Kalibrierung A · Zug, Druck & Tragen. Kein Maximaltest. 10 Min Technik-Warm-up. ` +
+    (has(input,'sled')
+      ? `Sled Push: 3×12,5 m @ ca. ${l.push} kg gesamt. Sled Pull: 3×12,5 m @ ca. ${l.pull} kg gesamt. `
+      : `${stationAlternative(input,'sled')}: 3 kontrollierte Runden. `) +
+    (has(input,'kettlebells')
+      ? `Farmers Carry: 3×40 m @ ca. ${l.farmers} kg je Hand. `
+      : `${stationAlternative(input,'farmers')}: 3×40 m. `) +
+    `90–120 s Pause. Nicht bis zum Versagen. ${effortHint}`
+}
+
+const calibrationB = (input,race) => {
+  const l = startsFor(input,race)
+  const ski = has(input,'skiErg') ? '3×250 m SkiErg locker bis moderat' : `3×75 s ${stationAlternative(input,'ski')}`
+  const row = has(input,'rower') ? '3×250 m Row locker bis moderat' : `3×75 s ${stationAlternative(input,'row')}`
+  const lunges = has(input,'sandbag') ? `3×10 m Sandbag Lunges @ ca. ${l.lunges} kg` : `3×10 m ${stationAlternative(input,'lunges')}`
+  const wall = has(input,'wallBall') ? `3×8 Wall Balls @ ${l.wall} kg` : `3×8 ${stationAlternative(input,'wall')}`
+  return `Kalibrierung B · Technik & Rhythmus. ${ski}; ${row}; ${lunges}; ${wall}. 60–90 s Pause. Ziel: sichere Bewegung und ein reproduzierbarer Ausgangswert, nicht Erschöpfung. ${effortHint}`
+}
+
+const easyRun = (input,week,phaseId) => {
+  const base = runningProfile(input) === 'needs_run_base' ? 32 : 40
+  const mins = phaseId === 'taper' ? 30 : Math.min(55, base + week * 2)
+  return `${mins} Min lockerer Lauf im Gesprächstempo. Danach 8–10 Min Mobility für Sprunggelenk, Hüfte und Brustwirbelsäule.`
+}
+
+const runQuality = (input,week,phaseId) => {
+  const beginner = isHyroxBeginner(input)
+  const variants = phaseId === 'basis'
+    ? (beginner
+      ? ['6×2 Min kontrolliert zügig / 2 Min locker','6×400 m zügig / 200 m locker','5×500 m kontrolliert / 2 Min locker']
+      : ['6×400 m / 200 m locker','5×600 m / 2 Min locker','4×800 m / 2–3 Min locker'])
+    : phaseId === 'aufbau'
+      ? ['5×600 m / 2 Min locker','4×800 m / 2 Min locker','4×1000 m / 2–3 Min locker']
+      : ['4×1000 m kontrolliert / 2 Min locker','3×1200 m kontrolliert / 3 Min locker','5×800 m etwas flotter / 2 Min locker']
+  return `12–15 Min einlaufen + Lauf-ABC. ${variants[(week-1)%variants.length]}. Danach 8–10 Min auslaufen. Kontrolliert, nicht all-out.`
+}
+
+const strengthSession = (input,week,totalWeeks,phaseId,race,variant=0) => {
+  const l = currentLoads(input,race,week,totalWeeks,phaseId)
   const sets = phaseId === 'basis' ? 3 : phaseId === 'aufbau' ? 4 : phaseId === 'spezifisch' ? 3 : 2
 
-  const sledAlt = stationAlternative(input,'sled')
-  const farmersAlt = stationAlternative(input,'farmers')
-  const lungesAlt = stationAlternative(input,'lunges')
-
-  return `Kraftblock: Goblet/Front Squat ${sets}×8, Romanian Deadlift ${sets}×8, Split Squat ${sets}×8 je Bein. ` +
-    (has(input,'sled')
-      ? `Danach Sled Push ${sets}×12,5–25 m @ ca. ${push} kg gesamt + Sled Pull ${sets}×12,5–25 m @ ca. ${pull} kg gesamt. `
-      : `${sledAlt} `) +
-    (has(input,'kettlebells')
-      ? `Farmers Carry ${sets}×50 m @ ca. ${farmers} kg je Hand. `
-      : `${farmersAlt} `) +
-    (has(input,'sandbag')
-      ? `Sandbag Lunges ${sets}×20 m @ ca. ${lunges} kg. `
-      : `${lungesAlt} `) +
-    `90–120 s Satzpause. ${effortHint}`
-}
-
-const stationSkillText = (input,week,phaseId,race) => {
-  const wallStart = input.stationBaselines.wallBallKg || race.wallBall
-  const wall = Math.min(race.wallBall, wallStart)
-  const reps = phaseId === 'basis' ? '5×10' : phaseId === 'aufbau' ? '4×15' : '4×20'
-  const erg = phaseId === 'basis' ? 500 : phaseId === 'aufbau' ? 750 : 1000
-  const ski = has(input,'skiErg') ? `${erg} m SkiErg` : stationAlternative(input,'ski')
-  const row = has(input,'rower') ? `${erg} m Row` : stationAlternative(input,'row')
-  const wallText = has(input,'wallBall') ? `Wall Balls ${reps} @ ${wall} kg` : stationAlternative(input,'wall')
-  return `${ski}; Burpee Broad Jumps ${phaseId === 'basis' ? '4×10 m' : '4×15–20 m'}; ${row}; ${wallText}. 60–90 s Pause zwischen Technikblöcken. Ziel: gleichmäßige Wiederholungen statt Erschöpfung.`
-}
-
-const runIntervalsText = (week,phaseId) => {
-  const variants = phaseId === 'basis'
-    ? [
-        '6×400 m zügig, 200 m locker traben',
-        '5×600 m kontrolliert zügig, 2 Min locker',
-        '4×800 m zügig, 2–3 Min locker',
-      ]
-    : phaseId === 'aufbau'
-      ? [
-          '5×800 m zügig, 2 Min locker',
-          '4×1000 m kontrolliert, 2–3 Min locker',
-          '3×1200 m knapp unter 10-km-Anstrengung, 3 Min locker',
-        ]
-      : [
-          '5×1000 m im angestrebten HYROX-Laufrhythmus, 2 Min locker',
-          '4×1000 m im HYROX-Rhythmus + je 10 Wall Balls danach',
-          '3×(1000 m + 500 m Erg), 3 Min Serienpause',
-        ]
-  const item = variants[(week-1)%variants.length]
-  return `15 Min einlaufen + Lauf-ABC. ${item}. Danach 10 Min auslaufen. Die schnellen Abschnitte sollen kontrolliert bleiben, nicht all-out.`
-}
-
-const hybridText = (input,week,phaseId,race) => {
-  const rounds = phaseId === 'basis' ? 3 : phaseId === 'aufbau' ? 4 : phaseId === 'spezifisch' ? 4 : 2
-  const run = phaseId === 'basis' ? 600 : phaseId === 'aufbau' ? 800 : 1000
-  const rotation = week % 3
-  if (rotation === 1) {
-    return `${rounds} Runden: ${run} m Run + ${has(input,'skiErg') ? '500 m SkiErg' : stationAlternative(input,'ski')} + 10–15 Wall Balls. 2 Min Serienpause. Fokus: nach der Station ruhig in den Lauf finden.`
+  if (variant % 3 === 0) {
+    return `Kraft & Sled · ${sets} Runden Kraftblock: Goblet/Front Squat ${sets}×8; Romanian Deadlift ${sets}×8; Split Squat ${sets}×8 je Bein. ` +
+      (has(input,'sled') ? `Sled Push ${sets}×12,5–25 m @ ca. ${l.push} kg; Sled Pull ${sets}×12,5–25 m @ ca. ${l.pull} kg. ` : `${stationAlternative(input,'sled')}. `) +
+      `90–120 s Pause. ${effortHint}`
   }
-  if (rotation === 2) {
-    return `${rounds} Runden: ${run} m Run + ${has(input,'rower') ? '500 m Row' : stationAlternative(input,'row')} + 20 m Sandbag Lunges. 2 Min Serienpause. Gleichmäßiges Pacing.`
+  if (variant % 3 === 1) {
+    return `Kraftausdauer & Carry · ${sets} Runden: 8 Deadlifts; 8 Step-ups je Bein; ` +
+      (has(input,'kettlebells') ? `50 m Farmers Carry @ ca. ${l.farmers} kg je Hand; ` : `${stationAlternative(input,'farmers')}; `) +
+      (has(input,'sandbag') ? `20 m Sandbag Lunges @ ca. ${l.lunges} kg. ` : `${stationAlternative(input,'lunges')}. `) +
+      `Zwischen den Runden 90 s Pause. Gewicht nur steigern, wenn die Technik sicher bleibt.`
   }
-  return `${rounds} Runden: ${run} m Run + 20 m Burpee Broad Jumps + 50 m Farmers Carry. 2 Min Serienpause. Technik auch unter Vorermüdung sauber halten.`
+  return `Race-Load Technik · ${sets} kontrollierte Blöcke: ` +
+    (has(input,'sled') ? `25 m Sled Push @ ca. ${l.push} kg + 25 m Sled Pull @ ca. ${l.pull} kg; ` : `${stationAlternative(input,'sled')}; `) +
+    (has(input,'kettlebells') ? `50 m Farmers Carry @ ca. ${l.farmers} kg je Hand; ` : `${stationAlternative(input,'farmers')}; `) +
+    (has(input,'sandbag') ? `20 m Lunges @ ca. ${l.lunges} kg. ` : `${stationAlternative(input,'lunges')}. `) +
+    `2 Min Blockpause. Heute Qualität vor Tempo.`
 }
 
-const simulationText = (input,week,totalWeeks,race) => {
-  const fraction = week >= totalWeeks-2 ? .7 : .55
+const skillSession = (input,week,phaseId,race,variant=0) => {
+  const l = currentLoads(input,race,week,Math.max(8,week+4),phaseId)
+  const beginner = isHyroxBeginner(input)
+
+  if (phaseId === 'basis' && beginner) {
+    const templates = [
+      `Learn & Build · 3 Runden, 2 Min Pause: ${has(input,'skiErg')?'200–250 m SkiErg':`60–75 s ${stationAlternative(input,'ski')}`}; 6–8 Burpee Broad Jumps; ${has(input,'wallBall')?`8 Wall Balls @ ${l.wall} kg`:`8 ${stationAlternative(input,'wall')}`}. Alles ruhig und technisch sauber.`,
+      `Stationszirkel · 3 Runden, 90 s Pause: ${has(input,'rower')?'250 m Row':`75 s ${stationAlternative(input,'row')}`}; ${has(input,'kettlebells')?`30 m Farmers Carry @ ${l.farmers} kg je Hand`:stationAlternative(input,'farmers')}; ${has(input,'sandbag')?`10 m Lunges @ ${l.lunges} kg`:stationAlternative(input,'lunges')}; 6 Wall Balls/Thruster.`,
+      `Skill Session · 4 Technikblöcke: 4×6 Burpee Broad Jumps; ${has(input,'skiErg')?'4×90 s SkiErg':`4×90 s ${stationAlternative(input,'ski')}`}; ${has(input,'wallBall')?`4×8 Wall Balls @ ${l.wall} kg`:`4×8 ${stationAlternative(input,'wall')}`}. 60–90 s Pause; Bewegungsqualität vor Tempo.`,
+    ]
+    return templates[variant % templates.length]
+  }
+
+  const templates = [
+    `Mini Circuit · 4 Runden: ${has(input,'skiErg')?'300–400 m SkiErg':`90 s ${stationAlternative(input,'ski')}`}; 10 m Burpee Broad Jumps; ${has(input,'wallBall')?`10–12 Wall Balls @ ${l.wall} kg`:`10–12 ${stationAlternative(input,'wall')}`}. 90 s Pause.`,
+    `Grip & Lunge Capacity · 4 Runden: ${has(input,'kettlebells')?`50 m Farmers Carry @ ${l.farmers} kg je Hand`:stationAlternative(input,'farmers')}; ${has(input,'sandbag')?`20 m Lunges @ ${l.lunges} kg`:stationAlternative(input,'lunges')}; ${has(input,'rower')?'300 m Row':`90 s ${stationAlternative(input,'row')}`}. 90 s Pause.`,
+    `Erg Engine · 3 Runden: ${has(input,'skiErg')?'500 m SkiErg':`2 Min ${stationAlternative(input,'ski')}`}; 2 Min locker; ${has(input,'rower')?'500 m Row':`2 Min ${stationAlternative(input,'row')}`}; 2 Min locker. Gleichmäßiges Pacing.`,
+  ]
+  return templates[variant % templates.length]
+}
+
+const hybridSession = (input,week,phaseId,race,variant=0) => {
+  const run = phaseId === 'basis' ? 400 : phaseId === 'aufbau' ? 600 : 800
+  const rounds = phaseId === 'basis' ? 3 : 4
+  const l = currentLoads(input,race,week,Math.max(8,week+4),phaseId)
+  const templates = [
+    `${rounds} Runden: ${run} m Run + ${has(input,'skiErg')?'250–400 m SkiErg':`90 s ${stationAlternative(input,'ski')}`} + ${has(input,'wallBall')?`8–12 Wall Balls @ ${l.wall} kg`:`8–12 ${stationAlternative(input,'wall')}`}. 2 Min Pause. Fokus: ruhig wieder anlaufen.`,
+    `${rounds} Runden: ${run} m Run + ${has(input,'rower')?'250–400 m Row':`90 s ${stationAlternative(input,'row')}`} + ${has(input,'sandbag')?`10–20 m Lunges @ ${l.lunges} kg`:stationAlternative(input,'lunges')}. 2 Min Pause.`,
+    `${rounds} Runden: ${run} m Run + 10–15 m Burpee Broad Jumps + ${has(input,'kettlebells')?`40–50 m Farmers Carry @ ${l.farmers} kg je Hand`:stationAlternative(input,'farmers')}. 2 Min Pause.`,
+  ]
+  return templates[variant % templates.length]
+}
+
+const simulationSession = (input,week,totalWeeks,race) => {
+  const beginner = isHyroxBeginner(input)
+  const late = week >= totalWeeks - 2
+  const count = beginner ? (late ? 5 : 4) : (late ? 6 : 5)
   const stations = [
     'SkiErg',
-    `Sled Push @ bis zu ${race.sledPush} kg`,
-    `Sled Pull @ bis zu ${race.sledPull} kg`,
+    `Sled Push bis ${race.sledPush} kg`,
+    `Sled Pull bis ${race.sledPull} kg`,
     'Burpee Broad Jumps',
     'Row',
-    `Farmers Carry @ ${race.farmersEach} kg je Hand`,
-    `Sandbag Lunges @ ${race.lunges} kg`,
-    `Wall Balls @ ${race.wallBall} kg`,
+    `Farmers Carry ${race.farmersEach} kg je Hand`,
+    `Sandbag Lunges ${race.lunges} kg`,
+    `Wall Balls ${race.wallBall} kg`,
   ]
-  const count = fraction >= .7 ? 6 : 4
+  const run = beginner ? 750 : 1000
   const share = input.raceFormat === 'doubles'
-    ? 'Doubles: alle Laufblöcke gemeinsam; Stationsarbeit bewusst aufteilen und Wechselstrategie testen.'
-    : 'Single: Stationsarbeit selbst absolvieren und bewusst unter Race Load bleiben, wenn die Technik nachlässt.'
-  return `${count}× 1 km Run, jeweils gefolgt von einer Race-Station aus: ${stations.slice(0,count).join(' · ')}. ${share} Das ist eine kontrollierte Simulation, keine Vollgas-Generalprobe.`
+    ? 'Doubles: Wechsel und Stationsaufteilung bewusst üben.'
+    : 'Single: Stationsarbeit selbst absolvieren; Technik hat Vorrang vor Race Load.'
+  return `Kontrollierte Teil-Simulation: ${count}× ${run} m Run, jeweils gefolgt von einer Station: ${stations.slice(0,count).join(' · ')}. ${share} Keine Vollgas-Generalprobe.`
 }
 
-const makeSession = ({type,input,week,totalWeeks,phaseId,race,calibration}) => {
-  if (calibration && type === 'strength') return {
-    einheit:'HYROX Kalibrierung · Gewichte',
-    details:calibrationText(input,race),
-    durationMinutes:65,
-    intensity:'Kontrolliert',
-    hyroxLog:{
-      kind:'calibration',
-      prompt:'Wie war das Gewicht?',
-      choices:['Zu leicht','Leicht','Passend','Schwer','Zu schwer'],
-      capture:['weight','completed','effort'],
-    },
+const makeSession = ({type,input,week,totalWeeks,phaseId,race,calibration,variant=0}) => {
+  const commonLog = {
+    choices:['Zu leicht','Leicht','Passend','Schwer','Zu schwer'],
+    techniquePrompt:'Wie sauber war die Technik?',
+    techniqueChoices:['Sicher','Etwas unsicher','Technik schwierig'],
   }
-  if (type === 'easy') return {
-    einheit:week % 2 ? 'Easy Run + Mobility' : 'Aerobic Engine',
-    details:week % 2
-      ? `${40 + Math.min(20,week*2)} Min lockerer Lauf im Gesprächstempo. Danach 10 Min Mobility.`
-      : `${35 + Math.min(20,week*2)} Min locker: wahlweise Run oder Ergometer. Alle 8 Min 60 s etwas flotter, sonst entspannt.`,
-    durationMinutes:50,
-    intensity:'Locker',
+
+  if (calibration === 'A') return {
+    einheit:'HYROX Kalibrierung A',
+    details:calibrationA(input,race), durationMinutes:60, intensity:'Kontrolliert',
+    hyroxLog:{kind:'calibration_a',prompt:'Wie war das Gewicht?',...commonLog,capture:['weight','completed','effort','technique']},
   }
-  if (type === 'intervals') return {
-    einheit:'HYROX Run Quality',
-    details:runIntervalsText(week,phaseId),
-    durationMinutes:60,
-    intensity:'Zügig',
+  if (calibration === 'B') return {
+    einheit:'HYROX Kalibrierung B',
+    details:calibrationB(input,race), durationMinutes:55, intensity:'Technik',
+    hyroxLog:{kind:'calibration_b',prompt:'Wie war das Gewicht?',...commonLog,capture:['weight','reps','time','completed','effort','technique']},
   }
+  if (type === 'easy') return { einheit:'Easy Run + Mobility', details:easyRun(input,week,phaseId), durationMinutes:50, intensity:'Locker' }
+  if (type === 'run_quality') return { einheit:'Run Quality', details:runQuality(input,week,phaseId), durationMinutes:58, intensity:'Zügig' }
   if (type === 'strength') return {
-    einheit:phaseId === 'spezifisch' ? 'Race-Load Strength' : 'Strength & Sled',
-    details:strengthText(input,week,totalWeeks,phaseId,race),
-    durationMinutes:70,
-    intensity:'Kraft',
-    hyroxLog:{
-      kind:'loads',
-      prompt:'Wie war das Gewicht?',
-      choices:['Zu leicht','Leicht','Passend','Schwer','Zu schwer'],
-      capture:['weight','sets','distance','completed','effort'],
-    },
+    einheit:phaseId === 'spezifisch' ? 'Race-Load Strength' : 'Strength & Stations',
+    details:strengthSession(input,week,totalWeeks,phaseId,race,variant), durationMinutes:65, intensity:'Kraft',
+    hyroxLog:{kind:'loads',prompt:'Wie war das Gewicht?',...commonLog,capture:['weight','sets','distance','completed','effort','technique']},
   }
-  if (type === 'stations') return {
-    einheit:'HYROX Stations & Skills',
-    details:stationSkillText(input,week,phaseId,race),
-    durationMinutes:60,
-    intensity:'Technik/Kraftausdauer',
-    hyroxLog:{
-      kind:'stations',
-      prompt:'Wie anstrengend war die Einheit?',
-      choices:['Sehr leicht','Leicht','Passend','Schwer','Zu schwer'],
-      capture:['weight','reps','distance','time','completed','effort'],
-    },
+  if (type === 'skills') return {
+    einheit:phaseId === 'basis' && isHyroxBeginner(input) ? 'Learn & Build' : 'HYROX Skills & Circuit',
+    details:skillSession(input,week,phaseId,race,variant), durationMinutes:55, intensity:'Technik/Kraftausdauer',
+    hyroxLog:{kind:'stations',prompt:'Wie war die Belastung?',...commonLog,capture:['weight','reps','distance','time','completed','effort','technique']},
   }
-  if (type === 'hybrid') return {
-    einheit:'Compromised Running',
-    details:hybridText(input,week,phaseId,race),
-    durationMinutes:65,
-    intensity:'Race-spezifisch',
-  }
-  if (type === 'simulation') return {
-    einheit:'HYROX Simulation',
-    details:simulationText(input,week,totalWeeks,race),
-    durationMinutes:85,
-    intensity:'Race-spezifisch',
-  }
+  if (type === 'hybrid') return { einheit:'Run + Stations', details:hybridSession(input,week,phaseId,race,variant), durationMinutes:62, intensity:'HYROX-spezifisch' }
+  if (type === 'simulation') return { einheit:'HYROX Teil-Simulation', details:simulationSession(input,week,totalWeeks,race), durationMinutes:80, intensity:'Race-spezifisch' }
   return { einheit:'Recovery', details:'30–40 Min sehr locker bewegen oder vollständiger Ruhetag.', durationMinutes:35, intensity:'Sehr locker' }
 }
 
-const patternFor = (units,phaseId,week,totalWeeks) => {
-  const patterns = {
-    basis:{
-      3:['strength','easy','hybrid'],
-      4:['easy','strength','intervals','stations'],
-      5:['easy','strength','intervals','stations','hybrid'],
-      6:['easy','strength','intervals','easy','stations','hybrid'],
-    },
-    aufbau:{
-      3:['strength','intervals','hybrid'],
-      4:['intervals','strength','stations','hybrid'],
-      5:['easy','strength','intervals','stations','hybrid'],
-      6:['easy','strength','intervals','easy','stations','hybrid'],
-    },
-    spezifisch:{
-      3:['strength','intervals','hybrid'],
-      4:['intervals','strength','stations', week % 2 === 0 ? 'simulation' : 'hybrid'],
-      5:['easy','strength','intervals','stations', week % 2 === 0 ? 'simulation' : 'hybrid'],
-      6:['easy','strength','intervals','easy','stations', week % 2 === 0 ? 'simulation' : 'hybrid'],
-    },
-    taper:{
-      3:['easy','stations','hybrid'],
-      4:['easy','intervals','stations','hybrid'],
-      5:['easy','strength','intervals','stations','hybrid'],
-      6:['easy','strength','intervals','easy','stations','hybrid'],
-    },
+const patternFor = (input,phaseId,week,totalWeeks) => {
+  const units = input.unitsPerWeek
+  const run = runningProfile(input)
+  const beginner = isHyroxBeginner(input)
+  const simulation = phaseId === 'spezifisch' && week % 2 === 0 ? 'simulation' : 'hybrid'
+
+  // Bei vier Tagen standardmäßig nur ein reiner Lauftag.
+  // Ein zweiter Laufreiz kommt nur bei klar schwacher Laufbasis hinzu.
+  if (units === 4) {
+    if (phaseId === 'basis') {
+      return run === 'needs_run_base'
+        ? ['easy','strength','run_quality','skills']
+        : ['easy','strength','skills','hybrid']
+    }
+    if (phaseId === 'aufbau') {
+      return run === 'needs_run_base'
+        ? ['easy','strength','run_quality','hybrid']
+        : ['easy','strength','skills','hybrid']
+    }
+    if (phaseId === 'spezifisch') return ['easy','strength','skills',simulation]
+    return ['easy','strength','skills','hybrid']
   }
-  return patterns[phaseId]?.[units] || patterns.basis[4]
+
+  if (units === 3) {
+    if (phaseId === 'basis' && beginner) return ['easy','strength','skills']
+    return ['strength','skills',phaseId === 'spezifisch' ? simulation : 'hybrid']
+  }
+
+  if (units === 5) {
+    if (phaseId === 'basis') return ['easy','strength','skills','run_quality','hybrid']
+    return ['easy','strength','run_quality','skills',phaseId === 'spezifisch' ? simulation : 'hybrid']
+  }
+
+  // 6 Einheiten: zwei Laufreize sind sinnvoll, weil genug Platz für drei HYROX/Kraft-Reize bleibt.
+  return ['easy','strength','skills','run_quality','strength',phaseId === 'spezifisch' ? simulation : 'hybrid']
 }
 
 const buildPlan = input => {
@@ -326,16 +340,23 @@ const buildPlan = input => {
   for (let week=1; week<=totalWeeks; week++) {
     const phaseId = phaseForWeek(week,totalWeeks)
     const deload = phaseId !== 'taper' && week > 1 && week % 4 === 0
-    let pattern = patternFor(input.unitsPerWeek,phaseId,week,totalWeeks)
+    let pattern = patternFor(input,phaseId,week,totalWeeks)
 
-    // If the user does not know station loads, the first strength slot is explicitly a calibration.
+    // Unbekannte Stationswerte werden in Woche 1 auf zwei kontrollierte Einheiten verteilt.
     const needsCalibration = !input.knowsStationLoads && week === 1
+    if (needsCalibration) {
+      const nonEasy = pattern.map((type,index) => ({type,index})).filter(x => x.type !== 'easy')
+      if (nonEasy[0]) pattern[nonEasy[0].index] = 'calibration_a'
+      if (nonEasy[1]) pattern[nonEasy[1].index] = 'calibration_b'
+    }
 
     const days = input.preferredDays.map((tag,index) => {
       const type = pattern[index] || 'easy'
+      const calibration = type === 'calibration_a' ? 'A' : type === 'calibration_b' ? 'B' : null
       const session = makeSession({
-        type,input,week,totalWeeks,phaseId,race,
-        calibration:needsCalibration && type === 'strength',
+        type: calibration ? 'skills' : type,input,week,totalWeeks,phaseId,race,
+        calibration,
+        variant:(week + index) % 3,
       })
       return {
         tag,
@@ -388,7 +409,7 @@ const buildPlan = input => {
     planCaution:input.limitations ? `Berücksichtige deine Angabe: ${input.limitations}. Bei Beschwerden Training anpassen und im Zweifel medizinisch/fachlich abklären.` : null,
     phases,
     hyroxProfile:{
-      version:2,
+      version:2.1,
       goalType:input.goalType,
       raceFormat:input.raceFormat,
       division:input.division,
@@ -404,7 +425,7 @@ const buildPlan = input => {
       loadFeedback:{
         labels:['Zu leicht','Leicht','Passend','Schwer','Zu schwer'],
         internalMap:{ 'Zu leicht':4, 'Leicht':5.5, 'Passend':7, 'Schwer':8.5, 'Zu schwer':10 },
-        rule:'Progression erst nach Log anwenden: Zu leicht/Leicht + vollständig geschafft = kleine Steigerung; Passend = geplante Progression; Schwer = halten; Zu schwer/nicht geschafft = reduzieren.',
+        rule:'Progression erst nach Log anwenden. Technik hat Vorrang: Bei Technik schwierig niemals steigern. Zu leicht/Leicht + sicher + vollständig = kleine Steigerung; Passend + sicher = geplante Progression; Schwer = halten; Zu schwer/nicht geschafft = reduzieren.',
       },
       raceLoads:race,
       raceStructure:{
