@@ -226,6 +226,123 @@ const detectGenericLogMode = day => {
   return null
 }
 
+
+const slugifyExercise = value =>
+  String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+
+const normalizeStrengthExercise = (exercise, index = 0) => {
+  if (!exercise) return null
+  if (typeof exercise === 'string') {
+    return {
+      id: `${slugifyExercise(exercise) || 'exercise'}-${index}`,
+      name: exercise,
+      sets: '',
+      reps: '',
+      durationSeconds: '',
+      perSide: false,
+      weightRelevant: !/planke|plank|dead bug|bird dog|hollow hold/i.test(exercise),
+    }
+  }
+
+  const name = exercise.name || exercise.exercise || exercise.title || `Übung ${index + 1}`
+  return {
+    id: exercise.id || `${slugifyExercise(name) || 'exercise'}-${index}`,
+    name,
+    sets: exercise.sets ?? '',
+    reps: exercise.reps ?? exercise.repetitions ?? '',
+    durationSeconds: exercise.durationSeconds ?? exercise.duration_seconds ?? '',
+    perSide: Boolean(exercise.perSide ?? exercise.per_side),
+    weightRelevant:
+      exercise.weightRelevant !== undefined
+        ? Boolean(exercise.weightRelevant)
+        : !/planke|plank|dead bug|bird dog|hollow hold/i.test(name),
+  }
+}
+
+const parseStrengthPrescription = day => {
+  // Neue Pläne können Übungen direkt strukturiert mitgeben.
+  const structured =
+    day?.strengthExercises ||
+    day?.strength_exercises ||
+    day?.exercises
+
+  if (Array.isArray(structured) && structured.length) {
+    return structured
+      .map((exercise, index) => normalizeStrengthExercise(exercise, index))
+      .filter(Boolean)
+  }
+
+  // Fallback für bereits bestehende Pläne:
+  // z.B. "Step-ups 3×10 je Bein, Split Squats 3×8 je Bein, ... Planke 3×30 Sek."
+  let source = String(day?.strengthPrescription || '').trim()
+  if (!source) return []
+
+  source = source
+    .split(/(?:Gewicht so wählen|Nicht bis zum Muskelversagen|Qualität vor|Technik vor)/i)[0]
+    .replace(/^💪\s*/,'')
+    .trim()
+
+  const parts = source
+    .split(/\s*[,;]\s*/)
+    .map(part => part.trim())
+    .filter(Boolean)
+
+  const exercises = []
+
+  parts.forEach((part, index) => {
+    const match = part.match(
+      /^(.+?)\s+(\d+)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*(sek(?:unden?)?\.?|s|min(?:uten?)?|wdh\.?)?\s*(je\s+(?:bein|seite|arm))?/i
+    )
+
+    if (!match) return
+
+    const name = match[1].trim()
+    const sets = match[2]
+    const amount = match[3].replace(',', '.')
+    const unit = String(match[4] || '').toLowerCase()
+    const perSide = Boolean(match[5])
+    const isDuration = /sek|^s$|min/.test(unit)
+
+    let durationSeconds = ''
+    let reps = amount
+
+    if (isDuration) {
+      const numeric = Number(amount)
+      durationSeconds = /min/.test(unit) ? String(Math.round(numeric * 60)) : String(numeric)
+      reps = ''
+    }
+
+    exercises.push({
+      id: `${slugifyExercise(name) || 'exercise'}-${index}`,
+      name,
+      sets,
+      reps,
+      durationSeconds,
+      perSide,
+      weightRelevant: !/planke|plank|dead bug|bird dog|hollow hold/i.test(name),
+    })
+  })
+
+  return exercises
+}
+
+const strengthPrescriptionLabel = exercise => {
+  if (!exercise) return ''
+  const side = exercise.perSide ? ' je Seite/Bein' : ''
+  if (exercise.durationSeconds) {
+    return `${exercise.sets || ''} × ${exercise.durationSeconds} Sek.${side}`.trim()
+  }
+  if (exercise.sets || exercise.reps) {
+    return `${exercise.sets || ''} × ${exercise.reps || ''}${side}`.trim()
+  }
+  return ''
+}
+
 const GENERIC_EFFORT_CHOICES = ['Sehr leicht','Leicht','Passend','Schwer','Zu schwer']
 const GENERIC_TECHNIQUE_CHOICES = ['Sicher','Etwas unsicher','Schwierig']
 
@@ -683,6 +800,22 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
     generic_data: { ...(prev.generic_data || {}), [field]: value },
   }))
 
+  const setGenericExerciseField = (exerciseId, field, value) => {
+    setLogInput(prev => ({
+      ...prev,
+      generic_data: {
+        ...(prev.generic_data || {}),
+        exercises: {
+          ...((prev.generic_data || {}).exercises || {}),
+          [exerciseId]: {
+            ...(((prev.generic_data || {}).exercises || {})[exerciseId] || {}),
+            [field]: value,
+          },
+        },
+      },
+    }))
+  }
+
   const setHyroxField = (stationId, field, value) => setLogInput(prev => ({
     ...prev, hyrox_data: {
       ...(prev.hyrox_data || {}),
@@ -961,30 +1094,125 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                 <div style={{fontSize:11,fontWeight:900,color:'#8B6B5A',fontFamily:'sans-serif',marginBottom:10}}>
                   Krafttraining dokumentieren
                 </div>
-                <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:10,marginBottom:12}}>
-                  {[
-                    ['duration','Dauer','z. B. 45 Min',''],
-                    ['weight','Gewicht','optional','kg'],
-                    ['sets','Sätze','z. B. 3',''],
-                    ['reps','Wiederholungen','z. B. 8–10',''],
-                  ].map(([key,label,placeholder,unit]) => (
-                    <label key={key} style={{fontSize:10,fontWeight:'bold',color:'#B8A090',textTransform:'uppercase',letterSpacing:.6,fontFamily:'sans-serif'}}>
-                      {label}
-                      <div style={{position:'relative',marginTop:4}}>
-                        <input
-                          value={logInput.generic_data?.[key] || ''}
-                          onChange={e=>setGenericField(key,e.target.value)}
-                          placeholder={placeholder}
-                          style={{width:'100%',padding:'10px 12px',paddingRight:unit?48:12,borderRadius:12,border:'1.5px solid #F0E8E0',fontSize:14,color:'#3D2B1F',outline:'none',boxSizing:'border-box',background:'#FFF8F5',fontFamily:'sans-serif'}}
-                        />
-                        {unit && <span style={{position:'absolute',right:10,top:11,fontSize:9,color:'#B8A090',fontFamily:'sans-serif'}}>{unit}</span>}
-                      </div>
-                    </label>
-                  ))}
-                </div>
 
                 <div style={{marginBottom:12}}>
-                  <div style={{fontSize:10,fontWeight:800,color:'#B8A090',textTransform:'uppercase',letterSpacing:.6,marginBottom:6,fontFamily:'sans-serif'}}>Wie anstrengend war es?</div>
+                  <label style={{fontSize:10,fontWeight:'bold',color:'#B8A090',textTransform:'uppercase',letterSpacing:.6,fontFamily:'sans-serif'}}>
+                    Dauer der Einheit
+                    <input
+                      value={logInput.generic_data?.duration || ''}
+                      onChange={e=>setGenericField('duration',e.target.value)}
+                      placeholder="z. B. 45 Min"
+                      style={{width:'100%',marginTop:4,padding:'10px 12px',borderRadius:12,border:'1.5px solid #F0E8E0',fontSize:14,color:'#3D2B1F',outline:'none',boxSizing:'border-box',background:'#FFF8F5',fontFamily:'sans-serif'}}
+                    />
+                  </label>
+                </div>
+
+                {(() => {
+                  const exercises = parseStrengthPrescription(logModal?.day)
+
+                  if (!exercises.length) {
+                    return (
+                      <div style={{padding:'11px 12px',borderRadius:12,background:'#FFF8F5',border:'1px solid #F0E8E0',color:'#9A8376',fontSize:10.5,lineHeight:1.5,fontFamily:'sans-serif',marginBottom:12}}>
+                        Für diese ältere Krafteinheit konnten keine einzelnen Übungen sicher erkannt werden. Nutze die Notiz für Gewichte, Sätze und Wiederholungen.
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <div style={{display:'grid',gap:9,marginBottom:14}}>
+                      {exercises.map(exercise => {
+                        const values = logInput.generic_data?.exercises?.[exercise.id] || {}
+                        const prescription = strengthPrescriptionLabel(exercise)
+
+                        return (
+                          <div key={exercise.id} style={{
+                            padding:'11px 12px',
+                            borderRadius:14,
+                            background:'#FAF7FC',
+                            border:'1px solid #E8DDEE',
+                          }}>
+                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8,marginBottom:9}}>
+                              <div>
+                                <div style={{fontSize:11.5,fontWeight:900,color:'#65506F',fontFamily:'sans-serif'}}>
+                                  {exercise.name}
+                                </div>
+                                {prescription && (
+                                  <div style={{fontSize:9.7,color:'#A28FA9',marginTop:2,fontFamily:'sans-serif'}}>
+                                    Plan: {prescription}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <div style={{
+                              display:'grid',
+                              gridTemplateColumns:exercise.weightRelevant
+                                ? 'repeat(3,minmax(0,1fr))'
+                                : 'repeat(2,minmax(0,1fr))',
+                              gap:7,
+                            }}>
+                              {exercise.weightRelevant && (
+                                <label style={{fontSize:9,fontWeight:800,color:'#A88F7E',fontFamily:'sans-serif'}}>
+                                  GEWICHT
+                                  <div style={{position:'relative',marginTop:4}}>
+                                    <input
+                                      value={values.weight || ''}
+                                      onChange={e=>setGenericExerciseField(exercise.id,'weight',e.target.value)}
+                                      placeholder="optional"
+                                      inputMode="decimal"
+                                      style={{width:'100%',padding:'9px 30px 9px 9px',borderRadius:10,border:'1px solid #E5D9E9',fontSize:12,color:'#4B3A51',outline:'none',boxSizing:'border-box',background:'white',fontFamily:'sans-serif'}}
+                                    />
+                                    <span style={{position:'absolute',right:8,top:10,fontSize:8.5,color:'#B49EBA',fontFamily:'sans-serif'}}>kg</span>
+                                  </div>
+                                </label>
+                              )}
+
+                              <label style={{fontSize:9,fontWeight:800,color:'#A88F7E',fontFamily:'sans-serif'}}>
+                                SÄTZE
+                                <input
+                                  value={values.sets || ''}
+                                  onChange={e=>setGenericExerciseField(exercise.id,'sets',e.target.value)}
+                                  placeholder={exercise.sets ? String(exercise.sets) : 'z. B. 3'}
+                                  inputMode="numeric"
+                                  style={{width:'100%',marginTop:4,padding:'9px',borderRadius:10,border:'1px solid #E5D9E9',fontSize:12,color:'#4B3A51',outline:'none',boxSizing:'border-box',background:'white',fontFamily:'sans-serif'}}
+                                />
+                              </label>
+
+                              <label style={{fontSize:9,fontWeight:800,color:'#A88F7E',fontFamily:'sans-serif'}}>
+                                {exercise.durationSeconds ? 'DAUER / SATZ' : exercise.perSide ? 'WDH. / SEITE' : 'WIEDERHOLUNGEN'}
+                                <div style={{position:'relative',marginTop:4}}>
+                                  <input
+                                    value={exercise.durationSeconds ? (values.durationSeconds || '') : (values.reps || '')}
+                                    onChange={e=>setGenericExerciseField(
+                                      exercise.id,
+                                      exercise.durationSeconds ? 'durationSeconds' : 'reps',
+                                      e.target.value
+                                    )}
+                                    placeholder={
+                                      exercise.durationSeconds
+                                        ? String(exercise.durationSeconds)
+                                        : exercise.reps
+                                          ? String(exercise.reps)
+                                          : 'z. B. 10'
+                                    }
+                                    inputMode="decimal"
+                                    style={{width:'100%',padding:`9px ${exercise.durationSeconds ? '30px' : '9px'} 9px 9px`,borderRadius:10,border:'1px solid #E5D9E9',fontSize:12,color:'#4B3A51',outline:'none',boxSizing:'border-box',background:'white',fontFamily:'sans-serif'}}
+                                  />
+                                  {exercise.durationSeconds && (
+                                    <span style={{position:'absolute',right:8,top:10,fontSize:8.5,color:'#B49EBA',fontFamily:'sans-serif'}}>Sek.</span>
+                                  )}
+                                </div>
+                              </label>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })()}
+
+                <div style={{marginBottom:12}}>
+                  <div style={{fontSize:10,fontWeight:800,color:'#B8A090',textTransform:'uppercase',letterSpacing:.6,marginBottom:6,fontFamily:'sans-serif'}}>Wie anstrengend war die Einheit?</div>
                   <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                     {GENERIC_EFFORT_CHOICES.map(choice => (
                       <button type="button" key={choice} onClick={()=>setGenericField('effort',choice)}
@@ -996,7 +1224,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                 </div>
 
                 <div>
-                  <div style={{fontSize:10,fontWeight:800,color:'#B8A090',textTransform:'uppercase',letterSpacing:.6,marginBottom:6,fontFamily:'sans-serif'}}>Technik / Ausführung</div>
+                  <div style={{fontSize:10,fontWeight:800,color:'#B8A090',textTransform:'uppercase',letterSpacing:.6,marginBottom:6,fontFamily:'sans-serif'}}>Technik / Ausführung insgesamt</div>
                   <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                     {GENERIC_TECHNIQUE_CHOICES.map(choice => (
                       <button type="button" key={choice} onClick={()=>setGenericField('technique',choice)}
