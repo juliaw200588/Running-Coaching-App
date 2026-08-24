@@ -355,6 +355,177 @@ const strengthPrescriptionLabel = exercise => {
 const GENERIC_EFFORT_CHOICES = ['Sehr leicht','Leicht','Passend','Schwer','Zu schwer']
 const GENERIC_TECHNIQUE_CHOICES = ['Sicher','Etwas unsicher','Schwierig']
 
+
+const HYROX_WEIGHT_CONFIG = {
+  sled_push:{
+    field:'weight',
+    raceKey:'sledPush',
+    baselineKey:'sledPushKg',
+    step:2,
+    regex:/(\bSled Push\b[\s\S]{0,80}?\b(?:@|bis)\s*(?:ca\.\s*)?)(\d+(?:[.,]\d+)?)\s*kg/i,
+  },
+  sled_pull:{
+    field:'weight',
+    raceKey:'sledPull',
+    baselineKey:'sledPullKg',
+    step:2,
+    regex:/(\bSled Pull\b[\s\S]{0,80}?\b(?:@|bis)\s*(?:ca\.\s*)?)(\d+(?:[.,]\d+)?)\s*kg/i,
+  },
+  farmers_carry:{
+    field:'weight_each',
+    raceKey:'farmersEach',
+    baselineKey:'farmersKgEach',
+    step:1,
+    regex:/(\bFarmers Carry\b[\s\S]{0,90}?\b@\s*(?:ca\.\s*)?)(\d+(?:[.,]\d+)?)\s*kg\s+je\s+Hand/i,
+  },
+  sandbag_lunges:{
+    field:'weight',
+    raceKey:'lunges',
+    baselineKey:'lungesKg',
+    step:1,
+    regex:/(\b(?:Sandbag\s+)?Lunges\b[\s\S]{0,90}?\b@\s*(?:ca\.\s*)?)(\d+(?:[.,]\d+)?)\s*kg/i,
+  },
+  wall_balls:{
+    field:'weight',
+    raceKey:'wallBall',
+    baselineKey:'wallBallKg',
+    step:1,
+    regex:/(\bWall Balls\b[\s\S]{0,70}?\b@\s*(?:ca\.\s*)?)(\d+(?:[.,]\d+)?)\s*kg/i,
+  },
+}
+
+const HYROX_VOLUME_CONFIG = {
+  ski_erg:{
+    regex:/(\b)(\d+(?:[.,]\d+)?)\s*m\s+SkiErg\b/i,
+    step:25,
+    label:'SkiErg',
+  },
+  row:{
+    regex:/(\b)(\d+(?:[.,]\d+)?)\s*m\s+(?:Row|Rower)\b/i,
+    step:25,
+    label:'Row',
+  },
+  burpee_broad_jumps:{
+    regex:/(\b)(\d+(?:[.,]\d+)?)\s*m\s+Burpee Broad Jumps\b/i,
+    step:5,
+    label:'Burpee Broad Jumps',
+  },
+}
+
+const numericLogValue = value => {
+  const number = Number(String(value ?? '').replace(',','.'))
+  return Number.isFinite(number) && number > 0 ? number : null
+}
+
+const roundAdaptiveValue = (value, step=1) =>
+  Math.max(step, Math.round(value / step) * step)
+
+const hyroxEffortFactor = (effort, technique) => {
+  const tech = String(technique || '').toLowerCase()
+  if (tech.includes('schwierig')) return 0.90
+  if (tech.includes('unsicher')) return 1.00
+
+  const normalized = String(effort || '').toLowerCase()
+  if (normalized === 'zu schwer') return 0.90
+  if (normalized === 'schwer') return 1.00
+  if (normalized === 'passend') return 1.05
+  if (normalized === 'leicht') return 1.075
+  if (normalized === 'zu leicht') return 1.10
+  return 1.00
+}
+
+const replaceStationWeightInDetails = (details, stationId, nextWeight) => {
+  const config = HYROX_WEIGHT_CONFIG[stationId]
+  if (!config?.regex) return { details, changed:false, previous:null }
+
+  let previous = null
+  let changed = false
+  const updated = String(details || '').replace(config.regex, (match, prefix, value) => {
+    if (changed) return match
+    previous = numericLogValue(value)
+    changed = true
+    return `${prefix}${String(nextWeight).replace('.', ',')} kg${stationId === 'farmers_carry' ? ' je Hand' : ''}`
+  })
+
+  return { details:updated, changed, previous }
+}
+
+const replaceStationVolumeInDetails = (details, stationId, factor) => {
+  const config = HYROX_VOLUME_CONFIG[stationId]
+  if (!config?.regex || factor === 1) return { details, changed:false, previous:null, next:null }
+
+  let previous = null
+  let next = null
+  let changed = false
+
+  const updated = String(details || '').replace(config.regex, (match, prefix, value) => {
+    if (changed) return match
+    previous = numericLogValue(value)
+    if (!previous) return match
+    next = roundAdaptiveValue(previous * factor, config.step)
+    if (next === previous) return match
+    changed = true
+    const unitName = stationId === 'ski_erg' ? 'SkiErg' : stationId === 'row' ? 'Row' : 'Burpee Broad Jumps'
+    return `${prefix}${next} m ${unitName}`
+  })
+
+  return { details:updated, changed, previous, next }
+}
+
+const findHyroxDayPosition = (plan, dayKeyValue) => {
+  for (let pi=0; pi<(plan?.phases || []).length; pi++) {
+    const phase = plan.phases[pi]
+    for (let wi=0; wi<(phase?.weeks || []).length; wi++) {
+      const week = phase.weeks[wi]
+      for (let di=0; di<(week?.days || []).length; di++) {
+        if (dayKey(phase.id, week.n, di) === dayKeyValue) return {pi,wi,di}
+      }
+    }
+  }
+  return null
+}
+
+const nextHyroxStationOccurrence = (plan, fromPosition, stationId) => {
+  if (!fromPosition) return null
+  let passedCurrent = false
+
+  for (let pi=0; pi<(plan?.phases || []).length; pi++) {
+    const phase = plan.phases[pi]
+    for (let wi=0; wi<(phase?.weeks || []).length; wi++) {
+      const week = phase.weeks[wi]
+      for (let di=0; di<(week?.days || []).length; di++) {
+        if (pi === fromPosition.pi && wi === fromPosition.wi && di === fromPosition.di) {
+          passedCurrent = true
+          continue
+        }
+        if (!passedCurrent) continue
+
+        const day = week.days[di]
+        const stations = day?.hyrox_log?.stations || []
+        if (stations.some(station => station?.id === stationId)) {
+          return {pi,wi,di,phase,week,day}
+        }
+      }
+    }
+  }
+  return null
+}
+
+const adaptiveReasonFor = ({label, effort, technique, from, to, unit='kg'}) => {
+  const tech = String(technique || '').toLowerCase()
+  if (tech.includes('schwierig')) return `${label}: Technik war schwierig – nächste Belastung bewusst reduziert (${from} → ${to} ${unit}).`
+  if (tech.includes('unsicher')) return `${label}: Technik noch etwas unsicher – Belastung bleibt zunächst stabil (${to} ${unit}).`
+
+  const e = String(effort || '')
+  if (e === 'Zu schwer') return `${label}: war zu schwer – nächste Belastung reduziert (${from} → ${to} ${unit}).`
+  if (e === 'Schwer') return `${label}: war schwer – nächste Belastung bleibt bei etwa ${to} ${unit}.`
+  if (e === 'Passend') return `${label}: passend und kontrollierbar – kleine Progression auf etwa ${to} ${unit}.`
+  if (e === 'Leicht') return `${label}: noch Reserven – nächste Belastung auf etwa ${to} ${unit} angepasst.`
+  if (e === 'Zu leicht') return `${label}: deutlich zu leicht – nächste Belastung auf etwa ${to} ${unit} angepasst.`
+  return `${label}: nächste Belastung auf etwa ${to} ${unit} angepasst.`
+}
+
+
 export default function TrainingPlan({ plan, onReset, user, planId = null, openWeekAnalysis = null, onWeekAnalysisOpened }) {
   const [activePhase, setActivePhase] = useState(() => findCurrentPhaseWeek(plan).phaseIdx)
   const [showPauseModal, setShowPauseModal] = useState(false)
@@ -381,6 +552,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
   const [weekAnalyses, setWeekAnalyses] = useState({})
   const [analysisModal, setAnalysisModal] = useState(null)
   const [skipReasonInput, setSkipReasonInput] = useState('')
+  const [, forcePlanRender] = useState(0)
   const fileRef = useRef()
 
   useEffect(() => {
@@ -921,6 +1093,205 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
     setAnalyzing(false)
   }
 
+
+  const adaptHyroxPlanFromLog = async (dayKeyValue, hyroxData) => {
+    if (!isHyroxPlan || !hyroxData || typeof hyroxData !== 'object') return []
+    if (!plan?.phases?.length) return []
+
+    const currentPosition = findHyroxDayPosition(plan, dayKeyValue)
+    if (!currentPosition) return []
+
+    const updatedPlan = JSON.parse(JSON.stringify(plan))
+    const updatedCurrentPosition = findHyroxDayPosition(updatedPlan, dayKeyValue)
+    const raceLoads = updatedPlan?.hyroxProfile?.raceLoads || {}
+    const changes = []
+
+    updatedPlan.hyroxProfile = {
+      ...(updatedPlan.hyroxProfile || {}),
+      stationBaselines: {
+        ...(updatedPlan?.hyroxProfile?.stationBaselines || {}),
+      },
+      adaptiveHistory: Array.isArray(updatedPlan?.hyroxProfile?.adaptiveHistory)
+        ? [...updatedPlan.hyroxProfile.adaptiveHistory]
+        : [],
+    }
+
+    for (const [stationId, values] of Object.entries(hyroxData)) {
+      if (!values || typeof values !== 'object') continue
+      const effort = values.effort || ''
+      const technique = values.technique || ''
+      const factor = hyroxEffortFactor(effort, technique)
+
+      // 1) Gewichtsbasierte HYROX-Stationen
+      const weightConfig = HYROX_WEIGHT_CONFIG[stationId]
+      if (weightConfig) {
+        const actualWeight = numericLogValue(values[weightConfig.field])
+        if (!actualWeight) continue
+
+        if (weightConfig.baselineKey) {
+          updatedPlan.hyroxProfile.stationBaselines[weightConfig.baselineKey] = actualWeight
+        }
+
+        const nextOccurrence = nextHyroxStationOccurrence(updatedPlan, updatedCurrentPosition, stationId)
+        if (!nextOccurrence) continue
+
+        const currentDetails = nextOccurrence.day.details || ''
+        const parsed = currentDetails.match(weightConfig.regex)
+        const scheduledWeight = parsed ? numericLogValue(parsed[2]) : null
+        const raceCap = numericLogValue(raceLoads[weightConfig.raceKey])
+
+        let nextWeight
+        if (String(technique).toLowerCase().includes('schwierig') || effort === 'Zu schwer') {
+          nextWeight = actualWeight * 0.90
+        } else if (String(technique).toLowerCase().includes('unsicher') || effort === 'Schwer') {
+          nextWeight = actualWeight
+        } else if (effort === 'Passend') {
+          nextWeight = Math.min(
+            scheduledWeight || actualWeight * 1.05,
+            actualWeight * 1.05
+          )
+        } else if (effort === 'Leicht') {
+          nextWeight = Math.max(scheduledWeight || 0, actualWeight * 1.05)
+        } else if (effort === 'Zu leicht') {
+          nextWeight = Math.max(scheduledWeight || 0, actualWeight * 1.10)
+        } else {
+          nextWeight = scheduledWeight || actualWeight
+        }
+
+        if (raceCap) nextWeight = Math.min(nextWeight, raceCap)
+        nextWeight = roundAdaptiveValue(nextWeight, weightConfig.step)
+
+        const replaced = replaceStationWeightInDetails(
+          currentDetails,
+          stationId,
+          nextWeight
+        )
+
+        // Wenn der Text nicht parsebar ist, behalten wir wenigstens strukturierte Zielwerte.
+        nextOccurrence.day.hyrox_targets = {
+          ...(nextOccurrence.day.hyrox_targets || {}),
+          [stationId]: {
+            ...((nextOccurrence.day.hyrox_targets || {})[stationId] || {}),
+            [weightConfig.field]: nextWeight,
+            source:'adaptive_log',
+          },
+        }
+
+        if (replaced.changed) nextOccurrence.day.details = replaced.details
+
+        const stationLabel =
+          nextOccurrence.day.hyrox_log?.stations?.find(s => s.id === stationId)?.label ||
+          stationId.replaceAll('_',' ')
+
+        const reason = adaptiveReasonFor({
+          label:stationLabel,
+          effort,
+          technique,
+          from:actualWeight,
+          to:nextWeight,
+          unit:'kg',
+        })
+
+        nextOccurrence.day.adjusted = true
+        nextOccurrence.day.adjustmentReason = nextOccurrence.day.adjustmentReason
+          ? `${nextOccurrence.day.adjustmentReason} ${reason}`
+          : reason
+
+        changes.push({
+          stationId,
+          type:'weight',
+          from:actualWeight,
+          to:nextWeight,
+          targetWeek:nextOccurrence.week.n,
+          targetDay:nextOccurrence.day.tag,
+          reason,
+        })
+        continue
+      }
+
+      // 2) Nicht gewichtete Stationen: Umfang nur moderat in der NÄCHSTEN passenden Einheit anpassen.
+      // Laufen bleibt bewusst außen vor – Laufprogression gehört in die Lauf-/Wochenanalyse.
+      if (stationId === 'run') continue
+
+      const volumeConfig = HYROX_VOLUME_CONFIG[stationId]
+      if (!volumeConfig || (!effort && !technique)) continue
+
+      let volumeFactor = 1
+      const tech = String(technique || '').toLowerCase()
+      if (tech.includes('schwierig') || effort === 'Zu schwer') volumeFactor = 0.90
+      else if (effort === 'Schwer') volumeFactor = 0.95
+      else if (tech.includes('unsicher') || effort === 'Passend') volumeFactor = 1
+      else if (effort === 'Leicht') volumeFactor = 1.05
+      else if (effort === 'Zu leicht') volumeFactor = 1.10
+
+      if (volumeFactor === 1) continue
+
+      const nextOccurrence = nextHyroxStationOccurrence(updatedPlan, updatedCurrentPosition, stationId)
+      if (!nextOccurrence) continue
+
+      const replaced = replaceStationVolumeInDetails(
+        nextOccurrence.day.details || '',
+        stationId,
+        volumeFactor
+      )
+      if (!replaced.changed) continue
+
+      nextOccurrence.day.details = replaced.details
+      nextOccurrence.day.hyrox_targets = {
+        ...(nextOccurrence.day.hyrox_targets || {}),
+        [stationId]: {
+          ...((nextOccurrence.day.hyrox_targets || {})[stationId] || {}),
+          distance:replaced.next,
+          source:'adaptive_log',
+        },
+      }
+
+      const reason = `${volumeConfig.label}: Umfang aufgrund deines letzten Logs von ca. ${replaced.previous} auf ${replaced.next} m angepasst.`
+      nextOccurrence.day.adjusted = true
+      nextOccurrence.day.adjustmentReason = nextOccurrence.day.adjustmentReason
+        ? `${nextOccurrence.day.adjustmentReason} ${reason}`
+        : reason
+
+      changes.push({
+        stationId,
+        type:'volume',
+        from:replaced.previous,
+        to:replaced.next,
+        targetWeek:nextOccurrence.week.n,
+        targetDay:nextOccurrence.day.tag,
+        reason,
+      })
+    }
+
+    if (!changes.length) return []
+
+    updatedPlan.hyroxProfile.adaptiveHistory.push({
+      loggedDayKey:dayKeyValue,
+      createdAt:new Date().toISOString(),
+      changes,
+    })
+    updatedPlan.hyroxProfile.adaptiveHistory =
+      updatedPlan.hyroxProfile.adaptiveHistory.slice(-40)
+
+    // Den aktuell gerenderten Plan direkt aktualisieren.
+    Object.keys(plan).forEach(key => delete plan[key])
+    Object.assign(plan, updatedPlan)
+    forcePlanRender(value => value + 1)
+
+    // Persistenz immer über die konkrete planId – wichtig bei mehreren / gemeinsamen Plänen.
+    if (user?.id && planId) {
+      const { error } = await supabase
+        .from('plans')
+        .update({ plan_data: updatedPlan })
+        .eq('id', planId)
+        .eq('user_id', user.id)
+
+      if (error) console.error('[HYROX] Adaptive Plananpassung konnte nicht gespeichert werden:', error)
+    }
+
+    return changes
+  }
+
   const saveLog = async () => {
     const key = logModal.key
     const oldLog = logs[key]
@@ -953,6 +1324,15 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
           generic_data: logInput.generic_data || {},
         }, { onConflict: 'user_id,day_key' })
       } catch (e) { console.error('Log Supabase Fehler:', e) }
+    }
+
+    // HYROX: aus dem manuellen Stations-Log die nächste passende Belastung anpassen.
+    if (isHyroxPlan && logInput.hyrox_data && Object.keys(logInput.hyrox_data).length > 0) {
+      try {
+        await adaptHyroxPlanFromLog(key, logInput.hyrox_data)
+      } catch (e) {
+        console.error('[HYROX] Adaptive Anpassung fehlgeschlagen:', e)
+      }
     }
 
     // Schuh-km updaten

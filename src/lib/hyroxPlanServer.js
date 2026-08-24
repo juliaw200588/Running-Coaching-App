@@ -297,6 +297,47 @@ const logStationsFor = (type, calibration, variant=0) => {
   return []
 }
 
+
+const firstNumber = (text, regex) => {
+  const match = String(text || '').match(regex)
+  if (!match) return null
+  const value = Number(String(match[1]).replace(',','.'))
+  return Number.isFinite(value) ? value : null
+}
+
+const extractHyroxTargets = (details, stations=[]) => {
+  const targets = {}
+
+  for (const item of stations || []) {
+    if (!item?.id) continue
+    const id = item.id
+    let target = null
+
+    if (id === 'sled_push') {
+      target = {weight:firstNumber(details, /\bSled Push\b[\s\S]{0,80}?(?:@|bis)\s*(?:ca\.\s*)?(\d+(?:[.,]\d+)?)\s*kg/i)}
+    } else if (id === 'sled_pull') {
+      target = {weight:firstNumber(details, /\bSled Pull\b[\s\S]{0,80}?(?:@|bis)\s*(?:ca\.\s*)?(\d+(?:[.,]\d+)?)\s*kg/i)}
+    } else if (id === 'farmers_carry') {
+      target = {weight_each:firstNumber(details, /\bFarmers Carry\b[\s\S]{0,90}?@\s*(?:ca\.\s*)?(\d+(?:[.,]\d+)?)\s*kg\s+je\s+Hand/i)}
+    } else if (id === 'sandbag_lunges') {
+      target = {weight:firstNumber(details, /\b(?:Sandbag\s+)?Lunges\b[\s\S]{0,90}?@\s*(?:ca\.\s*)?(\d+(?:[.,]\d+)?)\s*kg/i)}
+    } else if (id === 'wall_balls') {
+      target = {weight:firstNumber(details, /\bWall Balls\b[\s\S]{0,70}?@\s*(?:ca\.\s*)?(\d+(?:[.,]\d+)?)\s*kg/i)}
+    } else if (id === 'ski_erg') {
+      target = {distance:firstNumber(details, /(\d+(?:[.,]\d+)?)\s*m\s+SkiErg\b/i)}
+    } else if (id === 'row') {
+      target = {distance:firstNumber(details, /(\d+(?:[.,]\d+)?)\s*m\s+(?:Row|Rower)\b/i)}
+    } else if (id === 'burpee_broad_jumps') {
+      target = {distance:firstNumber(details, /(\d+(?:[.,]\d+)?)\s*m\s+Burpee Broad Jumps\b/i)}
+    }
+
+    if (target && Object.values(target).some(value => value != null)) targets[id] = target
+  }
+
+  return targets
+}
+
+
 const makeSession = ({type,input,week,totalWeeks,phaseId,race,calibration,variant=0}) => {
   const commonLog = {
     choices:['Zu leicht','Leicht','Passend','Schwer','Zu schwer'],
@@ -410,6 +451,9 @@ const buildPlan = input => {
         sport_type:'hyrox',
         hyrox_session_type:type,
         hyrox_log:session.hyroxLog || null,
+        hyrox_targets:session.hyroxLog?.stations?.length
+          ? extractHyroxTargets(session.details, session.hyroxLog.stations)
+          : {},
       }
     })
 
@@ -451,7 +495,7 @@ const buildPlan = input => {
     planCaution:input.limitations ? `Berücksichtige deine Angabe: ${input.limitations}. Bei Beschwerden Training anpassen und im Zweifel medizinisch/fachlich abklären.` : null,
     phases,
     hyroxProfile:{
-      version:2.2,
+      version:2.4,
       goalType:input.goalType,
       raceFormat:input.raceFormat,
       division:input.division,
