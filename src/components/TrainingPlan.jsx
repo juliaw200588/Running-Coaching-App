@@ -206,6 +206,31 @@ function findCurrentPhaseWeek(plan) {
   return { phaseIdx: 0, weekIdx: 0 }
 }
 
+
+const normalizeWorkoutText = value => String(value || '').toLowerCase()
+
+const detectGenericLogMode = day => {
+  const title = normalizeWorkoutText(day?.einheit)
+  const details = normalizeWorkoutText(day?.details)
+  const strength = [
+    'kraft', 'strength', 'stabilität', 'stabi', 'core',
+    'gym', 'resistance', 'functional strength'
+  ].some(token => title.includes(token) || details.includes(token))
+
+  const mobility = [
+    'mobility', 'mobilität', 'beweglichkeit', 'stretch', 'dehnen',
+    'regeneration mobility', 'yoga'
+  ].some(token => title.includes(token) || details.includes(token))
+
+  // Kraft hat Vorrang, falls eine Einheit z.B. "Kraft & Mobility" heißt.
+  if (strength) return 'strength'
+  if (mobility) return 'mobility'
+  return null
+}
+
+const LOG_EFFORT_CHOICES = ['Sehr leicht','Leicht','Passend','Schwer','Zu schwer']
+const LOG_TECHNIQUE_CHOICES = ['Sicher','Etwas unsicher','Schwierig']
+
 export default function TrainingPlan({ plan, onReset, user, planId = null, openWeekAnalysis = null, onWeekAnalysisOpened }) {
   const [activePhase, setActivePhase] = useState(() => findCurrentPhaseWeek(plan).phaseIdx)
   const [showPauseModal, setShowPauseModal] = useState(false)
@@ -218,7 +243,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
   const [screenshots, setScreenshots] = useState({})
   const [schuhe, setSchuhe] = useState([])
   const [logModal, setLogModal] = useState(null)
-  const [logInput, setLogInput] = useState({ pace: '', km: '', bpm: '', note: '', schuh_id: '', sport_data: {}, hyrox_data: {} })
+  const [logInput, setLogInput] = useState({ pace: '', km: '', bpm: '', note: '', schuh_id: '', sport_data: {}, hyrox_data: {}, generic_data: {} })
   const [modalScreenshot, setModalScreenshot] = useState(null)
   const [modalPreview, setModalPreview] = useState(null)
   const [analyzing, setAnalyzing] = useState(false)
@@ -653,7 +678,18 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
     ...prev, sport_data: { ...(prev.sport_data || {}), [field]: value }
   }))
 
-  const setHyroxField = (stationId, field, value) => setLogInput(prev => ({
+  
+  const setGenericField = (field, value) => {
+    setLogInput(prev => ({
+      ...prev,
+      generic_data: {
+        ...(prev.generic_data || {}),
+        [field]: value,
+      },
+    }))
+  }
+
+const setHyroxField = (stationId, field, value) => setLogInput(prev => ({
     ...prev, hyrox_data: {
       ...(prev.hyrox_data || {}),
       [stationId]: { ...(prev.hyrox_data?.[stationId] || {}), [field]: value },
@@ -928,7 +964,87 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
             ) : (
               <>
                 <div style={{fontSize:11,fontWeight:900,color:'#8B6B5A',fontFamily:'sans-serif',marginBottom:10}}>
-                  {isSwimmingPlan ? 'Schwimmen dokumentieren' : isCyclingPlan ? 'Radtour dokumentieren' : isMtbPlan ? 'MTB-Einheit dokumentieren' : isHikingPlan ? 'Marsch / Wanderung dokumentieren' : isHyroxPlan ? 'HYROX-Laufeinheit dokumentieren' : 'Lauf dokumentieren'}
+                  
+              {logModal?.genericMode === 'strength' ? (
+                <div style={{marginBottom:16}}>
+                  <div style={{fontSize:11,fontWeight:900,color:'#80695C',marginBottom:10,fontFamily:'sans-serif'}}>
+                    Krafttraining dokumentieren
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:10}}>
+                    <div>
+                      <label style={{fontSize:10,fontWeight:800,color:'#B19A8C',display:'block',marginBottom:5,fontFamily:'sans-serif'}}>DAUER</label>
+                      <input value={logInput.generic_data?.duration || ''} onChange={e=>setGenericField('duration',e.target.value)} placeholder="z. B. 55 Min" style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={{fontSize:10,fontWeight:800,color:'#B19A8C',display:'block',marginBottom:5,fontFamily:'sans-serif'}}>GEWICHT</label>
+                      <input value={logInput.generic_data?.weight || ''} onChange={e=>setGenericField('weight',e.target.value)} placeholder="optional" style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={{fontSize:10,fontWeight:800,color:'#B19A8C',display:'block',marginBottom:5,fontFamily:'sans-serif'}}>SÄTZE</label>
+                      <input value={logInput.generic_data?.sets || ''} onChange={e=>setGenericField('sets',e.target.value)} placeholder="z. B. 3" style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={{fontSize:10,fontWeight:800,color:'#B19A8C',display:'block',marginBottom:5,fontFamily:'sans-serif'}}>WIEDERHOLUNGEN</label>
+                      <input value={logInput.generic_data?.reps || ''} onChange={e=>setGenericField('reps',e.target.value)} placeholder="z. B. 8–10" style={inputStyle} />
+                    </div>
+                  </div>
+
+                  <div style={{marginTop:12}}>
+                    <div style={{fontSize:10,fontWeight:800,color:'#B19A8C',marginBottom:7,fontFamily:'sans-serif'}}>WIE ANSTRENGEND WAR ES?</div>
+                    <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                      {LOG_EFFORT_CHOICES.map(choice=>(
+                        <button key={choice} type="button" onClick={()=>setGenericField('effort',choice)}
+                          style={{
+                            border:logInput.generic_data?.effort===choice?'2px solid #FF8C69':'1px solid #E9DDD6',
+                            background:logInput.generic_data?.effort===choice?'#FFF1EA':'#fff',
+                            color:logInput.generic_data?.effort===choice?'#C76049':'#806E63',
+                            borderRadius:999,padding:'7px 10px',fontSize:10,fontWeight:800,cursor:'pointer',fontFamily:'sans-serif'
+                          }}>{choice}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{marginTop:12}}>
+                    <div style={{fontSize:10,fontWeight:800,color:'#B19A8C',marginBottom:7,fontFamily:'sans-serif'}}>TECHNIK / AUSFÜHRUNG</div>
+                    <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                      {LOG_TECHNIQUE_CHOICES.map(choice=>(
+                        <button key={choice} type="button" onClick={()=>setGenericField('technique',choice)}
+                          style={{
+                            border:logInput.generic_data?.technique===choice?'2px solid #6FA88F':'1px solid #E9DDD6',
+                            background:logInput.generic_data?.technique===choice?'#EEF8F3':'#fff',
+                            color:logInput.generic_data?.technique===choice?'#4F806B':'#806E63',
+                            borderRadius:999,padding:'7px 10px',fontSize:10,fontWeight:800,cursor:'pointer',fontFamily:'sans-serif'
+                          }}>{choice}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : logModal?.genericMode === 'mobility' ? (
+                <div style={{marginBottom:16}}>
+                  <div style={{fontSize:11,fontWeight:900,color:'#80695C',marginBottom:10,fontFamily:'sans-serif'}}>
+                    Mobility / Beweglichkeit dokumentieren
+                  </div>
+                  <div>
+                    <label style={{fontSize:10,fontWeight:800,color:'#B19A8C',display:'block',marginBottom:5,fontFamily:'sans-serif'}}>DAUER</label>
+                    <input value={logInput.generic_data?.duration || ''} onChange={e=>setGenericField('duration',e.target.value)} placeholder="z. B. 20 Min" style={inputStyle} />
+                  </div>
+                  <div style={{marginTop:12}}>
+                    <div style={{fontSize:10,fontWeight:800,color:'#B19A8C',marginBottom:7,fontFamily:'sans-serif'}}>WIE HAT ES SICH ANGEFÜHLT?</div>
+                    <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                      {['Sehr gut','Gut','Okay','Zäh'].map(choice=>(
+                        <button key={choice} type="button" onClick={()=>setGenericField('feeling',choice)}
+                          style={{
+                            border:logInput.generic_data?.feeling===choice?'2px solid #6FA88F':'1px solid #E9DDD6',
+                            background:logInput.generic_data?.feeling===choice?'#EEF8F3':'#fff',
+                            color:logInput.generic_data?.feeling===choice?'#4F806B':'#806E63',
+                            borderRadius:999,padding:'7px 10px',fontSize:10,fontWeight:800,cursor:'pointer',fontFamily:'sans-serif'
+                          }}>{choice}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+{isSwimmingPlan ? 'Schwimmen dokumentieren' : isCyclingPlan ? 'Radtour dokumentieren' : isMtbPlan ? 'MTB-Einheit dokumentieren' : isHikingPlan ? 'Marsch / Wanderung dokumentieren' : isHyroxPlan ? 'HYROX-Laufeinheit dokumentieren' : 'Lauf dokumentieren'}
                 </div>
                 <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:10,marginBottom:10}}>
                   {manualLogFields.map(field => {
@@ -949,7 +1065,9 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
 
                 {schuhe.length > 0 && (isRunningPlan || (isHyroxPlan && /run|lauf/i.test(logModal.einheit || ''))) && (
                   <div style={{ marginBottom: 10 }}>
-                    <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>Laufschuhe</label>
+                    
+              )}
+<label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>Laufschuhe</label>
                     <select value={logInput.schuh_id} onChange={e => setLogInput(p => ({ ...p, schuh_id: e.target.value }))}
                       style={{ width: '100%', padding: '10px 12px', borderRadius: 12, border: '1.5px solid #F0E8E0', fontSize: 14, color: '#3D2B1F', outline: 'none', boxSizing: 'border-box', background: '#FFF8F5', fontFamily: 'sans-serif', cursor: 'pointer' }}>
                       <option value="">Kein Schuh ausgewählt</option>
