@@ -107,7 +107,7 @@ const phaseMeta = id => ({
   taper:{ label:'Taper', sub:'Frische & Schärfe', icon:'✨', description:'Umfang reduzieren, Race-Gefühl erhalten und erholt starten.', accent:'#8B7BAA' },
 }[id])
 
-const effortHint = `Beim Loggen: „Wie war das Gewicht?“ → Zu leicht · Leicht · Passend · Schwer · Zu schwer. Zusätzlich: „Wie sauber war die Technik?“ → Sicher · Etwas unsicher · Technik schwierig.`
+const effortHint = ''
 
 const stationAlternative = (input, station) => {
   if (station === 'sled' && !has(input,'sled')) return 'Kein Sled: schwere Step-ups + Zugübung als Ersatz'
@@ -159,7 +159,7 @@ const calibrationA = (input,race) => {
     (has(input,'kettlebells')
       ? `Farmers Carry: 3×40 m @ ca. ${l.farmers} kg je Hand. `
       : `${stationAlternative(input,'farmers')}: 3×40 m. `) +
-    `90–120 s Pause. Nicht bis zum Versagen. ${effortHint}`
+    `90–120 s Pause. Nicht bis zum Versagen.`
 }
 
 const calibrationB = (input,race) => {
@@ -168,7 +168,7 @@ const calibrationB = (input,race) => {
   const row = has(input,'rower') ? '3×250 m Row locker bis moderat' : `3×75 s ${stationAlternative(input,'row')}`
   const lunges = has(input,'sandbag') ? `3×10 m Sandbag Lunges @ ca. ${l.lunges} kg` : `3×10 m ${stationAlternative(input,'lunges')}`
   const wall = has(input,'wallBall') ? `3×8 Wall Balls @ ${l.wall} kg` : `3×8 ${stationAlternative(input,'wall')}`
-  return `Kalibrierung B · Technik & Rhythmus. ${ski}; ${row}; ${lunges}; ${wall}. 60–90 s Pause. Ziel: sichere Bewegung und ein reproduzierbarer Ausgangswert, nicht Erschöpfung. ${effortHint}`
+  return `Kalibrierung B · Technik & Rhythmus. ${ski}; ${row}; ${lunges}; ${wall}. 60–90 s Pause. Ziel: sichere Bewegung und ein reproduzierbarer Ausgangswert, nicht Erschöpfung.`
 }
 
 const easyRun = (input,week,phaseId) => {
@@ -196,7 +196,7 @@ const strengthSession = (input,week,totalWeeks,phaseId,race,variant=0) => {
   if (variant % 3 === 0) {
     return `Kraft & Sled · ${sets} Runden Kraftblock: Goblet/Front Squat ${sets}×8; Romanian Deadlift ${sets}×8; Split Squat ${sets}×8 je Bein. ` +
       (has(input,'sled') ? `Sled Push ${sets}×12,5–25 m @ ca. ${l.push} kg; Sled Pull ${sets}×12,5–25 m @ ca. ${l.pull} kg. ` : `${stationAlternative(input,'sled')}. `) +
-      `90–120 s Pause. ${effortHint}`
+      `90–120 s Pause.`
   }
   if (variant % 3 === 1) {
     return `Kraftausdauer & Carry · ${sets} Runden: 8 Deadlifts; 8 Step-ups je Bein; ` +

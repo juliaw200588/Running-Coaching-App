@@ -125,6 +125,15 @@ const estimateWeekKm = (week) => {
   return km
 }
 
+const cleanHyroxDetails = value => {
+  const text = String(value || '')
+  return text
+    .replace(/\s*Beim Loggen:[\s\S]*?(?=(?:Deload:|Regenerationswoche:|$))/i, ' ')
+    .replace(/\s*Zusätzlich:\s*„?Wie sauber war die Technik\??“?\s*→\s*Sicher\s*·\s*Etwas unsicher\s*·\s*Technik schwierig\.?/gi, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
 const typeStyle = (einheit, optional, isDone) => {
   if (isDone) return { bg: '#F0FAF4', text: '#5BA88A', border: '#B8E4CC', dot: '#7EC8A4' }
   if (optional) return { bg: '#FFF8F5', text: '#C4A882', border: '#F0E8E0', dot: '#D4C4B8' }
@@ -1026,8 +1035,8 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
 
       {/* Log Modal */}
       {logModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(60,30,20,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-          <div style={{ background: 'white', borderRadius: '28px 28px 0 0', padding: '20px 20px 44px', width: '100%', maxWidth: 520, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 -8px 40px rgba(255,140,105,0.2)' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(60,30,20,0.45)', zIndex: 300, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ background: 'white', borderRadius: '28px 28px 0 0', padding: '20px 20px calc(110px + env(safe-area-inset-bottom, 0px))', width: '100%', maxWidth: 520, maxHeight: '94vh', overflowY: 'auto', WebkitOverflowScrolling: 'touch', boxShadow: '0 -8px 40px rgba(255,140,105,0.2)' }}>
             <div style={{ width: 36, height: 4, background: '#F0E8E0', borderRadius: 99, margin: '0 auto 18px' }} />
             <div style={{ fontSize: 11, color: '#C4A882', marginBottom: 2, fontFamily: 'sans-serif' }}>{logModal.tag}</div>
             <div style={{ fontSize: 18, fontWeight: 'bold', color: '#3D2B1F', marginBottom: 18 }}>{logModal.einheit}</div>
@@ -1673,8 +1682,13 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
             const isOpen = !!openWeeks[wi]
             const phaseColor = phase.accent || phaseTabColors[activePhase] || '#FF8C69'
             const weekKm = (isCyclingPlan || isMtbPlan || isSwimmingPlan || isHyroxPlan) ? 0 : estimateWeekKm(week)
-            const weekMinutes = isHyroxPlan ? week.days.filter(d => !d.optional).reduce((sum,d) => sum + (Number(d.durationMinutes) || 0), 0) : 0
             const weekRunKm = isHyroxPlan ? week.days.filter(d => !d.optional).reduce((sum,d) => sum + (/run|lauf/i.test(`${d.einheit || ''} ${d.details || ''}`) ? estimateDayKm(d.details) : 0), 0) : 0
+            const weekHyroxUnits = isHyroxPlan ? week.days.filter(d => {
+              if (d.optional) return false
+              const type = String(d.hyrox_session_type || '').toLowerCase()
+              if (type) return !['easy','run_quality','recovery'].includes(type)
+              return /hyrox|kalibrier|strength|stations|sled|circuit|simulation|learn\s*&\s*build/i.test(`${d.einheit || ''} ${d.details || ''}`)
+            }).length : 0
 
             return (
               <div key={week.n} style={{ background: 'white', borderRadius: 20, marginBottom: 12, overflow: 'hidden', boxShadow: isOpen ? '0 8px 32px rgba(255,140,105,0.15)' : '0 2px 12px rgba(0,0,0,0.06)', border: isOpen ? '2px solid #FFD4C0' : '2px solid transparent', transition: 'all 0.3s ease' }}>
@@ -1689,7 +1703,11 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                       {week.regen && <span style={{ fontSize: 10, color: '#B8A090', background: '#F5EDE8', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>Regeneration</span>}
                       {week.race && <span style={{ fontSize: 10, color: '#A78BCA', background: '#F5F0FF', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif' }}>Rennwoche 🏁</span>}
                       {weekKm > 0 && <span style={{ fontSize: 10, color: '#FF8C69', background: '#FFF5EE', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif', border: '1px solid #FFE0CC' }}>ca. {Math.round(weekKm)} km</span>}
-                      {isHyroxPlan && <span style={{ fontSize: 10, color: '#FF8C69', background: '#FFF5EE', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif', border: '1px solid #FFE0CC' }}>{weekTotal} Einheiten · ~{weekMinutes} Min{weekRunKm > 0 ? ` · ~${Math.round(weekRunKm)} km Laufanteil` : ''}</span>}
+                      {isHyroxPlan && <span style={{ fontSize: 10, color: '#FF8C69', background: '#FFF5EE', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif', border: '1px solid #FFE0CC' }}>
+                        {weekTotal} Einheiten
+                        {weekRunKm > 0 ? ` · ca. ${Math.max(1, Math.round(weekRunKm))} km Laufanteil` : ''}
+                        {weekHyroxUnits > 0 ? ` · ${weekHyroxUnits} HYROX-Einheiten` : ''}
+                      </span>}
                     </div>
                     <div style={{ color: '#B8A090', fontSize: 11, fontFamily: 'sans-serif', marginTop: 2 }}>{week.dateRange} · {weekDone}/{weekTotal} erledigt</div>
                   </div>
@@ -1731,7 +1749,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                               {isSkipped && <span style={{ fontSize: 9, background: '#EFE9E1', color: '#A89A88', padding: '2px 7px', borderRadius: 99, fontWeight: 'bold', border: '1px solid #E0D8CC', fontFamily: 'sans-serif' }}>⏭ Übersprungen</span>}
                               {day.adjusted && <span style={{ fontSize: 9, background: '#FFF5EE', color: '#FF8C69', padding: '2px 7px', borderRadius: 99, fontWeight: 'bold', border: '1px solid #FFE0CC', fontFamily: 'sans-serif' }}>✏️ Angepasst</span>}
                             </div>
-                            <div style={{ color: isDone ? '#A8D8C0' : isSkipped ? '#B8AC9E' : '#B8A090', fontSize: 11, fontFamily: 'sans-serif', marginTop: 3, lineHeight: 1.5 }}>{day.details}</div>
+                            <div style={{ color: isDone ? '#A8D8C0' : isSkipped ? '#B8AC9E' : '#B8A090', fontSize: 11, fontFamily: 'sans-serif', marginTop: 3, lineHeight: 1.5 }}>{isHyroxPlan ? cleanHyroxDetails(day.details) : day.details}</div>
                             {isHikingPlan && !day.strengthPrescription && (day.intensity || day.paceGuidance) && (
                               <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:7}}>
                                 {day.intensity && <span style={{fontSize:9.5,background:'#F3F8F5',color:'#4F806B',padding:'3px 8px',borderRadius:99,fontWeight:800,fontFamily:'sans-serif',border:'1px solid #D7E8DF'}}>Tempo: {day.intensity}</span>}
