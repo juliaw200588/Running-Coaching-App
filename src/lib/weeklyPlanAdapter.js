@@ -11,6 +11,7 @@ export const normalizeWeeklySport = value => {
   if (/bike|cycling|rad|velo/.test(text)) return 'cycling'
   if (/walk|hike|wander|marsch/.test(text)) return 'hiking'
   if (/swim|schwimm/.test(text)) return 'swimming'
+  if (/hyrox/.test(text)) return 'hyrox'
   return 'running'
 }
 

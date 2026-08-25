@@ -128,6 +128,7 @@ const estimateWeekKm = (week) => {
 const cleanHyroxDetails = value => {
   const text = String(value || '')
   return text
+    .replace(/\s*10\s*Min\s*Technik-Warm-up\.?/gi, ' ')
     .replace(/\s*Beim Loggen:[\s\S]*?(?=(?:Deload:|Regenerationswoche:|$))/i, ' ')
     .replace(/\s*Zusätzlich:\s*„?Wie sauber war die Technik\??“?\s*→\s*Sicher\s*·\s*Etwas unsicher\s*·\s*Technik schwierig\.?/gi, ' ')
     .replace(/\s{2,}/g, ' ')
@@ -355,6 +356,39 @@ const strengthPrescriptionLabel = exercise => {
 const GENERIC_EFFORT_CHOICES = ['Sehr leicht','Leicht','Passend','Schwer','Zu schwer']
 const GENERIC_TECHNIQUE_CHOICES = ['Sicher','Etwas unsicher','Schwierig']
 
+
+
+const getHyroxWarmup = day => {
+  if (!day) return null
+
+  const structured = day.hyrox_warmup || day.hyroxWarmup
+  if (structured?.steps?.length) {
+    return {
+      title:structured.title || '10 Min HYROX Warm-up',
+      subtitle:structured.subtitle || 'Kurz vorbereiten, dann kontrolliert in die Einheit starten.',
+      steps:structured.steps,
+      tip:structured.tip || null,
+    }
+  }
+
+  const title = String(day.einheit || '').toLowerCase()
+  if (title.includes('kalibrierung a')) {
+    return {
+      title:'10 Min Warm-up · Zug, Druck & Tragen',
+      subtitle:'Keine Vorermüdung – du bereitest nur Gelenke, Haltung und Bewegungsmuster vor.',
+      steps:[
+        {time:'2–3 Min', title:'Locker in Bewegung kommen', text:'Zügig gehen, locker rudern oder Bike. Nur so intensiv, dass du dich problemlos unterhalten kannst.'},
+        {time:'2 Min', title:'Mobilisieren', text:'Je 6–8 kontrollierte Wiederholungen: Sprunggelenke vor/zurück, Hüfte öffnen, Schulterkreisen und Brustwirbelsäule rotieren.'},
+        {time:'2 Min', title:'Sled Push vorbereiten', text:'1–2 kurze Bahnen mit deutlich weniger Gewicht als in der Kalibrierung. Körper leicht nach vorn, Rumpf fest, kurze gleichmäßige Schritte.'},
+        {time:'1–2 Min', title:'Sled Pull vorbereiten', text:'1–2 kurze leichte Bahnen. Stabil stehen, Seil kontrolliert ziehen und nicht hektisch aus dem Rücken reißen.'},
+        {time:'1 Min', title:'Farmers Carry vorbereiten', text:'20–30 m mit leichtem Gewicht. Aufrecht gehen, Schultern ruhig halten und den Griff bewusst fest, aber nicht verkrampft wählen.'},
+      ],
+      tip:'Danach 1–2 Min sammeln. Du solltest dich warm und sicher fühlen – nicht müde. Erst dann beginnt die eigentliche Kalibrierung.',
+    }
+  }
+
+  return null
+}
 
 const HYROX_WEIGHT_CONFIG = {
   sled_push:{
@@ -1094,203 +1128,9 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
   }
 
 
-  const adaptHyroxPlanFromLog = async (dayKeyValue, hyroxData) => {
-    if (!isHyroxPlan || !hyroxData || typeof hyroxData !== 'object') return []
-    if (!plan?.phases?.length) return []
-
-    const currentPosition = findHyroxDayPosition(plan, dayKeyValue)
-    if (!currentPosition) return []
-
-    const updatedPlan = JSON.parse(JSON.stringify(plan))
-    const updatedCurrentPosition = findHyroxDayPosition(updatedPlan, dayKeyValue)
-    const raceLoads = updatedPlan?.hyroxProfile?.raceLoads || {}
-    const changes = []
-
-    updatedPlan.hyroxProfile = {
-      ...(updatedPlan.hyroxProfile || {}),
-      stationBaselines: {
-        ...(updatedPlan?.hyroxProfile?.stationBaselines || {}),
-      },
-      adaptiveHistory: Array.isArray(updatedPlan?.hyroxProfile?.adaptiveHistory)
-        ? [...updatedPlan.hyroxProfile.adaptiveHistory]
-        : [],
-    }
-
-    for (const [stationId, values] of Object.entries(hyroxData)) {
-      if (!values || typeof values !== 'object') continue
-      const effort = values.effort || ''
-      const technique = values.technique || ''
-      const factor = hyroxEffortFactor(effort, technique)
-
-      // 1) Gewichtsbasierte HYROX-Stationen
-      const weightConfig = HYROX_WEIGHT_CONFIG[stationId]
-      if (weightConfig) {
-        const actualWeight = numericLogValue(values[weightConfig.field])
-        if (!actualWeight) continue
-
-        if (weightConfig.baselineKey) {
-          updatedPlan.hyroxProfile.stationBaselines[weightConfig.baselineKey] = actualWeight
-        }
-
-        const nextOccurrence = nextHyroxStationOccurrence(updatedPlan, updatedCurrentPosition, stationId)
-        if (!nextOccurrence) continue
-
-        const currentDetails = nextOccurrence.day.details || ''
-        const parsed = currentDetails.match(weightConfig.regex)
-        const scheduledWeight = parsed ? numericLogValue(parsed[2]) : null
-        const raceCap = numericLogValue(raceLoads[weightConfig.raceKey])
-
-        let nextWeight
-        if (String(technique).toLowerCase().includes('schwierig') || effort === 'Zu schwer') {
-          nextWeight = actualWeight * 0.90
-        } else if (String(technique).toLowerCase().includes('unsicher') || effort === 'Schwer') {
-          nextWeight = actualWeight
-        } else if (effort === 'Passend') {
-          nextWeight = Math.min(
-            scheduledWeight || actualWeight * 1.05,
-            actualWeight * 1.05
-          )
-        } else if (effort === 'Leicht') {
-          nextWeight = Math.max(scheduledWeight || 0, actualWeight * 1.05)
-        } else if (effort === 'Zu leicht') {
-          nextWeight = Math.max(scheduledWeight || 0, actualWeight * 1.10)
-        } else {
-          nextWeight = scheduledWeight || actualWeight
-        }
-
-        if (raceCap) nextWeight = Math.min(nextWeight, raceCap)
-        nextWeight = roundAdaptiveValue(nextWeight, weightConfig.step)
-
-        const replaced = replaceStationWeightInDetails(
-          currentDetails,
-          stationId,
-          nextWeight
-        )
-
-        // Wenn der Text nicht parsebar ist, behalten wir wenigstens strukturierte Zielwerte.
-        nextOccurrence.day.hyrox_targets = {
-          ...(nextOccurrence.day.hyrox_targets || {}),
-          [stationId]: {
-            ...((nextOccurrence.day.hyrox_targets || {})[stationId] || {}),
-            [weightConfig.field]: nextWeight,
-            source:'adaptive_log',
-          },
-        }
-
-        if (replaced.changed) nextOccurrence.day.details = replaced.details
-
-        const stationLabel =
-          nextOccurrence.day.hyrox_log?.stations?.find(s => s.id === stationId)?.label ||
-          stationId.replaceAll('_',' ')
-
-        const reason = adaptiveReasonFor({
-          label:stationLabel,
-          effort,
-          technique,
-          from:actualWeight,
-          to:nextWeight,
-          unit:'kg',
-        })
-
-        nextOccurrence.day.adjusted = true
-        nextOccurrence.day.adjustmentReason = nextOccurrence.day.adjustmentReason
-          ? `${nextOccurrence.day.adjustmentReason} ${reason}`
-          : reason
-
-        changes.push({
-          stationId,
-          type:'weight',
-          from:actualWeight,
-          to:nextWeight,
-          targetWeek:nextOccurrence.week.n,
-          targetDay:nextOccurrence.day.tag,
-          reason,
-        })
-        continue
-      }
-
-      // 2) Nicht gewichtete Stationen: Umfang nur moderat in der NÄCHSTEN passenden Einheit anpassen.
-      // Laufen bleibt bewusst außen vor – Laufprogression gehört in die Lauf-/Wochenanalyse.
-      if (stationId === 'run') continue
-
-      const volumeConfig = HYROX_VOLUME_CONFIG[stationId]
-      if (!volumeConfig || (!effort && !technique)) continue
-
-      let volumeFactor = 1
-      const tech = String(technique || '').toLowerCase()
-      if (tech.includes('schwierig') || effort === 'Zu schwer') volumeFactor = 0.90
-      else if (effort === 'Schwer') volumeFactor = 0.95
-      else if (tech.includes('unsicher') || effort === 'Passend') volumeFactor = 1
-      else if (effort === 'Leicht') volumeFactor = 1.05
-      else if (effort === 'Zu leicht') volumeFactor = 1.10
-
-      if (volumeFactor === 1) continue
-
-      const nextOccurrence = nextHyroxStationOccurrence(updatedPlan, updatedCurrentPosition, stationId)
-      if (!nextOccurrence) continue
-
-      const replaced = replaceStationVolumeInDetails(
-        nextOccurrence.day.details || '',
-        stationId,
-        volumeFactor
-      )
-      if (!replaced.changed) continue
-
-      nextOccurrence.day.details = replaced.details
-      nextOccurrence.day.hyrox_targets = {
-        ...(nextOccurrence.day.hyrox_targets || {}),
-        [stationId]: {
-          ...((nextOccurrence.day.hyrox_targets || {})[stationId] || {}),
-          distance:replaced.next,
-          source:'adaptive_log',
-        },
-      }
-
-      const reason = `${volumeConfig.label}: Umfang aufgrund deines letzten Logs von ca. ${replaced.previous} auf ${replaced.next} m angepasst.`
-      nextOccurrence.day.adjusted = true
-      nextOccurrence.day.adjustmentReason = nextOccurrence.day.adjustmentReason
-        ? `${nextOccurrence.day.adjustmentReason} ${reason}`
-        : reason
-
-      changes.push({
-        stationId,
-        type:'volume',
-        from:replaced.previous,
-        to:replaced.next,
-        targetWeek:nextOccurrence.week.n,
-        targetDay:nextOccurrence.day.tag,
-        reason,
-      })
-    }
-
-    if (!changes.length) return []
-
-    updatedPlan.hyroxProfile.adaptiveHistory.push({
-      loggedDayKey:dayKeyValue,
-      createdAt:new Date().toISOString(),
-      changes,
-    })
-    updatedPlan.hyroxProfile.adaptiveHistory =
-      updatedPlan.hyroxProfile.adaptiveHistory.slice(-40)
-
-    // Den aktuell gerenderten Plan direkt aktualisieren.
-    Object.keys(plan).forEach(key => delete plan[key])
-    Object.assign(plan, updatedPlan)
-    forcePlanRender(value => value + 1)
-
-    // Persistenz immer über die konkrete planId – wichtig bei mehreren / gemeinsamen Plänen.
-    if (user?.id && planId) {
-      const { error } = await supabase
-        .from('plans')
-        .update({ plan_data: updatedPlan })
-        .eq('id', planId)
-        .eq('user_id', user.id)
-
-      if (error) console.error('[HYROX] Adaptive Plananpassung konnte nicht gespeichert werden:', error)
-    }
-
-    return changes
-  }
+  // HYROX-Logs werden hier nur gespeichert.
+  // Die adaptive Plansteuerung erfolgt zentral im Wochen-Coach, damit
+  // ein einzelnes Stations-Log nicht vor der Wochenanalyse den Plan verändert.
 
   const saveLog = async () => {
     const key = logModal.key
@@ -1324,15 +1164,6 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
           generic_data: logInput.generic_data || {},
         }, { onConflict: 'user_id,day_key' })
       } catch (e) { console.error('Log Supabase Fehler:', e) }
-    }
-
-    // HYROX: aus dem manuellen Stations-Log die nächste passende Belastung anpassen.
-    if (isHyroxPlan && logInput.hyrox_data && Object.keys(logInput.hyrox_data).length > 0) {
-      try {
-        await adaptHyroxPlanFromLog(key, logInput.hyrox_data)
-      } catch (e) {
-        console.error('[HYROX] Adaptive Anpassung fehlgeschlagen:', e)
-      }
     }
 
     // Schuh-km updaten
@@ -2062,7 +1893,12 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
             const isOpen = !!openWeeks[wi]
             const phaseColor = phase.accent || phaseTabColors[activePhase] || '#FF8C69'
             const weekKm = (isCyclingPlan || isMtbPlan || isSwimmingPlan || isHyroxPlan) ? 0 : estimateWeekKm(week)
-            const weekRunKm = isHyroxPlan ? week.days.filter(d => !d.optional).reduce((sum,d) => sum + (/run|lauf/i.test(`${d.einheit || ''} ${d.details || ''}`) ? estimateDayKm(d.details) : 0), 0) : 0
+            const weekRunUnits = isHyroxPlan ? week.days.filter(d => {
+              if (d.optional) return false
+              const type = String(d.hyrox_session_type || '').toLowerCase()
+              if (type) return ['easy','run_quality','recovery'].includes(type)
+              return /easy run|lockerer lauf|lauf\s*\+\s*mobility|run quality/i.test(`${d.einheit || ''} ${d.details || ''}`)
+            }).length : 0
             const weekHyroxUnits = isHyroxPlan ? week.days.filter(d => {
               if (d.optional) return false
               const type = String(d.hyrox_session_type || '').toLowerCase()
@@ -2085,7 +1921,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                       {weekKm > 0 && <span style={{ fontSize: 10, color: '#FF8C69', background: '#FFF5EE', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif', border: '1px solid #FFE0CC' }}>ca. {Math.round(weekKm)} km</span>}
                       {isHyroxPlan && <span style={{ fontSize: 10, color: '#FF8C69', background: '#FFF5EE', padding: '2px 8px', borderRadius: 99, fontWeight: 'bold', fontFamily: 'sans-serif', border: '1px solid #FFE0CC' }}>
                         {weekTotal} Einheiten
-                        {weekRunKm > 0 ? ` · ca. ${Math.max(1, Math.round(weekRunKm))} km Laufanteil` : ''}
+                        {weekRunUnits > 0 ? ` · ${weekRunUnits} ${weekRunUnits === 1 ? 'Laufeinheit' : 'Laufeinheiten'}` : ''}
                         {weekHyroxUnits > 0 ? ` · ${weekHyroxUnits} HYROX-Einheiten` : ''}
                       </span>}
                     </div>
@@ -2130,6 +1966,112 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                               {day.adjusted && <span style={{ fontSize: 9, background: '#FFF5EE', color: '#FF8C69', padding: '2px 7px', borderRadius: 99, fontWeight: 'bold', border: '1px solid #FFE0CC', fontFamily: 'sans-serif' }}>✏️ Angepasst</span>}
                             </div>
                             <div style={{ color: isDone ? '#A8D8C0' : isSkipped ? '#B8AC9E' : '#B8A090', fontSize: 11, fontFamily: 'sans-serif', marginTop: 3, lineHeight: 1.5 }}>{isHyroxPlan ? cleanHyroxDetails(day.details) : day.details}</div>
+                            {isHyroxPlan && getHyroxWarmup(day) && (() => {
+                              const warmup = getHyroxWarmup(day)
+                              const warmupKey = `${key}-hyrox-warmup`
+                              const warmupOpen = Boolean(openTechniques[warmupKey])
+                              return (
+                                <div style={{
+                                  marginTop:8,
+                                  borderRadius:12,
+                                  background:'#FFF7EF',
+                                  border:'1px solid #F1DDCC',
+                                  overflow:'hidden',
+                                  fontFamily:'sans-serif',
+                                }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setOpenTechniques(prev => ({...prev,[warmupKey]:!prev[warmupKey]}))}
+                                    style={{
+                                      width:'100%',
+                                      border:'none',
+                                      background:'transparent',
+                                      padding:'9px 10px',
+                                      display:'flex',
+                                      alignItems:'center',
+                                      justifyContent:'space-between',
+                                      gap:10,
+                                      textAlign:'left',
+                                      cursor:'pointer',
+                                      color:'#8D6044',
+                                    }}
+                                  >
+                                    <span>
+                                      🔥 <strong>{warmup.title}</strong>
+                                      <span style={{
+                                        display:'block',
+                                        marginTop:2,
+                                        fontSize:9.5,
+                                        color:'#A9846E',
+                                        lineHeight:1.35,
+                                        fontWeight:600,
+                                      }}>
+                                        {warmupOpen ? 'Anleitung ausblenden' : 'Warm-up Schritt für Schritt ansehen'}
+                                      </span>
+                                    </span>
+                                    <span style={{
+                                      flexShrink:0,
+                                      fontSize:13,
+                                      transform:warmupOpen?'rotate(180deg)':'none',
+                                      transition:'transform .2s ease',
+                                    }}>⌄</span>
+                                  </button>
+
+                                  {warmupOpen && (
+                                    <div style={{
+                                      borderTop:'1px solid #F1DDCC',
+                                      padding:'10px',
+                                      color:'#7F685A',
+                                    }}>
+                                      {warmup.subtitle && (
+                                        <div style={{fontSize:10,lineHeight:1.45,marginBottom:9,color:'#957665'}}>
+                                          {warmup.subtitle}
+                                        </div>
+                                      )}
+                                      <div style={{display:'grid',gap:7}}>
+                                        {warmup.steps.map((step,index) => (
+                                          <div key={`${warmupKey}-${index}`} style={{
+                                            display:'grid',
+                                            gridTemplateColumns:'52px minmax(0,1fr)',
+                                            gap:8,
+                                            padding:'8px 9px',
+                                            borderRadius:10,
+                                            background:'#FFFCF9',
+                                            border:'1px solid #F2E6DC',
+                                          }}>
+                                            <div style={{fontSize:9,fontWeight:900,color:'#E07B57'}}>
+                                              {step.time || `${index + 1}.`}
+                                            </div>
+                                            <div>
+                                              <div style={{fontSize:10.2,fontWeight:900,color:'#6E5141',marginBottom:2}}>
+                                                {step.title}
+                                              </div>
+                                              <div style={{fontSize:9.8,lineHeight:1.45,color:'#92796A'}}>
+                                                {step.text}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                      {warmup.tip && (
+                                        <div style={{
+                                          marginTop:8,
+                                          padding:'8px 9px',
+                                          borderRadius:10,
+                                          background:'#F1F8F4',
+                                          border:'1px solid #D6E8DD',
+                                          color:'#557563',
+                                          fontSize:9.8,
+                                          lineHeight:1.45,
+                                        }}>
+                                          🌿 <strong>Wichtig:</strong> {warmup.tip}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })()}
                             {isHikingPlan && !day.strengthPrescription && (day.intensity || day.paceGuidance) && (
                               <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:7}}>
                                 {day.intensity && <span style={{fontSize:9.5,background:'#F3F8F5',color:'#4F806B',padding:'3px 8px',borderRadius:99,fontWeight:800,fontFamily:'sans-serif',border:'1px solid #D7E8DF'}}>Tempo: {day.intensity}</span>}

@@ -998,6 +998,55 @@ const buildSportSummary = ({ sportType, plannedDays, weekRuns }) => {
   }
 }
 
+const HYROX_STATION_LABELS = {
+  sled_push:'Sled Push', sled_pull:'Sled Pull', farmers_carry:'Farmers Carry',
+  sandbag_lunges:'Sandbag Lunges', wall_balls:'Wall Balls', ski_erg:'SkiErg',
+  row:'Row', burpee_broad_jumps:'Burpee Broad Jumps', run:'Laufen',
+}
+
+const hyroxRecommendation = values => {
+  const effort = String(values?.effort || '').toLowerCase()
+  const technique = String(values?.technique || '').toLowerCase()
+  const completed = values?.completed
+  if (/schwierig/.test(technique) || completed === false || /zu schwer/.test(effort)) return 'reduce'
+  if (/schwer/.test(effort)) return 'hold'
+  if (/zu leicht|leicht/.test(effort) && /sicher/.test(technique)) return 'small_progress'
+  if (/passend/.test(effort) && /sicher/.test(technique)) return 'planned_progression'
+  return 'hold'
+}
+
+const buildHyroxSummary = weekLogs => {
+  const sessions = []
+  const stations = {}
+  for (const log of weekLogs || []) {
+    const data = log?.hyrox_data
+    if (!data || typeof data !== 'object' || !Object.keys(data).length) continue
+    const session = { key:log.key || null, tag:log.tag || null, workout:log.einheit || null, stations:[] }
+    for (const [stationId, values] of Object.entries(data)) {
+      if (!values || typeof values !== 'object') continue
+      const recommendation = hyroxRecommendation(values)
+      const item = {
+        stationId, label:HYROX_STATION_LABELS[stationId] || stationId,
+        weight:numeric(values.weight), weightEach:numeric(values.weight_each),
+        distance:numeric(values.distance), reps:numeric(values.reps), time:numeric(values.time),
+        effort:values.effort || null, technique:values.technique || null,
+        completed:values.completed ?? null, recommendation,
+      }
+      session.stations.push(item)
+      if (!stations[stationId]) stations[stationId] = []
+      stations[stationId].push(item)
+    }
+    sessions.push(session)
+  }
+  const stationTrends = Object.entries(stations).map(([stationId, entries]) => ({
+    stationId, label:HYROX_STATION_LABELS[stationId] || stationId,
+    logs:entries.length, latest:entries.at(-1),
+    deterministicRecommendation:entries.at(-1)?.recommendation || 'hold',
+    safetyPriority:entries.some(e => e.recommendation === 'reduce'),
+  }))
+  return { sessions, stationTrends, rule:'Technik hat Vorrang. Technik schwierig, nicht geschafft oder zu schwer => reduzieren; schwer => halten; leicht + sicher => kleine Steigerung möglich; passend + sicher => geplante Progression zulässig.' }
+}
+
 export function buildTrainingAnalysis({
   weekLogs = [],
   plannedDays = [],
@@ -1134,6 +1183,7 @@ export function buildTrainingAnalysis({
   const planRealityPatterns = buildPlanRealityPattern(historyRuns)
   const subjectiveObjectiveSignals = buildSubjectiveObjectiveSignals(weekRuns)
   const sportSummary = buildSportSummary({ sportType, plannedDays, weekRuns })
+  const hyroxSummary = normalizeSport(sportType) === 'hyrox' ? buildHyroxSummary(weekLogs) : null
 
   const previousWeekRuns = Number.isFinite(numeric(weekNumber))
     ? historyRuns.filter(
@@ -1240,6 +1290,7 @@ export function buildTrainingAnalysis({
     fatigueSignals,
     sportType: normalizeSport(sportType),
     sportSummary,
+    hyroxSummary,
     confidence: confidenceFor(weekRuns, sportType),
   }
 }

@@ -390,6 +390,19 @@ Wander-/Marsch-spezifisch:
 - Zielgelände und Trainingsumgebung unterscheiden; keine nicht verfügbaren Höhenmeter erfinden.
 - Anpassungen bevorzugt über Distanz, Dauer, Intensität und Ausführungshinweise.`,
 
+  hyrox: `Du bist ein professioneller HYROX-Coach und analysierst eine abgeschlossene Trainingswoche.
+${COMMON_COACH_RULES}
+HYROX-spezifisch:
+- Nutze hyroxSummary als strukturierte Ist-Datenbasis für die Stationen. Gewichte, Wiederholungen, Distanz, Zeit, Belastung und Technik nicht erfinden.
+- Die deterministische Empfehlung je Station ist eine harte Leitplanke: safetyPriority/reduce darf niemals in eine Steigerung umgewandelt werden; hold darf nicht allein wegen einer sonst guten Woche gesteigert werden.
+- Technik hat Vorrang vor Last. "Technik schwierig", "zu schwer" oder nicht geschafft => nächste passende Belastung reduzieren bzw. technisch vereinfachen. "Schwer" => halten. "Leicht/zu leicht + sicher" => kleine Steigerung ist möglich. "Passend + sicher" => nur die ohnehin passende geplante Progression zulassen.
+- Entscheide trotzdem auf Wochenebene: Gesamtbelastung, Erholung, andere Sportarten, Check-in und Phase können eine grundsätzlich zulässige Steigerung auf halten/reduzieren begrenzen.
+- Keine Einzel-Log-Sofortanpassung simulieren. Der Wochen-Coach ist die einzige Instanz, die den kommenden Wochenplan verändert.
+- HYROX-Race-Loads aus hyroxProfile.raceLoads sind Obergrenzen, keine automatischen Trainingsziele. Nie über sie hinaus steigern.
+- Bei einer Änderung die bestehende Einheit fachlich erhalten und vorzugsweise details/intensity/durationMinutes anpassen. Keine zusätzlichen Trainingstage erzeugen und keine Station erfinden, die im Plan nicht vorkommt.
+- Bei Deload/Regenerationswoche keine Lastprogression.
+- Der Fokus kann Laufökonomie, Stationslast, Technik oder Belastungsverträglichkeit betreffen, aber genau eine Hauptaufgabe nennen.`,
+
   swimming: `Du bist ein professioneller Schwimmcoach und analysierst eine abgeschlossene Trainingswoche.
 ${COMMON_COACH_RULES}
 Schwimmspezifisch:
@@ -493,11 +506,13 @@ export default async function handler(req, res) {
         cyclingProfile: plan?.cyclingProfile || null,
         mtbProfile: plan?.mtbProfile || null,
         swimmingProfile: plan?.swimmingProfile || null,
+        hyroxProfile: plan?.hyroxProfile || null,
       },
       weeklyCheckIn: weekCheckIn || null,
       adherence: facts.adherence,
       weekContext: facts.weekContext,
       sportSummary: facts.sportSummary,
+      hyroxSummary: sport === 'hyrox' ? facts.hyroxSummary : null,
       trendState,
       runningDetails: sport === 'running'
         ? {
@@ -641,6 +656,7 @@ export default async function handler(req, res) {
         facts: {
           sportType: facts.sportType,
           sportSummary: facts.sportSummary,
+      hyroxSummary: sport === 'hyrox' ? facts.hyroxSummary : null,
           adherence: facts.adherence,
           weekContext: facts.weekContext,
           efficiencyCandidates: facts.efficiencyCandidates,

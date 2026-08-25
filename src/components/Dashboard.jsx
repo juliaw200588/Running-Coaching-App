@@ -1,10 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { loadAndEvaluateAchievements } from '../lib/achievementService.js'
-import { getHeroImageForDashboard } from '../lib/heroImages.js'
-import TrainingFeedbackModal from './TrainingFeedbackModal.jsx'
-import { getDailyCoaching } from '../lib/dailyCoaching.js'
-import { encodeTrainingFeedback, hasStructuredTrainingFeedback } from '../lib/trainingFeedback.js'
 
 const DAY_MS = 86400000
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
@@ -155,6 +151,45 @@ const SPORT_SUMMARY_META = {
   other: { icon: '✨', label: 'Weitere' },
 }
 
+
+const isHyroxPlanLike = plan => {
+  const text = `${plan?.sport_type || ''} ${plan?.sportType || ''} ${plan?.title || ''} ${plan?.name || ''}`.toLowerCase()
+  if (text.includes('hyrox')) return true
+  return (plan?.phases || []).some(phase => (phase?.weeks || []).some(week => (week?.days || []).some(day => {
+    const dayText = `${day?.einheit || ''} ${day?.hyrox_session_type || ''}`.toLowerCase()
+    return /hyrox|kalibrier|sled|stations|circuit|simulation|learn\s*&\s*build/.test(dayText)
+  })))
+}
+
+const compactDashboardTrainingText = (day, hyroxPlan = false) => {
+  const title = String(day?.einheit || '')
+  const details = String(day?.details || '').trim()
+
+  if (hyroxPlan) {
+    if (/kalibrierung\s*a/i.test(title)) {
+      return 'Zug, Druck & Tragen. Heute bestimmst du kontrolliert deine Ausgangswerte für Sled Push, Sled Pull und Farmers Carry. Kein Maximaltest.'
+    }
+    if (/kalibrierung\s*b/i.test(title)) {
+      return 'Technik & Rhythmus. Heute bestimmst du kontrolliert deine Ausgangswerte für SkiErg, Row, Sandbag Lunges und Wall Balls.'
+    }
+  }
+
+  // Hinweise, die in den manuellen Log gehören, bleiben aus dem Dashboard heraus.
+  let clean = details
+    .replace(/Beim Loggen:[\s\S]*$/i, '')
+    .replace(/Zusätzlich:\s*[„"]?Wie sauber war die Technik\?[\s\S]*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!clean) return hyroxPlan ? 'Öffne die Einheit für alle Details und Vorgaben.' : ''
+
+  // Dashboard = Orientierung, Trainingsansicht = vollständige Durchführung.
+  const sentences = clean.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [clean]
+  clean = sentences.slice(0, 2).join(' ').trim()
+  if (clean.length > 180) clean = `${clean.slice(0, 177).trimEnd()}…`
+  return clean
+}
+
 const tagIndex = tag => ({ mo:0, montag:0, di:1, dienstag:1, mi:2, mittwoch:2, do:3, donnerstag:3, fr:4, freitag:4, sa:5, samstag:5, so:6, sonntag:6 }[String(tag || '').trim().toLowerCase()] ?? null)
 
 const getPlanWeeks = plan => {
@@ -186,153 +221,50 @@ const card = {
   boxShadow: '0 8px 24px rgba(74,52,39,0.055)', boxSizing: 'border-box'
 }
 
-function Dashboard({ user, plan, planId = null, onOpenTraining, onOpenActivities, onOpenProfile, onOpenWeekAnalysis }) {
+function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile, onOpenWeekAnalysis }) {
   const [loading, setLoading] = useState(true)
   const [profile, setProfile] = useState(null)
   const [logs, setLogs] = useState([])
   const [skipped, setSkipped] = useState([])
   const [analyses, setAnalyses] = useState([])
   const [achievement, setAchievement] = useState(null)
-  const [feedbackModal, setFeedbackModal] = useState(null)
-  const [feedbackSaving, setFeedbackSaving] = useState(false)
 
-  const loadAchievements = async () => {
+  const load = async () => {
     if (!user?.id) return
+    setLoading(true)
+    const [profileRes, logsRes, skippedRes, analysisRes] = await Promise.all([
+      supabase.from('profiles').select('*').eq('id', user.id).single(),
+      supabase.from('logs').select('*').eq('user_id', user.id).order('actual_date', { ascending: false }),
+      supabase.from('skipped_days').select('day_key, reason').eq('user_id', user.id),
+      supabase.from('week_analyses').select('*').eq('user_id', user.id).order('week_start', { ascending: false }).limit(6),
+    ])
+    setProfile(profileRes.data || null)
+    setLogs(logsRes.data || [])
+    setSkipped(skippedRes.data || [])
+    setAnalyses(analysisRes.data || [])
 
     try {
-      const result = await loadAndEvaluateAchievements({
-        supabase,
-        userId: user.id,
-      })
+      const result = await loadAndEvaluateAchievements({ supabase, userId: user.id })
       const unlocked = [...(result?.unlocked || [])]
         .filter(item => item?.unlocked)
-        .sort(
-          (a, b) =>
-            new Date(b.unlockedAt || 0) - new Date(a.unlockedAt || 0)
-        )
+        .sort((a,b) => new Date(b.unlockedAt || 0) - new Date(a.unlockedAt || 0))
       setAchievement(unlocked[0] || null)
     } catch (error) {
       console.warn('[Dashboard] Erfolge konnten nicht geladen werden:', error)
+      setAchievement(null)
     }
-  }
-
-  const load = async ({
-    showLoader = false,
-    refreshAchievements = false,
-  } = {}) => {
-    if (!user?.id) {
-      setLoading(false)
-      return
-    }
-
-    if (showLoader) setLoading(true)
-
-    try {
-      const [profileRes, logsRes, skippedRes, analysisRes] = await Promise.all([
-        supabase
-          .from('profiles')
-          .select('name,sportarten')
-          .eq('id', user.id)
-          .single(),
-        supabase
-          .from('logs')
-          .select(
-            'id,day_key,actual_date,km,pace,bpm,note,running_index,sport_type,duration_seconds,moving_time_seconds,polar_exercise_id,gefuehl'
-          )
-          .eq('user_id', user.id)
-          .order('actual_date', { ascending: false }),
-        supabase
-          .from('skipped_days')
-          .select('day_key, reason')
-          .eq('user_id', user.id),
-        supabase
-          .from('week_analyses')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('week_start', { ascending: false })
-          .limit(24),
-      ])
-
-      if (profileRes.error) throw profileRes.error
-      if (logsRes.error) throw logsRes.error
-      if (skippedRes.error) throw skippedRes.error
-      if (analysisRes.error) throw analysisRes.error
-
-      setProfile(profileRes.data || null)
-      setLogs(logsRes.data || [])
-      setSkipped(skippedRes.data || [])
-
-      // Weekly-v3: Analysen immer dem aktuell geöffneten Plan zuordnen.
-      // Neue Analysen besitzen plan_id. Für ältere Analysen ohne plan_id
-      // verwenden wir als rückwärtskompatiblen Fallback die Wochenstarts
-      // des aktuell geöffneten Plans.
-      const expectedWeekStarts = new Set()
-      if (plan?.startDate) {
-        const planStart = localDate(plan.startDate)
-        if (planStart) {
-          let weekOffset = 0
-          for (const phase of plan?.phases || []) {
-            for (const _week of phase.weeks || []) {
-              const d = new Date(planStart)
-              d.setDate(d.getDate() + weekOffset * 7)
-              expectedWeekStarts.add(dateString(d))
-              weekOffset += 1
-            }
-          }
-        }
-      }
-
-      const planAnalyses = (analysisRes.data || []).filter(row => {
-        if (row.plan_id) return planId ? row.plan_id === planId : false
-        return expectedWeekStarts.has(String(row.week_start || '').slice(0, 10))
-      })
-      setAnalyses(planAnalyses)
-
-      // Die Erfolgsprüfung ist für die sichtbaren Dashboard-Daten nicht nötig.
-      // Sie läuft deshalb nachgelagert und blockiert den Seitenaufbau nicht.
-      if (refreshAchievements) {
-        void loadAchievements()
-      }
-    } catch (error) {
-      console.error(
-        '[Dashboard] Dashboard-Daten konnten nicht geladen werden:',
-        error
-      )
-    } finally {
-      if (showLoader) setLoading(false)
-    }
+    setLoading(false)
   }
 
   useEffect(() => {
-    load({ showLoader: true, refreshAchievements: true })
+    load()
     if (!user?.id) return undefined
-
-    const channel = supabase
-      .channel(`dashboard_${user.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'logs',
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => load({ showLoader: false, refreshAchievements: true })
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'week_analyses',
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => load({ showLoader: false, refreshAchievements: false })
-      )
+    const channel = supabase.channel(`dashboard_${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'logs', filter: `user_id=eq.${user.id}` }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'week_analyses', filter: `user_id=eq.${user.id}` }, load)
       .subscribe()
-
     return () => supabase.removeChannel(channel)
-  }, [user?.id, plan, planId])
+  }, [user?.id, plan])
 
   const context = useMemo(() => getCurrentPlanContext(plan), [plan])
   const todayStr = dateString(new Date())
@@ -340,6 +272,7 @@ function Dashboard({ user, plan, planId = null, onOpenTraining, onOpenActivities
   const skippedKeys = useMemo(() => new Set(skipped.map(s => s.day_key)), [skipped])
   const todayActivities = useMemo(() => logs.filter(l => dateString(l.actual_date) === todayStr), [logs, todayStr])
   const latestActivity = logs[0] || null
+  const isHyroxPlan = useMemo(() => isHyroxPlanLike(plan), [plan])
 
   const weekData = useMemo(() => {
     if (!context?.week || !context?.phase) return null
@@ -400,6 +333,21 @@ function Dashboard({ user, plan, planId = null, onOpenTraining, onOpenActivities
       0
     )
 
+    const hyroxRunUnits = isHyroxPlan
+      ? planned.filter(d => {
+          const type = String(d.hyrox_session_type || '').toLowerCase()
+          if (type) return ['easy','run_quality','recovery'].includes(type)
+          return /easy run|lockerer lauf|lauf\s*\+\s*mobility|run quality/i.test(`${d.einheit || ''} ${d.details || ''}`)
+        }).length
+      : 0
+    const hyroxUnits = isHyroxPlan
+      ? planned.filter(d => {
+          const type = String(d.hyrox_session_type || '').toLowerCase()
+          if (type) return !['easy','run_quality','recovery'].includes(type)
+          return /hyrox|kalibrier|strength|stations|sled|circuit|simulation|learn\s*&\s*build/i.test(`${d.einheit || ''} ${d.details || ''}`)
+        }).length
+      : 0
+
     return {
       planned,
       completed,
@@ -410,10 +358,12 @@ function Dashboard({ user, plan, planId = null, onOpenTraining, onOpenActivities
       actualPlanKm,
       additionalBySport,
       plannedKm,
+      hyroxRunUnits,
+      hyroxUnits,
       weekStart,
       weekEnd,
     }
-  }, [context, logs, logsByKey, skippedKeys])
+  }, [context, logs, logsByKey, skippedKeys, isHyroxPlan])
 
   const hero = useMemo(() => {
     if (!plan) {
@@ -424,37 +374,11 @@ function Dashboard({ user, plan, planId = null, onOpenTraining, onOpenActivities
     if (context?.completed) return { type:'completedPlan', eyebrow:'PLAN ABGESCHLOSSEN', title:'Stark – dieser Trainingsblock ist geschafft.', text:'Schau auf deinen Weg zurück oder plane dein nächstes Ziel.', icon:'🏁' }
     if (!weekData) return null
 
-    const todayLinked = todayActivities.find(
-      l => l.day_key && weekData.planned.some(d => d.key === l.day_key)
-    )
+    const todayLinked = todayActivities.find(l => l.day_key)
     if (todayLinked) {
       const plannedDay = weekData.planned.find(d => d.key === todayLinked.day_key)
       const moved = plannedDay && plannedDay.scheduleIndex !== context.dayIndex
-      return {
-        type:'trained',
-        eyebrow:'HEUTE TRAINIERT',
-        title: plannedDay?.einheit || sportMeta(todayLinked.sport_type).label,
-        text: moved
-          ? `Ursprünglich für ${plannedDay.tag} geplant – heute absolviert.`
-          : 'Deine heutige Planeinheit ist geschafft.',
-        icon:'✓',
-        log:todayLinked,
-        plannedDay
-      }
-    }
-
-    const todayExtra = todayActivities.find(
-      l => !l.day_key || !weekData.planned.some(d => d.key === l.day_key)
-    )
-    if (todayExtra) {
-      return {
-        type:'extra',
-        eyebrow:'HEUTE TRAINIERT',
-        title:sportMeta(todayExtra.sport_type).label,
-        text:'Heute warst du zusätzlich aktiv.',
-        icon:sportMeta(todayExtra.sport_type).icon,
-        log:todayExtra
-      }
+      return { type:'trained', eyebrow:'HEUTE TRAINIERT', title: plannedDay?.einheit || sportMeta(todayLinked.sport_type).label, text: moved ? `Ursprünglich für ${plannedDay.tag} geplant – heute absolviert.` : 'Deine heutige Einheit ist erledigt.', icon:'✓', log:todayLinked, plannedDay }
     }
 
     const analysis = analyses.find(a => Number(a.week_number) === Number(context.week.n))
@@ -465,7 +389,7 @@ function Dashboard({ user, plan, planId = null, onOpenTraining, onOpenActivities
     if (todayPlan) {
       const already = logsByKey[todayPlan.key]
       if (already) return { type:'already', eyebrow:'HEUTE SCHON ERLEDIGT', title:todayPlan.einheit, text:`Diese Einheit hast du bereits am ${formatDay(already.actual_date)} absolviert.`, icon:'✓', log:already, plannedDay:todayPlan }
-      if (!skippedKeys.has(todayPlan.key)) return { type:'today', eyebrow:'HEUTE STEHT AN', title:todayPlan.einheit, text:todayPlan.details, icon:sportMeta(todayPlan.sport_type).icon, plannedDay:todayPlan }
+      if (!skippedKeys.has(todayPlan.key)) return { type:'today', eyebrow:'HEUTE STEHT AN', title:todayPlan.einheit, text:compactDashboardTrainingText(todayPlan, isHyroxPlan), icon:sportMeta(todayPlan.sport_type).icon, plannedDay:todayPlan }
     }
 
     const overdue = weekData.open.find(d => d.scheduleIndex < context.dayIndex)
@@ -473,65 +397,10 @@ function Dashboard({ user, plan, planId = null, onOpenTraining, onOpenActivities
 
     const next = weekData.open.find(d => d.scheduleIndex > context.dayIndex)
     return { type:'rest', eyebrow:'HEUTE IST RUHETAG', title:'Erholung gehört zum Training.', text:next ? `Als Nächstes: ${next.tag} · ${next.einheit}` : 'Für diese Woche ist keine weitere Einheit offen.', icon:'🌿', plannedDay:next }
-  }, [plan, context, weekData, todayActivities, latestActivity, analyses, logsByKey, skippedKeys])
-
-  // Bei einem Planwechsel können Plan und Wochenkontext für einen kurzen Render-Zyklus
-  // auseinanderlaufen. Die Hero-Karte bekommt deshalb immer einen sichtbaren Fallback.
-  const displayHero = hero || (
-    !plan
-      ? latestActivity
-        ? { type:'free', eyebrow:'DU TRAINIERST FREI', title:'Dein Training läuft weiter.', text:'Aktivitäten, Entwicklung und Erfolge bleiben für dich im Blick.', icon:'✨' }
-        : { type:'new', eyebrow:'WILLKOMMEN', title:'Wie möchtest du starten?', text:'Du entscheidest: mit Trainingsplan, verbundenen Aktivitäten oder erst einmal ganz in Ruhe.', icon:'👋' }
-      : { type:'before', eyebrow:'DEIN TRAININGSPLAN', title:'Dein Plan ist bereit.', text:'Öffne deinen Trainingsplan und sieh dir deine nächsten Einheiten an.', icon:'🌱' }
-  )
-
-  const dailyCoaching = useMemo(
-    () => getDailyCoaching({ context, weekData, logs, todayStr, hero: displayHero }),
-    [context, weekData, logs, todayStr, displayHero]
-  )
-
-  const needsTodayFeedback = Boolean(
-    displayHero?.type === 'trained' &&
-    displayHero?.log?.day_key &&
-    !hasStructuredTrainingFeedback(displayHero.log.gefuehl)
-  )
-
-  const saveDashboardFeedback = async ({ effort, recovery, note }) => {
-    if (!feedbackModal?.log?.day_key || !user?.id) return
-
-    const log = feedbackModal.log
-    const gefuehl = encodeTrainingFeedback(
-      { effort, recovery },
-      log.gefuehl || null
-    )
-
-    setFeedbackSaving(true)
-    try {
-      const { error } = await supabase.from('logs').upsert({
-        user_id: user.id,
-        day_key: log.day_key,
-        gefuehl,
-        note: note || null,
-      }, { onConflict: 'user_id,day_key' })
-
-      if (error) throw error
-
-      setLogs(current => current.map(item =>
-        item.day_key === log.day_key
-          ? { ...item, gefuehl, note: note || null }
-          : item
-      ))
-      setFeedbackModal(null)
-    } catch (error) {
-      console.error('[Dashboard] Trainingsfeedback konnte nicht gespeichert werden:', error)
-    } finally {
-      setFeedbackSaving(false)
-    }
-  }
+  }, [plan, context, weekData, todayActivities, latestActivity, analyses, logsByKey, skippedKeys, isHyroxPlan])
 
   const latestAnalysis = analyses[0] || null
   const focus =
-    latestAnalysis?.analysis_data?.coach?.nextWeekFocus ||
     latestAnalysis?.analysis_data?.nextWeekFocus ||
     latestAnalysis?.analysis_data?.next_week_focus ||
     null
@@ -545,156 +414,37 @@ function Dashboard({ user, plan, planId = null, onOpenTraining, onOpenActivities
   const greeting = hour < 11 ? 'Guten Morgen' : hour < 18 ? 'Hallo' : 'Guten Abend'
 
   const openHero = () => {
-    if (displayHero?.type === 'analysis' && displayHero.analysis?.week_number) onOpenWeekAnalysis?.(displayHero.analysis.week_number)
-    else if (['today','open','already','rest','before','completedPlan'].includes(displayHero?.type)) onOpenTraining?.()
-    else if (['trained','extra'].includes(displayHero?.type) && displayHero.log) onOpenActivities?.()
-    else if (displayHero?.type === 'new') onOpenTraining?.()
-    else if (displayHero?.type === 'free') onOpenActivities?.()
+    if (hero?.type === 'analysis' && hero.analysis?.week_number) onOpenWeekAnalysis?.(hero.analysis.week_number)
+    else if (['today','open','already','before','completedPlan'].includes(hero?.type)) onOpenTraining?.()
+    else if (hero?.type === 'trained' && hero.log) onOpenActivities?.()
+    else if (hero?.type === 'new') onOpenTraining?.()
+    else if (hero?.type === 'free') onOpenActivities?.()
   }
 
-  const heroMeta = displayHero?.log ? [kmText(displayHero.log.km), durationText(displayHero.log.moving_time_seconds || displayHero.log.duration_seconds), displayHero.log.bpm ? `Ø HF ${displayHero.log.bpm}` : null].filter(Boolean).join(' · ') : null
+  if (loading) return <div style={{minHeight:'80vh',display:'grid',placeItems:'center',fontFamily:'sans-serif',color:'#A88F80'}}>Dashboard wird vorbereitet…</div>
 
-  const heroImage = useMemo(
-    () => {
-      // Nach "Neuen Plan erstellen" existiert bewusst noch kein aktiver Plan.
-      // Für diesen Welcome-Zustand verwenden wir deshalb ein garantiert vorhandenes,
-      // neutrales Bild aus dem bereits etablierten Running-Easy-Pool.
-      // So hängt der Hero nicht davon ab, ob für jede auswählbare Sportart bereits
-      // ein vollständiger Bildpool im Deployment vorhanden ist.
-      if (displayHero?.type === 'new') return '/hero/running/easy/02.webp'
-
-      return getHeroImageForDashboard({
-        hero: displayHero,
-        userId: user?.id,
-        dateKey: todayStr,
-        weekNumber: context?.week?.n,
-      })
-    },
-    [
-      displayHero?.type,
-      displayHero?.title,
-      displayHero?.log?.id,
-      displayHero?.log?.polar_exercise_id,
-      displayHero?.log?.sport_type,
-      displayHero?.plannedDay?.key,
-      displayHero?.plannedDay?.einheit,
-      user?.id,
-      todayStr,
-      context?.week?.n,
-    ]
-  )
-
-  if (loading) {
-    return (
-      <div
-        style={{
-          minHeight:'80vh',
-          display:'grid',
-          placeItems:'center',
-          fontFamily:'sans-serif',
-          color:'#A88F80'
-        }}
-      >
-        Dashboard wird vorbereitet…
-      </div>
-    )
-  }
+  const heroMeta = hero?.log ? [kmText(hero.log.km), durationText(hero.log.moving_time_seconds || hero.log.duration_seconds), hero.log.bpm ? `Ø HF ${hero.log.bpm}` : null].filter(Boolean).join(' · ') : null
 
   return (
-    <>
-      <TrainingFeedbackModal
-        open={feedbackModal}
-        feeling={feedbackModal?.log?.gefuehl}
-        note={feedbackModal?.log?.note || ''}
-        saving={feedbackSaving}
-        onClose={() => setFeedbackModal(null)}
-        onSave={saveDashboardFeedback}
-      />
-
-      <div style={{ minHeight:'100vh', background:'linear-gradient(180deg,#FFF9F4 0%,#FBF8F6 45%,#F6FAF7 100%)', fontFamily:'sans-serif', color:'#3D2B1F' }}>
+    <div style={{ minHeight:'100vh', background:'linear-gradient(180deg,#FFF9F4 0%,#FBF8F6 45%,#F6FAF7 100%)', fontFamily:'sans-serif', color:'#3D2B1F' }}>
       <div style={{ maxWidth:720, margin:'0 auto', padding:'24px 16px 30px' }}>
-        <div style={{ padding:'4px 2px 16px', display:'flex', alignItems:'center', gap:11 }}>
-          <div style={{width:42,height:42,borderRadius:'50%',background:'#FFF7F0',border:'1px solid #F1DDD0',boxShadow:'0 5px 14px rgba(74,52,39,.08)',display:'grid',placeItems:'center',flexShrink:0}}>
-            <img src="/route-icon.png" alt="" aria-hidden="true" style={{width:32,height:32,borderRadius:'50%',display:'block'}} />
-          </div>
-          <div>
-            <div style={{fontSize:22,fontWeight:800}}>{greeting}{name ? `, ${name}` : ''} 👋</div>
-            <div style={{fontSize:11,color:'#9B8578',marginTop:5}}>Das ist heute für dein Training wichtig.</div>
-          </div>
+        <div style={{ padding:'4px 2px 16px' }}>
+          <div style={{fontSize:22,fontWeight:800}}>{greeting}{name ? `, ${name}` : ''} 👋</div>
+          <div style={{fontSize:11,color:'#9B8578',marginTop:5}}>Das ist heute für dein Training wichtig.</div>
         </div>
 
-        <button type="button" onClick={openHero} style={{...card,width:'100%',padding:0,overflow:'hidden',textAlign:'left',cursor:'pointer',border:'none',position:'relative',minHeight:displayHero?.type === 'new' ? 285 : 245,background:'linear-gradient(135deg,#6F8F7B 0%,#A7BCA8 42%,#E7B79B 100%)'}}>
-          {heroImage && (
-            <img
-              src={heroImage}
-              alt=""
-              aria-hidden="true"
-              onError={(event) => {
-                // Robuster Fallback für den Welcome-/Planwechsel-Hero:
-                // Falls ein Bildpfad im Deployment fehlt, wird ein vorhandenes
-                // neutrales Free-Hero-Bild versucht. Erst danach bleibt der
-                // bisherige Gradient sichtbar.
-                if (displayHero?.type === 'new' && !event.currentTarget.dataset.fallbackTried) {
-                  event.currentTarget.dataset.fallbackTried = '1'
-                  event.currentTarget.src = '/hero/free/01.webp'
-                } else {
-                  event.currentTarget.style.display = 'none'
-                }
-              }}
-              style={{
-                position:'absolute',
-                inset:0,
-                width:'100%',
-                height:'100%',
-                objectFit:'cover',
-                objectPosition:displayHero?.type === 'new' ? '58% center' : 'center',
-                display:'block',
-              }}
-            />
-          )}
-          <div
-            style={{
-              position:'absolute',
-              inset:0,
-              background: heroImage
-                ? displayHero?.type === 'new'
-                  ? 'linear-gradient(90deg,rgba(18,22,19,.72) 0%,rgba(20,22,19,.48) 43%,rgba(20,20,18,.12) 72%), linear-gradient(180deg,rgba(15,18,16,.04) 0%,rgba(22,20,18,.18) 52%,rgba(24,21,19,.62) 100%)'
-                  : 'linear-gradient(180deg,rgba(20,24,21,.07) 0%,rgba(26,24,21,.20) 40%,rgba(27,23,20,.72) 100%)'
-                : "linear-gradient(180deg,rgba(25,35,30,.08),rgba(35,27,23,.58)), radial-gradient(circle at 78% 24%,rgba(255,244,215,.72),transparent 22%), linear-gradient(155deg,transparent 0 45%,rgba(55,83,61,.45) 46% 62%,rgba(38,61,45,.58) 63% 100%)"
-            }}
-          />
-          <div style={{position:'relative',zIndex:1,minHeight:displayHero?.type === 'new' ? 285 : 245,padding:displayHero?.type === 'new' ? '28px 22px' : '22px 20px',display:'flex',flexDirection:'column',justifyContent:'flex-end',color:'#fff'}}>
-            <div style={{fontSize:10,fontWeight:900,letterSpacing:1.4,opacity:.9}}>{displayHero?.eyebrow}</div>
-            <div style={{fontSize:displayHero?.type === 'new' ? 30 : 26,fontWeight:850,lineHeight:1.08,marginTop:7,maxWidth:displayHero?.type === 'new' ? 470 : 520}}>{displayHero?.title}</div>
+        <button type="button" onClick={openHero} style={{...card,width:'100%',padding:0,overflow:'hidden',textAlign:'left',cursor:'pointer',border:'none',position:'relative',minHeight:245,background:'linear-gradient(135deg,#6F8F7B 0%,#A7BCA8 42%,#E7B79B 100%)'}}>
+          <div style={{position:'absolute',inset:0,background:"linear-gradient(180deg,rgba(25,35,30,.08),rgba(35,27,23,.58)), radial-gradient(circle at 78% 24%,rgba(255,244,215,.72),transparent 22%), linear-gradient(155deg,transparent 0 45%,rgba(55,83,61,.45) 46% 62%,rgba(38,61,45,.58) 63% 100%)"}} />
+          <div style={{position:'relative',zIndex:1,minHeight:245,padding:'22px 20px',display:'flex',flexDirection:'column',justifyContent:'flex-end',color:'#fff'}}>
+            <div style={{fontSize:10,fontWeight:900,letterSpacing:1.4,opacity:.9}}>{hero?.eyebrow}</div>
+            <div style={{fontSize:26,fontWeight:850,lineHeight:1.08,marginTop:7,maxWidth:520}}>{hero?.title}</div>
             {heroMeta && <div style={{fontSize:12,fontWeight:750,marginTop:8}}>{heroMeta}</div>}
-            <div style={{fontSize:11,lineHeight:1.45,marginTop:8,maxWidth:540,opacity:.92}}>{displayHero?.text}</div>
+            <div style={{fontSize:11,lineHeight:1.45,marginTop:8,maxWidth:540,opacity:.92}}>{hero?.text}</div>
             <div style={{marginTop:16,display:'inline-flex',alignSelf:'flex-start',padding:'9px 13px',borderRadius:999,background:'rgba(255,255,255,.92)',color:'#5B493E',fontSize:10.5,fontWeight:800}}>
-              {displayHero?.type === 'analysis' ? 'Wochenanalyse ansehen' : displayHero?.type === 'new' ? 'Möglichkeiten ansehen' : displayHero?.type === 'free' ? 'Aktivitäten ansehen' : 'Mehr ansehen'} →
+              {hero?.type === 'analysis' ? 'Wochenanalyse ansehen' : hero?.type === 'new' ? 'Möglichkeiten ansehen' : hero?.type === 'free' ? 'Aktivitäten ansehen' : 'Mehr ansehen'} →
             </div>
           </div>
         </button>
-
-        {plan && dailyCoaching && (
-          <section style={{...card,marginTop:12,padding:'13px 14px',background:dailyCoaching.tone === 'attention' ? '#FFF8EE' : dailyCoaching.tone === 'rest' ? '#F3F8F4' : '#F5FAF7',border:dailyCoaching.tone === 'attention' ? '1px solid #F3D9B4' : '1px solid #DDE9E2'}}>
-            <div style={{display:'flex',gap:10,alignItems:'flex-start'}}>
-              <div style={{fontSize:18,lineHeight:1}}>{dailyCoaching.icon}</div>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:11.5,fontWeight:850,color:dailyCoaching.tone === 'attention' ? '#9C6B2E' : '#527E67'}}>{dailyCoaching.title}</div>
-                <div style={{fontSize:10.2,lineHeight:1.45,color:'#806D63',marginTop:3}}>{dailyCoaching.text}</div>
-              </div>
-            </div>
-
-            {needsTodayFeedback && (
-              <button
-                type="button"
-                onClick={() => setFeedbackModal({ log: hero.log })}
-                style={{width:'100%',marginTop:10,padding:'9px 11px',borderRadius:12,border:'1px solid #FFD8C7',background:'#FFF3EC',color:'#B8674E',fontSize:10.5,fontWeight:850,cursor:'pointer',textAlign:'left'}}
-              >
-                🙂 Training kurz einschätzen · 2 Angaben
-              </button>
-            )}
-          </section>
-        )}
 
         {!plan && !latestActivity && (
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:8,marginTop:12}}>
@@ -720,10 +470,19 @@ function Dashboard({ user, plan, planId = null, onOpenTraining, onOpenActivities
                   : `${weekData.open.length} noch offen`}
               </span>
               <strong style={{color:'#5F4B40',textAlign:'right'}}>
-                {weekData.actualPlanKm.toLocaleString('de-DE',{maximumFractionDigits:1})}
-                {weekData.plannedKm
-                  ? ` / ca. ${weekData.plannedKm.toLocaleString('de-DE',{maximumFractionDigits:1})}`
-                  : ''} km im Plan
+                {isHyroxPlan ? (
+                  <>
+                    {weekData.hyroxRunUnits > 0 ? `${weekData.hyroxRunUnits} ${weekData.hyroxRunUnits === 1 ? 'Laufeinheit' : 'Laufeinheiten'}` : 'HYROX-Woche'}
+                    {weekData.hyroxUnits > 0 ? ` · ${weekData.hyroxUnits} HYROX-Einheiten` : ''}
+                  </>
+                ) : (
+                  <>
+                    {weekData.actualPlanKm.toLocaleString('de-DE',{maximumFractionDigits:1})}
+                    {weekData.plannedKm
+                      ? ` / ca. ${weekData.plannedKm.toLocaleString('de-DE',{maximumFractionDigits:1})}`
+                      : ''} km im Plan
+                  </>
+                )}
               </strong>
             </div>
 
@@ -795,15 +554,7 @@ function Dashboard({ user, plan, planId = null, onOpenTraining, onOpenActivities
 
         {plan && latestAnalysis && (
           <button onClick={() => onOpenWeekAnalysis?.(latestAnalysis.week_number)} style={{...card,width:'100%',padding:16,marginTop:12,textAlign:'left',cursor:'pointer',background:'linear-gradient(135deg,#FFF7F1,#F8F2FB)'}}>
-            <div style={{display:'flex',alignItems:'center',gap:9}}>
-              <div style={{fontSize:22}}>🧠</div>
-              <div>
-                <div style={{fontSize:10,fontWeight:900,color:'#8E6A9E',letterSpacing:.6}}>DEIN COACH</div>
-                <div style={{fontSize:13.5,fontWeight:850,marginTop:2}}>
-                  {focus?.title ? 'Fokus für deine nächste Woche' : 'Deine Wochenanalyse ist bereit'}
-                </div>
-              </div>
-            </div>
+            <div style={{display:'flex',alignItems:'center',gap:9}}><div style={{fontSize:22}}>🧠</div><div><div style={{fontSize:10,fontWeight:900,color:'#8E6A9E',letterSpacing:.6}}>DEIN COACH</div><div style={{fontSize:13.5,fontWeight:850,marginTop:2}}>Fokus für deine nächste Woche</div></div></div>
             <div style={{fontSize:12,lineHeight:1.5,color:'#6F5A50',marginTop:11}}>
               {focus?.title ? (
                 <>
@@ -811,7 +562,7 @@ function Dashboard({ user, plan, planId = null, onOpenTraining, onOpenActivities
                   {focus.text || ''}
                 </>
               ) : (
-                'Schau dir an, was deine Trainingswoche gezeigt hat und worauf es in der nächsten Woche ankommt.'
+                'Deine Wochenanalyse ist bereit. Schau dir an, worauf es in der nächsten Woche ankommt.'
               )}
             </div>
             <div style={{fontSize:10,fontWeight:800,color:'#8E6A9E',marginTop:10}}>Wochen-Coach ansehen →</div>
@@ -843,8 +594,7 @@ function Dashboard({ user, plan, planId = null, onOpenTraining, onOpenActivities
           <button onClick={onOpenTraining} style={{...card,width:'100%',padding:16,marginTop:12,textAlign:'left',cursor:'pointer',background:'#FFF7F0'}}><div style={{fontSize:10,fontWeight:900,color:'#B97459'}}>DU TRAINIERST GERADE FREI</div><div style={{fontSize:13,fontWeight:800,marginTop:5}}>Möchtest du auf ein bestimmtes Ziel hinarbeiten?</div><div style={{fontSize:10,color:'#9A8174',marginTop:5}}>Trainingspläne entdecken →</div></button>
         )}
       </div>
-      </div>
-    </>
+    </div>
   )
 }
 

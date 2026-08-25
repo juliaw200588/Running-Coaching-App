@@ -152,7 +152,7 @@ const currentLoads = (input,race,week,totalWeeks,phaseId) => {
 
 const calibrationA = (input,race) => {
   const l = startsFor(input,race)
-  return `Kalibrierung A · Zug, Druck & Tragen. Kein Maximaltest. 10 Min Technik-Warm-up. ` +
+  return `Kalibrierung A · Zug, Druck & Tragen. Kein Maximaltest. ` +
     (has(input,'sled')
       ? `Sled Push: 3×12,5 m @ ca. ${l.push} kg gesamt. Sled Pull: 3×12,5 m @ ca. ${l.pull} kg gesamt. `
       : `${stationAlternative(input,'sled')}: 3 kontrollierte Runden. `) +
@@ -338,6 +338,21 @@ const extractHyroxTargets = (details, stations=[]) => {
 }
 
 
+
+const calibrationAWarmup = {
+  title:'10 Min Warm-up · Zug, Druck & Tragen',
+  subtitle:'Keine Vorermüdung – Gelenke, Haltung und Bewegungsmuster vorbereiten.',
+  steps:[
+    {time:'2–3 Min',title:'Locker in Bewegung kommen',text:'Zügig gehen, locker rudern oder Bike. Gesprächstempo.'},
+    {time:'2 Min',title:'Mobilisieren',text:'Je 6–8 kontrollierte Wiederholungen für Sprunggelenke, Hüfte, Schultern und Brustwirbelsäule.'},
+    {time:'2 Min',title:'Sled Push vorbereiten',text:'1–2 kurze Bahnen mit deutlich weniger Gewicht. Rumpf fest, kurze gleichmäßige Schritte.'},
+    {time:'1–2 Min',title:'Sled Pull vorbereiten',text:'1–2 kurze leichte Bahnen. Stabil stehen und kontrolliert ziehen.'},
+    {time:'1 Min',title:'Farmers Carry vorbereiten',text:'20–30 m leicht tragen. Aufrecht bleiben, Schultern ruhig, Griff kontrolliert.'},
+  ],
+  tip:'Du sollst dich danach warm und sicher fühlen, nicht müde. Erst dann beginnt die Kalibrierung.',
+}
+
+
 const makeSession = ({type,input,week,totalWeeks,phaseId,race,calibration,variant=0}) => {
   const commonLog = {
     choices:['Zu leicht','Leicht','Passend','Schwer','Zu schwer'],
@@ -347,7 +362,10 @@ const makeSession = ({type,input,week,totalWeeks,phaseId,race,calibration,varian
 
   if (calibration === 'A') return {
     einheit:'HYROX Kalibrierung A',
-    details:calibrationA(input,race), durationMinutes:60, intensity:'Kontrolliert',
+    details:calibrationA(input,race),
+    durationMinutes:60,
+    intensity:'Kontrolliert',
+    hyroxWarmup:calibrationAWarmup,
     hyroxLog:{kind:'calibration_a',prompt:'Wie war die Einheit?',...commonLog,stations:logStationsFor('skills','A',variant)},
   }
   if (calibration === 'B') return {
@@ -451,6 +469,7 @@ const buildPlan = input => {
         sport_type:'hyrox',
         hyrox_session_type:type,
         hyrox_log:session.hyroxLog || null,
+        hyrox_warmup:session.hyroxWarmup || null,
         hyrox_targets:session.hyroxLog?.stations?.length
           ? extractHyroxTargets(session.details, session.hyroxLog.stations)
           : {},
@@ -495,7 +514,7 @@ const buildPlan = input => {
     planCaution:input.limitations ? `Berücksichtige deine Angabe: ${input.limitations}. Bei Beschwerden Training anpassen und im Zweifel medizinisch/fachlich abklären.` : null,
     phases,
     hyroxProfile:{
-      version:2.4,
+      version:2.5,
       goalType:input.goalType,
       raceFormat:input.raceFormat,
       division:input.division,
