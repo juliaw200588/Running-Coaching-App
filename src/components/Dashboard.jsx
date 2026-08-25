@@ -161,6 +161,30 @@ const isHyroxPlanLike = plan => {
   })))
 }
 
+
+const hyroxHeroImage = day => {
+  const text = `${day?.einheit || ''} ${day?.hyrox_session_type || ''} ${day?.details || ''}`.toLowerCase()
+
+  // Dateinamen im Ordner /public/hyrox/.
+  // Die Reihenfolge ist absichtlich spezifisch -> allgemein.
+  if (/race\s*simulation|race\s*sim|simulation/.test(text)) return '/hyrox/hyrox-race-simulation-outdoor.webp'
+  if (/easy\s*run|lockerer\s*lauf|lauf\s*\+\s*mobility|run\s*\+\s*mobility|mobility/.test(text)) return '/hyrox/hyrox-easy-run-mobility.webp'
+  if (/kalibrierung\s*a|calibration\s*a/.test(text)) return '/hyrox/hyrox-calibration-a.webp'
+  if (/kalibrierung\s*b|calibration\s*b/.test(text)) return '/hyrox/hyrox-calibration-b.webp'
+  if (/sled/.test(text)) return '/hyrox/hyrox-sled.webp'
+  if (/strength|kraft/.test(text)) return '/hyrox/hyrox-strength.webp'
+  if (/run\s*\+\s*stations|stations|circuit/.test(text)) return '/hyrox/hyrox-run-stations.webp'
+  if (/ski\s*erg|skierg|row|rudern/.test(text)) return '/hyrox/hyrox-erg.webp'
+  if (/wall\s*balls?|lunges?|farmers?\s*carry/.test(text)) return '/hyrox/hyrox-stations.webp'
+
+  return '/hyrox/hyrox-race-simulation-outdoor.webp'
+}
+
+const heroImageFor = (hero, hyroxPlan) => {
+  if (!hyroxPlan || !hero?.plannedDay) return null
+  return hyroxHeroImage(hero.plannedDay)
+}
+
 const compactDashboardTrainingText = (day, hyroxPlan = false) => {
   const title = String(day?.einheit || '')
   const details = String(day?.details || '').trim()
@@ -424,6 +448,7 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
   if (loading) return <div style={{minHeight:'80vh',display:'grid',placeItems:'center',fontFamily:'sans-serif',color:'#A88F80'}}>Dashboard wird vorbereitet…</div>
 
   const heroMeta = hero?.log ? [kmText(hero.log.km), durationText(hero.log.moving_time_seconds || hero.log.duration_seconds), hero.log.bpm ? `Ø HF ${hero.log.bpm}` : null].filter(Boolean).join(' · ') : null
+  const heroImage = heroImageFor(hero, isHyroxPlan)
 
   return (
     <div style={{ minHeight:'100vh', background:'linear-gradient(180deg,#FFF9F4 0%,#FBF8F6 45%,#F6FAF7 100%)', fontFamily:'sans-serif', color:'#3D2B1F' }}>
@@ -433,8 +458,33 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
           <div style={{fontSize:11,color:'#9B8578',marginTop:5}}>Das ist heute für dein Training wichtig.</div>
         </div>
 
-        <button type="button" onClick={openHero} style={{...card,width:'100%',padding:0,overflow:'hidden',textAlign:'left',cursor:'pointer',border:'none',position:'relative',minHeight:245,background:'linear-gradient(135deg,#6F8F7B 0%,#A7BCA8 42%,#E7B79B 100%)'}}>
-          <div style={{position:'absolute',inset:0,background:"linear-gradient(180deg,rgba(25,35,30,.08),rgba(35,27,23,.58)), radial-gradient(circle at 78% 24%,rgba(255,244,215,.72),transparent 22%), linear-gradient(155deg,transparent 0 45%,rgba(55,83,61,.45) 46% 62%,rgba(38,61,45,.58) 63% 100%)"}} />
+        <button
+          type="button"
+          onClick={openHero}
+          style={{
+            ...card,
+            width:'100%',
+            padding:0,
+            overflow:'hidden',
+            textAlign:'left',
+            cursor:'pointer',
+            border:'none',
+            position:'relative',
+            minHeight:245,
+            background: heroImage
+              ? `center / cover no-repeat url("${heroImage}")`
+              : 'linear-gradient(135deg,#6F8F7B 0%,#A7BCA8 42%,#E7B79B 100%)'
+          }}
+        >
+          <div
+            style={{
+              position:'absolute',
+              inset:0,
+              background: heroImage
+                ? 'linear-gradient(180deg,rgba(28,24,21,.08) 0%,rgba(28,24,21,.20) 38%,rgba(28,24,21,.74) 100%)'
+                : "linear-gradient(180deg,rgba(25,35,30,.08),rgba(35,27,23,.58)), radial-gradient(circle at 78% 24%,rgba(255,244,215,.72),transparent 22%), linear-gradient(155deg,transparent 0 45%,rgba(55,83,61,.45) 46% 62%,rgba(38,61,45,.58) 63% 100%)"
+            }}
+          />
           <div style={{position:'relative',zIndex:1,minHeight:245,padding:'22px 20px',display:'flex',flexDirection:'column',justifyContent:'flex-end',color:'#fff'}}>
             <div style={{fontSize:10,fontWeight:900,letterSpacing:1.4,opacity:.9}}>{hero?.eyebrow}</div>
             <div style={{fontSize:26,fontWeight:850,lineHeight:1.08,marginTop:7,maxWidth:520}}>{hero?.title}</div>
