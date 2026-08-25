@@ -297,11 +297,40 @@ export default function Laeufe({ user, plan }) {
   const [routeMapError, setRouteMapError] = useState(null)
   const [storyOpen, setStoryOpen] = useState(false)
   const [sportFilter, setSportFilter] = useState('all')
+  const [isMobileDetail, setIsMobileDetail] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 700px)').matches : false
+  )
+
 
   const planDays = plan ? getPlanDayDates(plan) : []
   const planDayByKey = (key) => planDays.find(d => d.key === key)
 
   useEffect(() => { loadAll() }, [user, plan])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const media = window.matchMedia('(max-width: 700px)')
+    const update = () => setIsMobileDetail(media.matches)
+    update()
+    media.addEventListener?.('change', update)
+    return () => media.removeEventListener?.('change', update)
+  }, [])
+
+  useEffect(() => {
+    if (!detailRun || typeof document === 'undefined') return undefined
+
+    const previousOverflow = document.body.style.overflow
+    const previousOverscroll = document.body.style.overscrollBehavior
+
+    document.body.style.overflow = 'hidden'
+    document.body.style.overscrollBehavior = 'none'
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.body.style.overscrollBehavior = previousOverscroll
+    }
+  }, [detailRun])
+
 
   useEffect(() => {
     if (!detailRun) {
@@ -1108,25 +1137,28 @@ if (run.status === 'pending') {
             style={{
               position: 'fixed',
               inset: 0,
-              background: 'rgba(60,30,20,0.45)',
+              background: isMobileDetail ? 'rgba(43,25,18,0.62)' : 'rgba(60,30,20,0.45)',
               zIndex: 300,
               display: 'flex',
               alignItems: 'flex-end',
               justifyContent: 'center',
+              paddingTop: isMobileDetail ? 'max(10px, env(safe-area-inset-top))' : 0,
+              boxSizing: 'border-box',
+              overscrollBehavior: 'contain',
             }}
           >
             <div
               style={{
                 background: 'white',
-                borderRadius: '28px 28px 0 0',
+                borderRadius: isMobileDetail ? '30px 30px 0 0' : '28px 28px 0 0',
                 width: '100%',
-                maxWidth: 520,
-                height: 'min(88dvh, 880px)',
-                maxHeight: 'calc(100dvh - 72px)',
+                maxWidth: isMobileDetail ? '100%' : 520,
+                height: isMobileDetail ? 'calc(100dvh - max(10px, env(safe-area-inset-top)))' : 'min(88dvh, 880px)',
+                maxHeight: isMobileDetail ? 'calc(100dvh - max(10px, env(safe-area-inset-top)))' : 'calc(100dvh - 72px)',
                 display: 'flex',
                 flexDirection: 'column',
                 overflow: 'hidden',
-                boxShadow: '0 -8px 40px rgba(255,140,105,0.2)',
+                boxShadow: isMobileDetail ? '0 -12px 50px rgba(61,43,31,0.22)' : '0 -8px 40px rgba(255,140,105,0.2)',
               }}
             >
               <div
@@ -1135,10 +1167,19 @@ if (run.status === 'pending') {
                   minHeight: 0,
                   overflowY: 'auto',
                   WebkitOverflowScrolling: 'touch',
-                  padding: '24px 24px 28px',
+                  overscrollBehavior: 'contain',
+                  padding: isMobileDetail ? '18px 20px 30px' : '24px 24px 28px',
                 }}
               >
-              <div style={{ width: 36, height: 4, background: '#F0E8E0', borderRadius: 99, margin: '0 auto 18px' }} />
+              <div
+                style={{
+                  width: isMobileDetail ? 44 : 36,
+                  height: isMobileDetail ? 5 : 4,
+                  background: '#F0E8E0',
+                  borderRadius: 99,
+                  margin: isMobileDetail ? '0 auto 20px' : '0 auto 18px',
+                }}
+              />
               <div style={{ fontSize: 11, color: '#C4A882', marginBottom: 2, fontFamily: 'sans-serif' }}>
                 {d.date ? new Date(d.date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' }) : ''}
               </div>
@@ -1314,7 +1355,9 @@ if (run.status === 'pending') {
                   flexShrink: 0,
                   display: 'flex',
                   gap: 10,
-                  padding: '12px 24px max(16px, calc(env(safe-area-inset-bottom) + 8px))',
+                  padding: isMobileDetail
+                    ? '12px 20px max(18px, calc(env(safe-area-inset-bottom) + 10px))'
+                    : '12px 24px max(16px, calc(env(safe-area-inset-bottom) + 8px))',
                   background: 'rgba(255,255,255,0.98)',
                   borderTop: '1px solid #F0E8E0',
                   boxShadow: '0 -8px 24px rgba(61,43,31,0.08)',

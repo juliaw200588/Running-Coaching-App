@@ -619,7 +619,9 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
         ? '/hero/swimming/03.webp'
         : isCyclingPlan
           ? '/hero/cycling/03.webp'
-          : '/hero/running/easy/02.webp'
+          : isHyroxPlan
+            ? '/hero/hyrox/partial-simulation.webp'
+            : '/hero/running/easy/02.webp'
 
   const planSportLabel = isHikingPlan
     ? 'Marsch & Wandern'
