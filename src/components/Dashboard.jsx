@@ -285,20 +285,51 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
   const [analyses, setAnalyses] = useState([])
   const [achievement, setAchievement] = useState(null)
 
-  const load = async () => {
+  // Schneller Erstaufbau: Nur die Daten laden, die Hero + Wochenkarte wirklich brauchen.
+  // Analyse und Erfolge kommen danach im Hintergrund und blockieren den sichtbaren Dashboard-Start nicht.
+  const loadCore = async ({ showLoader = false } = {}) => {
     if (!user?.id) return
-    setLoading(true)
-    const [profileRes, logsRes, skippedRes, analysisRes] = await Promise.all([
-      supabase.from('profiles').select('*').eq('id', user.id).single(),
-      supabase.from('logs').select('*').eq('user_id', user.id).order('actual_date', { ascending: false }),
-      supabase.from('skipped_days').select('day_key, reason').eq('user_id', user.id),
-      supabase.from('week_analyses').select('*').eq('user_id', user.id).order('week_start', { ascending: false }).limit(6),
-    ])
-    setProfile(profileRes.data || null)
-    setLogs(logsRes.data || [])
-    setSkipped(skippedRes.data || [])
-    setAnalyses(analysisRes.data || [])
+    if (showLoader) setLoading(true)
 
+    try {
+      const [profileRes, logsRes, skippedRes] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', user.id).single(),
+        supabase
+          .from('logs')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('actual_date', { ascending: false })
+          .limit(60),
+        supabase.from('skipped_days').select('day_key, reason').eq('user_id', user.id),
+      ])
+
+      setProfile(profileRes.data || null)
+      setLogs(logsRes.data || [])
+      setSkipped(skippedRes.data || [])
+    } catch (error) {
+      console.warn('[Dashboard] Kerndaten konnten nicht geladen werden:', error)
+    } finally {
+      if (showLoader) setLoading(false)
+    }
+  }
+
+  const loadAnalyses = async () => {
+    if (!user?.id) return
+    try {
+      const { data } = await supabase
+        .from('week_analyses')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('week_start', { ascending: false })
+        .limit(6)
+      setAnalyses(data || [])
+    } catch (error) {
+      console.warn('[Dashboard] Wochenanalysen konnten nicht geladen werden:', error)
+    }
+  }
+
+  const loadAchievement = async () => {
+    if (!user?.id) return
     try {
       const result = await loadAndEvaluateAchievements({ supabase, userId: user.id })
       const unlocked = [...(result?.unlocked || [])]
@@ -309,17 +340,43 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
       console.warn('[Dashboard] Erfolge konnten nicht geladen werden:', error)
       setAchievement(null)
     }
-    setLoading(false)
   }
 
   useEffect(() => {
-    load()
     if (!user?.id) return undefined
+
+    let cancelled = false
+
+    const initialLoad = async () => {
+      await loadCore({ showLoader: true })
+      if (cancelled) return
+
+      // Nicht sichtkritische Bereiche bewusst erst nach dem ersten Render nachladen.
+      Promise.allSettled([
+        loadAnalyses(),
+        loadAchievement(),
+      ])
+    }
+
+    initialLoad()
+
     const channel = supabase.channel(`dashboard_${user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'logs', filter: `user_id=eq.${user.id}` }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'week_analyses', filter: `user_id=eq.${user.id}` }, load)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'logs', filter: `user_id=eq.${user.id}` },
+        () => loadCore({ showLoader: false })
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'week_analyses', filter: `user_id=eq.${user.id}` },
+        loadAnalyses
+      )
       .subscribe()
-    return () => supabase.removeChannel(channel)
+
+    return () => {
+      cancelled = true
+      supabase.removeChannel(channel)
+    }
   }, [user?.id, plan])
 
   const context = useMemo(() => getCurrentPlanContext(plan), [plan])
