@@ -278,7 +278,6 @@ const card = {
 }
 
 function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile, onOpenWeekAnalysis }) {
-  const [loading, setLoading] = useState(true)
   const [profile, setProfile] = useState(null)
   const [logs, setLogs] = useState([])
   const [skipped, setSkipped] = useState([])
@@ -287,10 +286,8 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
 
   // Schneller Erstaufbau: Nur die Daten laden, die Hero + Wochenkarte wirklich brauchen.
   // Analyse und Erfolge kommen danach im Hintergrund und blockieren den sichtbaren Dashboard-Start nicht.
-  const loadCore = async ({ showLoader = false } = {}) => {
+  const loadCore = async () => {
     if (!user?.id) return
-    if (showLoader) setLoading(true)
-
     try {
       const [profileRes, logsRes, skippedRes] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', user.id).single(),
@@ -308,8 +305,6 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
       setSkipped(skippedRes.data || [])
     } catch (error) {
       console.warn('[Dashboard] Kerndaten konnten nicht geladen werden:', error)
-    } finally {
-      if (showLoader) setLoading(false)
     }
   }
 
@@ -348,7 +343,7 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
     let cancelled = false
 
     const initialLoad = async () => {
-      await loadCore({ showLoader: true })
+      await loadCore()
       if (cancelled) return
 
       // Nicht sichtkritische Bereiche bewusst erst nach dem ersten Render nachladen.
@@ -364,7 +359,7 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'logs', filter: `user_id=eq.${user.id}` },
-        () => loadCore({ showLoader: false })
+        loadCore
       )
       .on(
         'postgres_changes',
@@ -533,8 +528,6 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
     else if (hero?.type === 'new') onOpenTraining?.()
     else if (hero?.type === 'free') onOpenActivities?.()
   }
-
-  if (loading) return <div style={{minHeight:'80vh',display:'grid',placeItems:'center',fontFamily:'sans-serif',color:'#A88F80'}}>Dashboard wird vorbereitet…</div>
 
   const heroMeta = hero?.log ? [kmText(hero.log.km), durationText(hero.log.moving_time_seconds || hero.log.duration_seconds), hero.log.bpm ? `Ø HF ${hero.log.bpm}` : null].filter(Boolean).join(' · ') : null
   const heroImage = heroImageFor({
