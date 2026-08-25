@@ -165,19 +165,41 @@ const isHyroxPlanLike = plan => {
 const hyroxHeroImage = day => {
   const text = `${day?.einheit || ''} ${day?.hyrox_session_type || ''} ${day?.details || ''}`.toLowerCase()
 
-  // Dateinamen im Ordner /public/hyrox/.
-  // Die Reihenfolge ist absichtlich spezifisch -> allgemein.
-  if (/race\s*simulation|race\s*sim|simulation/.test(text)) return '/hyrox/hyrox-race-simulation-outdoor.webp'
-  if (/easy\s*run|lockerer\s*lauf|lauf\s*\+\s*mobility|run\s*\+\s*mobility|mobility/.test(text)) return '/hyrox/hyrox-easy-run-mobility.webp'
-  if (/kalibrierung\s*a|calibration\s*a/.test(text)) return '/hyrox/hyrox-calibration-a.webp'
-  if (/kalibrierung\s*b|calibration\s*b/.test(text)) return '/hyrox/hyrox-calibration-b.webp'
-  if (/sled/.test(text)) return '/hyrox/hyrox-sled.webp'
-  if (/strength|kraft/.test(text)) return '/hyrox/hyrox-strength.webp'
-  if (/run\s*\+\s*stations|stations|circuit/.test(text)) return '/hyrox/hyrox-run-stations.webp'
-  if (/ski\s*erg|skierg|row|rudern/.test(text)) return '/hyrox/hyrox-erg.webp'
-  if (/wall\s*balls?|lunges?|farmers?\s*carry/.test(text)) return '/hyrox/hyrox-stations.webp'
+  // Bilder liegen unter /public/hero/hyrox/.
+  // Deshalb beginnen die Browser-Pfade mit /hero/hyrox/ – NICHT mit /public/.
+  if (/easy\s*run|lockerer\s*lauf|lauf\s*\+\s*mobility|run\s*\+\s*mobility|mobility/.test(text)) {
+    return '/hero/hyrox/easy-run-mobility.webp'
+  }
 
-  return '/hyrox/hyrox-race-simulation-outdoor.webp'
+  if (/kalibrierung\s*a|calibration\s*a/.test(text)) {
+    return '/hero/hyrox/calibration-a.webp'
+  }
+
+  if (/kalibrierung\s*b|calibration\s*b/.test(text)) {
+    return '/hero/hyrox/hyrox-kalibrierung-b.webp'
+  }
+
+  if (/race[-\s]*load\s*strength|strength\s*&\s*stations|strength|kraft|sled\s*push|sled\s*pull/.test(text)) {
+    return '/hero/hyrox/race-load-strength.webp'
+  }
+
+  if (/skills\s*&\s*circuit|learn\s*&\s*build|skills|circuit|skierg|ski\s*erg|row|rudern/.test(text)) {
+    return '/hero/hyrox/skills-circuit.webp'
+  }
+
+  if (/teil[-\s]*simulation|partial\s*simulation/.test(text)) {
+    return '/hero/hyrox/partial-simulation.webp'
+  }
+
+  if (/race\s*simulation|voll(?:e|er)?\s*simulation|simulation/.test(text)) {
+    return '/hero/hyrox/race-simulation.webp'
+  }
+
+  if (/run\s*\+\s*stations|stations|wall\s*balls?|lunges?|farmers?\s*carry/.test(text)) {
+    return '/hero/hyrox/run-stations.webp'
+  }
+
+  return '/hero/hyrox/run-stations.webp'
 }
 
 const heroImageFor = (hero, hyroxPlan) => {
