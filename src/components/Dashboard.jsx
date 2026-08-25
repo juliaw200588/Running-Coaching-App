@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { loadAndEvaluateAchievements } from '../lib/achievementService.js'
+import { getHeroImageForDashboard } from '../lib/heroImages.js'
 
 const DAY_MS = 86400000
 const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
@@ -202,9 +203,18 @@ const hyroxHeroImage = day => {
   return '/hero/hyrox/run-stations.webp'
 }
 
-const heroImageFor = (hero, hyroxPlan) => {
-  if (!hyroxPlan || !hero?.plannedDay) return null
-  return hyroxHeroImage(hero.plannedDay)
+const heroImageFor = ({ hero, hyroxPlan, userId, dateKey, weekNumber }) => {
+  // HYROX bekommt die neu angelegten, einheitsspezifischen Bilder.
+  if (hyroxPlan && hero?.plannedDay) return hyroxHeroImage(hero.plannedDay)
+
+  // Für Laufen, Rad, MTB, Wandern, Schwimmen, Ruhetage usw. bleibt
+  // der bereits vorhandene Hero-Bildpool erhalten.
+  return getHeroImageForDashboard({
+    hero,
+    userId,
+    dateKey,
+    weekNumber,
+  })
 }
 
 const compactDashboardTrainingText = (day, hyroxPlan = false) => {
@@ -470,7 +480,13 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
   if (loading) return <div style={{minHeight:'80vh',display:'grid',placeItems:'center',fontFamily:'sans-serif',color:'#A88F80'}}>Dashboard wird vorbereitet…</div>
 
   const heroMeta = hero?.log ? [kmText(hero.log.km), durationText(hero.log.moving_time_seconds || hero.log.duration_seconds), hero.log.bpm ? `Ø HF ${hero.log.bpm}` : null].filter(Boolean).join(' · ') : null
-  const heroImage = heroImageFor(hero, isHyroxPlan)
+  const heroImage = heroImageFor({
+    hero,
+    hyroxPlan: isHyroxPlan,
+    userId: user?.id,
+    dateKey: todayStr,
+    weekNumber: context?.week?.n,
+  })
 
   return (
     <div style={{ minHeight:'100vh', background:'linear-gradient(180deg,#FFF9F4 0%,#FBF8F6 45%,#F6FAF7 100%)', fontFamily:'sans-serif', color:'#3D2B1F' }}>
