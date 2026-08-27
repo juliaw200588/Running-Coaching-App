@@ -1070,7 +1070,7 @@ const discardActivity = async (activity) => {
             {syncing ? '⏳ Synchronisiere…' : '🔄 Aktivitäten synchronisieren'}
           </button>
         )}
-
+      </div>
 
       {pending.length > 0 && (
         <div>
