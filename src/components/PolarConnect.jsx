@@ -9,9 +9,9 @@ import {
 import {
   enrichActivityContext,
 } from '../lib/activityContext.js'
+import { matchActivityToPlans, candidateLabel } from '../lib/activityPlanMatcher.js'
 
 const TAG_OFFSET = { Mo: 0, Di: 1, Mi: 2, Do: 3, Fr: 4, Sa: 5, So: 6 }
-const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
 const MULTISPORT_MIGRATION_VERSION = 2
 
@@ -52,48 +52,6 @@ const estimateDayKm = (details) => {
 // schreibt startDate und dateRange unabhängig voneinander beim Planerstellen, sie können
 // also auseinanderdriften. Das Parsen des angezeigten dateRange garantiert, dass die
 // berechneten Daten immer exakt zu dem passen, was der Nutzer tatsächlich sieht.
-function getPlanDayDates(plan) {
-  const result = []
-  if (!plan) return result
-  const fallbackYear = plan.startDate ? new Date(plan.startDate + 'T00:00:00').getFullYear() : new Date().getFullYear()
-  const startMonth = plan.startDate ? new Date(plan.startDate + 'T00:00:00').getMonth() : null
-
-  for (const phase of plan.phases || []) {
-    for (const week of phase.weeks || []) {
-      const match = week.dateRange?.match(/(\d{1,2})\.(\d{1,2})\./)
-      if (!match) continue
-      const day = parseInt(match[1])
-      const month = parseInt(match[2]) - 1
-
-      // Jahreswechsel-Heuristik: falls der Wochenmonat deutlich vor dem Startmonat liegt
-      // (z.B. Plan startet im November, diese Woche zeigt Januar), ist es das Folgejahr.
-      let year = fallbackYear
-      if (startMonth !== null && month < startMonth - 6) year = fallbackYear + 1
-
-      const weekStart = new Date(year, month, day)
-
-      ;(week.days || []).forEach((dayObj, di) => {
-        if (dayObj.optional) return
-        const offset = TAG_OFFSET[dayObj.tag] ?? 0
-        const d = new Date(weekStart)
-        d.setDate(d.getDate() + offset)
-        result.push({
-          date: d,
-          dateStr: toLocalDateStr(d),
-          key: dayKey(phase.id, week.n, di),
-          tag: dayObj.tag,
-          einheit: dayObj.einheit,
-          plannedKm: estimateDayKm(dayObj.details),
-          weekN: week.n,
-          phaseLabel: phase.label,
-        })
-      })
-    }
-  }
-  return result
-}
-
-const diffDays = (a, b) => Math.round((new Date(a) - new Date(b)) / 86400000)
 
 // Baut "YYYY-MM-DD" aus den LOKALEN Datumsteilen statt über toISOString() (das erst
 // in UTC umrechnet und dadurch bei positiven Zeitzonen wie Deutschland (UTC+1/+2) um
@@ -148,11 +106,12 @@ export default function PolarConnect({ user, plan, onOpenActivities }) {
     setOpenActivitiesAfterAchievements,
   ] = useState(false)
 
-  const planDays = plan ? getPlanDayDates(plan) : []
+  const [activePlanRows, setActivePlanRows] = useState([])
 
   useEffect(() => {
     checkConnection()
     loadOccupiedKeys()
+    loadActivePlans()
     loadPending()
     loadSchuhe()
     loadIgnoredCount()
@@ -181,6 +140,25 @@ export default function PolarConnect({ user, plan, onOpenActivities }) {
 
     return () => supabase.removeChannel(channel)
   }, [user])
+
+  const loadActivePlans = async () => {
+    try {
+      // Alle aktuell gespeicherten Pläne des Nutzers einbeziehen:
+      // Hauptplan + gemeinsame/Zusatzpläne. Dadurch skaliert das Matching
+      // automatisch auch auf einen dritten oder weiteren aktiven Plan.
+      const { data, error } = await supabase
+        .from('plans')
+        .select('id, plan_data, is_primary, created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      setActivePlanRows(data || [])
+    } catch (error) {
+      console.warn('Aktive Trainingspläne konnten nicht geladen werden:', error)
+      setActivePlanRows([])
+    }
+  }
 
   const loadPending = async () => {
     try {
@@ -446,33 +424,15 @@ export default function PolarConnect({ user, plan, onOpenActivities }) {
     }
   }
 
-  const getCandidates = (activity) => {
-    if (!activity.datum) return []
-    const actualKm = activity.distanz ? parseFloat(String(activity.distanz).replace(',', '.')) : null
-    return planDays
-      .filter(d => !occupiedKeys.has(d.key))
-      .map(d => {
-        const dist = diffDays(d.dateStr, activity.datum)
-        // km-Differenz nur einbeziehen, wenn beide Werte bekannt sind - sonst würde ein
-        // Tag mit nicht-parsbarer Distanz (z.B. "Laufen/Gehen" bei Anfängern) fälschlich
-        // benachteiligt werden.
-        const kmDiff = (actualKm != null && d.plannedKm > 0) ? Math.abs(d.plannedKm - actualKm) : 0
-        // Score kombiniert beides: 1 Tag Abstand wiegt wie ca. 1,5 km Distanz-Abweichung.
-        // Ein exaktes Datum gewinnt also meist, außer die Distanz passt fundamental nicht.
-        const score = Math.abs(dist) * 1.5 + kmDiff
-        return { ...d, dist, kmDiff, score }
-      })
-      .filter(d => Math.abs(d.dist) <= 4)
-      .sort((a, b) => a.score - b.score)
-  }
+  const getCandidates = activity =>
+    matchActivityToPlans({
+      activity,
+      planRows: activePlanRows,
+      occupiedKeys,
+      maxDays: 4,
+      limit: 6,
+    })
 
-  const weekdayLabel = (d) => d.date.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' })
-
-  const candidateLabel = (c) => {
-    const dayPart = c.dist !== 0 ? `${c.dist > 0 ? '+' : ''}${c.dist} Tag${Math.abs(c.dist) !== 1 ? 'e' : ''}` : 'genau passend'
-    const kmPart = c.kmDiff > 0.5 ? `, Δ${c.kmDiff.toFixed(1)} km` : ''
-    return `Wo. ${c.weekN} · ${weekdayLabel(c)} · ${c.einheit} (${dayPart}${kmPart})`
-  }
 
   const checkForNewAchievements = async () => {
     try {
@@ -533,6 +493,41 @@ const enrichImportedActivity = async activity => {
   })
 }
 
+const enrichOldActivities = async () => {
+  setContextBackfillRunning(true)
+  setContextBackfillMessage(null)
+
+  try {
+    const result = await enrichExistingActivities({
+      userId: user.id,
+      limit: 8,
+    })
+
+    if (result?.error) {
+      setContextBackfillMessage(
+        'Aktivitäten konnten gerade nicht ergänzt werden.'
+      )
+      return
+    }
+
+    if (result.remaining > 0) {
+      setContextBackfillMessage(
+        `${result.succeeded} Aktivitäten ergänzt · noch ${result.remaining} offen`
+      )
+    } else if (result.processed > 0) {
+      setContextBackfillMessage(
+        'Bestehende Aktivitäten wurden ergänzt.'
+      )
+    } else {
+      setContextBackfillMessage(
+        'Alle Aktivitäten sind bereits ergänzt.'
+      )
+    }
+  } finally {
+    setContextBackfillRunning(false)
+  }
+}
+
   const assignActivity = async (activity, chosenKey) => {
     setAssigning(activity.id)
 
@@ -547,7 +542,7 @@ const enrichImportedActivity = async activity => {
         `${String(activity.polar_exercise_id || crypto.randomUUID())}`
 
       const targetKey =
-        running && chosenKey && chosenKey !== 'extra'
+        chosenKey && chosenKey !== 'extra'
           ? chosenKey
           : generalKey
 
@@ -595,7 +590,7 @@ const enrichImportedActivity = async activity => {
           activity.polar_import_version || 1,
       }, { onConflict: 'user_id,day_key' })
 
-      if (running && chosenKey && chosenKey !== 'extra') {
+      if (chosenKey && chosenKey !== 'extra') {
         await supabase.from('training_done').upsert({
           user_id: user.id,
           day_key: chosenKey,
@@ -1111,6 +1106,45 @@ const discardActivity = async (activity) => {
           </button>
         )}
 
+{connected && (
+  <div style={{ marginTop: 8 }}>
+    <button
+      type="button"
+      onClick={enrichOldActivities}
+      disabled={contextBackfillRunning}
+      style={{
+        width: '100%',
+        padding: '10px 12px',
+        borderRadius: 11,
+        border: '1.5px solid #DDEBE3',
+        background: '#F6FBF8',
+        color: '#5B9273',
+        fontSize: 11,
+        fontWeight: 'bold',
+        cursor: contextBackfillRunning ? 'default' : 'pointer',
+        fontFamily: 'sans-serif',
+      }}
+    >
+      {contextBackfillRunning
+        ? '⏳ Aktivitäten werden ergänzt…'
+        : '🌦️ Bestehende Aktivitäten ergänzen'}
+    </button>
+
+    {contextBackfillMessage && (
+      <div
+        style={{
+          marginTop: 6,
+          fontSize: 9.5,
+          color: '#9A877A',
+          textAlign: 'center',
+          lineHeight: 1.4,
+        }}
+      >
+        {contextBackfillMessage}
+      </div>
+    )}
+  </div>
+)}
       </div>
 
       {pending.length > 0 && (
@@ -1122,9 +1156,9 @@ const discardActivity = async (activity) => {
             const id = a.id
             const running = isRunningActivity(a)
             const meta = activityMeta(a)
-            const candidates = running ? getCandidates(a) : []
+            const candidates = getCandidates(a)
             const selected =
-              selections[id] ?? (candidates[0]?.key || '')
+              selections[id] ?? (candidates[0]?.key || 'extra')
             const isAssigning = assigning === id
 
             return (
@@ -1237,7 +1271,7 @@ const discardActivity = async (activity) => {
                   )}
                 </div>
 
-                {running ? (
+                {candidates.length > 0 ? (
                   <>
                     <label style={{ fontSize: 10, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 0.8, display: 'block', marginBottom: 4, fontFamily: 'sans-serif' }}>
                       Welchem Plan-Tag zuordnen?
@@ -1331,7 +1365,7 @@ const discardActivity = async (activity) => {
 
                   <button
                     onClick={() =>
-                      assignActivity(a, running ? selected : null)
+                      assignActivity(a, selected)
                     }
                     disabled={
                       (running && !selected) || isAssigning
