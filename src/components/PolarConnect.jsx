@@ -493,41 +493,6 @@ const enrichImportedActivity = async activity => {
   })
 }
 
-const enrichOldActivities = async () => {
-  setContextBackfillRunning(true)
-  setContextBackfillMessage(null)
-
-  try {
-    const result = await enrichExistingActivities({
-      userId: user.id,
-      limit: 8,
-    })
-
-    if (result?.error) {
-      setContextBackfillMessage(
-        'Aktivitäten konnten gerade nicht ergänzt werden.'
-      )
-      return
-    }
-
-    if (result.remaining > 0) {
-      setContextBackfillMessage(
-        `${result.succeeded} Aktivitäten ergänzt · noch ${result.remaining} offen`
-      )
-    } else if (result.processed > 0) {
-      setContextBackfillMessage(
-        'Bestehende Aktivitäten wurden ergänzt.'
-      )
-    } else {
-      setContextBackfillMessage(
-        'Alle Aktivitäten sind bereits ergänzt.'
-      )
-    }
-  } finally {
-    setContextBackfillRunning(false)
-  }
-}
-
   const assignActivity = async (activity, chosenKey) => {
     setAssigning(activity.id)
 
@@ -1106,46 +1071,6 @@ const discardActivity = async (activity) => {
           </button>
         )}
 
-{connected && (
-  <div style={{ marginTop: 8 }}>
-    <button
-      type="button"
-      onClick={enrichOldActivities}
-      disabled={contextBackfillRunning}
-      style={{
-        width: '100%',
-        padding: '10px 12px',
-        borderRadius: 11,
-        border: '1.5px solid #DDEBE3',
-        background: '#F6FBF8',
-        color: '#5B9273',
-        fontSize: 11,
-        fontWeight: 'bold',
-        cursor: contextBackfillRunning ? 'default' : 'pointer',
-        fontFamily: 'sans-serif',
-      }}
-    >
-      {contextBackfillRunning
-        ? '⏳ Aktivitäten werden ergänzt…'
-        : '🌦️ Bestehende Aktivitäten ergänzen'}
-    </button>
-
-    {contextBackfillMessage && (
-      <div
-        style={{
-          marginTop: 6,
-          fontSize: 9.5,
-          color: '#9A877A',
-          textAlign: 'center',
-          lineHeight: 1.4,
-        }}
-      >
-        {contextBackfillMessage}
-      </div>
-    )}
-  </div>
-)}
-      </div>
 
       {pending.length > 0 && (
         <div>
