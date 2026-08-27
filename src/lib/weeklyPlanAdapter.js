@@ -95,6 +95,213 @@ const copyTextPatch = (target, patch, fields) => {
   }
 }
 
+
+const HYROX_RACE_LOAD_KEY = {
+  sled_push:'sledPush',
+  sled_pull:'sledPull',
+  farmers_carry:'farmersEach',
+  sandbag_lunges:'lunges',
+  wall_balls:'wallBall',
+}
+
+const hyroxNumber = value => {
+  const number = Number(String(value ?? '').replace(',','.'))
+  return Number.isFinite(number) && number > 0 ? number : null
+}
+
+const hyroxStationExists = (day, stationId) => {
+  if (day?.hyrox_targets?.[stationId]) return true
+  return (day?.hyrox_log?.stations || []).some(station => station?.id === stationId)
+}
+
+const hyroxCurrentTarget = (day, stationId) => {
+  const target = day?.hyrox_targets?.[stationId] || {}
+  return {
+    weight:hyroxNumber(target.weight),
+    weightEach:hyroxNumber(target.weight_each ?? target.weightEach),
+    distance:hyroxNumber(target.distance),
+    reps:hyroxNumber(target.reps),
+  }
+}
+
+const replaceHyroxTargetInDetails = (details, stationId, field, value) => {
+  if (!value) return String(details || '')
+  const text = String(details || '')
+  const formatted = String(value).replace('.', ',')
+
+  const rules = {
+    sled_push:{
+      weight:/(\bSled Push\b[\s\S]{0,90}?\b(?:@|bis)\s*(?:ca\.\s*)?)(\d+(?:[.,]\d+)?)\s*kg/i,
+    },
+    sled_pull:{
+      weight:/(\bSled Pull\b[\s\S]{0,90}?\b(?:@|bis)\s*(?:ca\.\s*)?)(\d+(?:[.,]\d+)?)\s*kg/i,
+    },
+    farmers_carry:{
+      weightEach:/(\bFarmers Carry\b[\s\S]{0,100}?\b@\s*(?:ca\.\s*)?)(\d+(?:[.,]\d+)?)\s*kg\s+je\s+Hand/i,
+    },
+    sandbag_lunges:{
+      weight:/(\b(?:Sandbag\s+)?Lunges\b[\s\S]{0,100}?\b@\s*(?:ca\.\s*)?)(\d+(?:[.,]\d+)?)\s*kg/i,
+    },
+    wall_balls:{
+      weight:/(\bWall Balls\b[\s\S]{0,80}?\b@\s*(?:ca\.\s*)?)(\d+(?:[.,]\d+)?)\s*kg/i,
+    },
+    ski_erg:{
+      distance:/(\b)(\d+(?:[.,]\d+)?)\s*m\s+SkiErg\b/i,
+    },
+    row:{
+      distance:/(\b)(\d+(?:[.,]\d+)?)\s*m\s+(?:Row|Rower)\b/i,
+    },
+    burpee_broad_jumps:{
+      distance:/(\b)(\d+(?:[.,]\d+)?)\s*m\s+Burpee Broad Jumps\b/i,
+    },
+  }
+
+  const rx = rules?.[stationId]?.[field]
+  if (!rx) return text
+
+  if (field === 'distance') {
+    const name = stationId === 'ski_erg'
+      ? 'SkiErg'
+      : stationId === 'row'
+        ? 'Row'
+        : 'Burpee Broad Jumps'
+    return text.replace(rx, (_match, prefix) => `${prefix}${formatted} m ${name}`)
+  }
+
+  return text.replace(
+    rx,
+    (_match, prefix) =>
+      `${prefix}${formatted} kg${stationId === 'farmers_carry' ? ' je Hand' : ''}`
+  )
+}
+
+const hyroxTrendFor = (facts, stationId) =>
+  (facts?.hyroxSummary?.stationTrends || []).find(item => item?.stationId === stationId) || null
+
+const capHyroxRequestedValue = ({
+  requested,
+  current,
+  latestActual,
+  recommendation,
+  safetyPriority,
+  action,
+  raceCap,
+}) => {
+  if (!requested) return current
+
+  let value = requested
+
+  // Race Load ist immer eine harte Obergrenze, sofern für die Station vorhanden.
+  if (raceCap) value = Math.min(value, raceCap)
+
+  // Technik-/Sicherheitsregel schlägt jede generative Empfehlung.
+  if (safetyPriority || recommendation === 'reduce') {
+    const base = latestActual || current || value
+    return Math.min(value, base * 0.95)
+  }
+
+  if (recommendation === 'hold') {
+    return current ? Math.min(value, current) : (latestActual || value)
+  }
+
+  // Selbst bei erlaubter Progression maximal kleiner Schritt.
+  if (action === 'progress' || recommendation === 'small_progress' || recommendation === 'planned_progression') {
+    const base = latestActual || current
+    if (base) value = Math.min(value, base * 1.10)
+  }
+
+  return value
+}
+
+const applyHyroxPatch = (day, item, plan, facts) => {
+  const result = applyGenericPatch(day, item, 'hyrox')
+  const updates = Array.isArray(item?.hyroxTargetUpdates) ? item.hyroxTargetUpdates : []
+  if (!updates.length) return result
+
+  result.hyrox_targets = { ...(day?.hyrox_targets || {}) }
+  let details = String(result.details || day?.details || '')
+  const raceLoads = plan?.hyroxProfile?.raceLoads || {}
+
+  for (const update of updates) {
+    const stationId = update?.stationId
+    if (!stationId || !hyroxStationExists(day, stationId)) {
+      return { ...day, adjusted:false, weeklyAdjustmentRejected:true }
+    }
+
+    const current = hyroxCurrentTarget(day, stationId)
+    const trend = hyroxTrendFor(facts, stationId)
+    const latest = trend?.latest || {}
+    const recommendation = trend?.deterministicRecommendation || 'hold'
+    const safetyPriority = Boolean(trend?.safetyPriority)
+
+    const raceKey = HYROX_RACE_LOAD_KEY[stationId]
+    const raceCap = raceKey ? hyroxNumber(raceLoads?.[raceKey]) : null
+
+    const requested = {
+      weight:hyroxNumber(update.weight),
+      weightEach:hyroxNumber(update.weightEach),
+      distance:hyroxNumber(update.distance),
+      reps:hyroxNumber(update.reps),
+    }
+
+    const next = {
+      weight:capHyroxRequestedValue({
+        requested:requested.weight,
+        current:current.weight,
+        latestActual:hyroxNumber(latest?.weight),
+        recommendation,
+        safetyPriority,
+        action:item.action,
+        raceCap,
+      }),
+      weightEach:capHyroxRequestedValue({
+        requested:requested.weightEach,
+        current:current.weightEach,
+        latestActual:hyroxNumber(latest?.weightEach),
+        recommendation,
+        safetyPriority,
+        action:item.action,
+        raceCap,
+      }),
+      distance:capHyroxRequestedValue({
+        requested:requested.distance,
+        current:current.distance,
+        latestActual:hyroxNumber(latest?.distance),
+        recommendation,
+        safetyPriority,
+        action:item.action,
+        raceCap:null,
+      }),
+      reps:capHyroxRequestedValue({
+        requested:requested.reps,
+        current:current.reps,
+        latestActual:hyroxNumber(latest?.reps),
+        recommendation,
+        safetyPriority,
+        action:item.action,
+        raceCap:null,
+      }),
+    }
+
+    const oldTarget = result.hyrox_targets[stationId] || {}
+    const nextTarget = { ...oldTarget, source:'weekly_coach' }
+
+    if (next.weight) nextTarget.weight = Math.round(next.weight * 10) / 10
+    if (next.weightEach) nextTarget.weight_each = Math.round(next.weightEach * 10) / 10
+    if (next.distance) nextTarget.distance = Math.round(next.distance)
+    if (next.reps) nextTarget.reps = Math.round(next.reps)
+
+    result.hyrox_targets[stationId] = nextTarget
+
+    if (next.weight) details = replaceHyroxTargetInDetails(details, stationId, 'weight', nextTarget.weight)
+    if (next.weightEach) details = replaceHyroxTargetInDetails(details, stationId, 'weightEach', nextTarget.weight_each)
+    if (next.distance) details = replaceHyroxTargetInDetails(details, stationId, 'distance', nextTarget.distance)
+  }
+
+  result.details = details
+  return result
+}
+
 const applyGenericPatch = (day, item, sport) => {
   const patch = item?.patch || {}
   const result = { ...day }
@@ -280,7 +487,9 @@ export function resolveWeeklyAdjustments({
 
     const patched = sport === 'swimming'
       ? applySwimmingPatch(day, item, plan)
-      : applyGenericPatch(day, item, sport)
+      : sport === 'hyrox'
+        ? applyHyroxPatch(day, item, plan, facts)
+        : applyGenericPatch(day, item, sport)
 
     if (patched.weeklyAdjustmentRejected) {
       const { weeklyAdjustmentRejected, ...safeDay } = patched

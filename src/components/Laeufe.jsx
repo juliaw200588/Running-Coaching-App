@@ -9,6 +9,7 @@ import ElevationPerformanceChart from './ElevationPerformanceChart.jsx'
 import StoryShareModal from './StoryShareModal.jsx'
 import Achievements from './Achievements.jsx'
 import ActivityContextEditor from './ActivityContextEditor.jsx'
+import { legacyPlanDayKey, planDayKey } from '../lib/planDayKey.js'
 
 const TAG_OFFSET = { Mo: 0, Di: 1, Mi: 2, Do: 3, Fr: 4, Sa: 5, So: 6 }
 const WEEKDAY_NAMES = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']
@@ -41,7 +42,7 @@ const estimateDayKm = (details) => {
   return km
 }
 
-function getPlanDayDates(plan) {
+function getPlanDayDates(plan, planId = null) {
   const result = []
   if (!plan) return result
   const fallbackYear = plan.startDate ? new Date(plan.startDate + 'T00:00:00').getFullYear() : new Date().getFullYear()
@@ -65,7 +66,8 @@ function getPlanDayDates(plan) {
         result.push({
           date: d,
           dateStr: toLocalDateStr(d),
-          key: `${phase.id}_w${week.n}_d${di}`,
+          key: planDayKey(planId, phase.id, week.n, di),
+          legacyKey: legacyPlanDayKey(phase.id, week.n, di),
           tag: dayObj.tag,
           einheit: dayObj.einheit,
           plannedKm: estimateDayKm(dayObj.details),
@@ -281,7 +283,7 @@ const formatDate = (dateString) => {
   })
 }
 
-export default function Laeufe({ user, plan }) {
+export default function Laeufe({ user, plan, planId = null, allowLegacyDayKeys = true }) {
   const [view, setView] = useState('list')
   const [runs, setRuns] = useState([])
   const [loading, setLoading] = useState(true)
@@ -302,10 +304,14 @@ export default function Laeufe({ user, plan }) {
   )
 
 
-  const planDays = plan ? getPlanDayDates(plan) : []
-  const planDayByKey = (key) => planDays.find(d => d.key === key)
+  const planDays = plan ? getPlanDayDates(plan, planId) : []
+  const planDayByKey = (key) =>
+    planDays.find(d =>
+      d.key === key ||
+      (allowLegacyDayKeys && d.legacyKey === key)
+    )
 
-  useEffect(() => { loadAll() }, [user, plan])
+  useEffect(() => { loadAll() }, [user, plan, planId, allowLegacyDayKeys])
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
@@ -521,7 +527,14 @@ export default function Laeufe({ user, plan }) {
 
   const getCandidates = (run) => {
     if (!run.date) return []
-    const occupied = new Set(runs.filter(r => r.dayKey && r.id !== run.id).map(r => r.dayKey))
+    const occupied = new Set(
+      runs
+        .filter(r => r.dayKey && r.id !== run.id)
+        .map(r => {
+          const matched = planDayByKey(r.dayKey)
+          return matched?.key || r.dayKey
+        })
+    )
     const actualKm = run.km ? parseFloat(String(run.km).replace(',', '.')) : null
     return planDays
       .filter(d => !occupied.has(d.key))

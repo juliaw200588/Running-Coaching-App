@@ -17,8 +17,7 @@ import Notifications from './components/Notifications.jsx'
 import BottomNav from './components/BottomNav.jsx'
 import Dashboard from './components/Dashboard.jsx'
 import Together from './components/Together.jsx'
-
-const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
+import { legacyPlanDayKey, planDayKey } from './lib/planDayKey.js'
 
 const WEEK_REMINDER_HOUR = 18
 
@@ -1169,16 +1168,28 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart, planId = null 
       }
 
       const plannedDays = currentWeek.days
-        .map((d, di) => ({ ...d, key: dayKey(currentPhase.id, currentWeek.n, di) }))
+        .map((d, di) => ({
+          ...d,
+          key: planDayKey(planId, currentPhase.id, currentWeek.n, di),
+          legacyKey: legacyPlanDayKey(currentPhase.id, currentWeek.n, di),
+        }))
         .filter(d => !d.optional)
 
-      const weekLogs = plannedDays.map(d => ({
-        ...d,
-        logged: !!logs[d.key],
-        skipped: !logs[d.key] && skipped[d.key] !== undefined,
-        skipReason: skipped[d.key] || '',
-        ...(logs[d.key] || {}),
-      }))
+      const allowLegacyForCurrentPlan = !viewingSecondaryPlan
+      const weekLogs = plannedDays.map(d => {
+        const log = logs[d.key] || (allowLegacyForCurrentPlan ? logs[d.legacyKey] : null)
+        const skip = skipped[d.key] !== undefined
+          ? skipped[d.key]
+          : (allowLegacyForCurrentPlan ? skipped[d.legacyKey] : undefined)
+
+        return {
+          ...d,
+          logged: !!log,
+          skipped: !log && skip !== undefined,
+          skipReason: skip || '',
+          ...(log || {}),
+        }
+      })
 
       // Frühere echte Einheiten aus dem Plan als Vergleichsbasis laden.
       // So kann die Analyse z.B. Intervall mit Intervall und Long Run mit Long Run vergleichen.
@@ -1189,8 +1200,9 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart, planId = null 
             const day = week.days[di]
             if (day.optional) continue
 
-            const key = dayKey(phase.id, week.n, di)
-            const log = logs[key]
+            const key = planDayKey(planId, phase.id, week.n, di)
+            const legacyKey = legacyPlanDayKey(phase.id, week.n, di)
+            const log = logs[key] || (!viewingSecondaryPlan ? logs[legacyKey] : null)
 
             if (!log || !log.actual_date) continue
 
@@ -1374,7 +1386,12 @@ if (!claimAcquired) return
         .join(', ')
 
       const nextWeekDays = nextWeek
-        ? nextWeek.days.map((d, di) => ({ ...d, key: dayKey(nextPhase.id, nextWeek.n, di) })).filter(d => !d.optional)
+        ? nextWeek.days
+            .map((d, di) => ({
+              ...d,
+              key: planDayKey(planId, nextPhase.id, nextWeek.n, di),
+            }))
+            .filter(d => !d.optional)
         : null
 
       const isRegenWeek = !!currentWeek.regen
@@ -1933,6 +1950,7 @@ const handleOpenTrainingPartnersFromNotification = () => {
                     onReset={handleReset}
                     user={user}
                     planId={planId}
+                    allowLegacyDayKeys={!viewingSecondaryPlan}
                     openWeekAnalysis={openWeekAnalysisWeek}
                     onWeekAnalysisOpened={() => setOpenWeekAnalysisWeek(null)}
                   />
@@ -2017,6 +2035,8 @@ const handleOpenTrainingPartnersFromNotification = () => {
               <Dashboard
                 user={user}
                 plan={plan}
+                planId={planId}
+                allowLegacyDayKeys={!viewingSecondaryPlan}
                 onOpenTraining={() => setShowTrainingPlan(true)}
                 onOpenActivities={() => setActiveTab('activities')}
                 onOpenProfile={() => setActiveTab('profile')}
@@ -2027,7 +2047,7 @@ const handleOpenTrainingPartnersFromNotification = () => {
               />
             )
         )}
-        {activeTab === 'activities' && <Laeufe user={user} plan={plan} />}
+        {activeTab === 'activities' && <Laeufe user={user} plan={plan} planId={planId} allowLegacyDayKeys={!viewingSecondaryPlan} />}
         {activeTab === 'together' && (
           <Together
             user={user}

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import Friends from './Friends.jsx'
+import { planDayKey } from '../lib/planDayKey.js'
 
 const DAY_MS = 86400000
-const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
 const SPORT_META = {
   running: { icon: '🏃', label: 'Laufen' },
@@ -880,7 +880,7 @@ export default function Together({ user, plan, planId, focusFriends = 0, refresh
 
     const { phase, week, weeks } = context
     const planned = (week?.days || [])
-      .map((day, index) => ({ ...day, key:dayKey(phase.id, week.n, index) }))
+      .map((day, index) => ({ ...day, key:planDayKey(planId, phase.id, week.n, index) }))
       .filter(day => !day.optional)
 
     if (!planned.length) return {
@@ -893,7 +893,7 @@ export default function Together({ user, plan, planId, focusFriends = 0, refresh
       progress_updated_at:new Date().toISOString(),
     }
 
-    // Bestehende Logs arbeiten derzeit noch über day_key.
+    // Fortschritt wird planbezogen über den namespaceten day_key gelesen.
     // plan_id wird verwendet, sobald es in den jeweiligen Tabellen vorhanden ist;
     // die Planstruktur selbst kommt aber garantiert vom verknüpften Plan.
     let logsQuery = supabase

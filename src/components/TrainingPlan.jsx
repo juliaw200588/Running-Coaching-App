@@ -6,8 +6,7 @@ import PhaseCards from './PhaseCards.jsx'
 import SplitAccordion from './SplitAccordion.jsx'
 import StoryShareModal from './StoryShareModal.jsx'
 import WeeklyAnalysis from './WeeklyAnalysis.jsx'
-
-const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
+import { addLegacyAliasesForPlan, legacyKeyFromScoped, legacyPlanDayKey, planDayKey } from '../lib/planDayKey.js'
 
 const WEEKDAY_ORDER = {
   mo:0, montag:0, monday:0, mon:0,
@@ -512,7 +511,7 @@ const findHyroxDayPosition = (plan, dayKeyValue) => {
     for (let wi=0; wi<(phase?.weeks || []).length; wi++) {
       const week = phase.weeks[wi]
       for (let di=0; di<(week?.days || []).length; di++) {
-        if (dayKey(phase.id, week.n, di) === dayKeyValue) return {pi,wi,di}
+        if (legacyPlanDayKey(phase.id, week.n, di) === legacyKeyFromScoped(dayKeyValue)) return {pi,wi,di}
       }
     }
   }
@@ -560,7 +559,7 @@ const adaptiveReasonFor = ({label, effort, technique, from, to, unit='kg'}) => {
 }
 
 
-export default function TrainingPlan({ plan, onReset, user, planId = null, openWeekAnalysis = null, onWeekAnalysisOpened }) {
+export default function TrainingPlan({ plan, onReset, user, planId = null, allowLegacyDayKeys = true, openWeekAnalysis = null, onWeekAnalysisOpened }) {
   const [activePhase, setActivePhase] = useState(() => findCurrentPhaseWeek(plan).phaseIdx)
   const [showPauseModal, setShowPauseModal] = useState(false)
   const [pauseWeeks, setPauseWeeks] = useState(1)
@@ -689,7 +688,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
           if (doneData && doneData.length > 0) {
             const doneMap = {}
             doneData.forEach(d => { if (d.done) doneMap[d.day_key] = true })
-            setDone(doneMap)
+            setDone(addLegacyAliasesForPlan(doneMap, plan, planId, allowLegacyDayKeys))
           } else {
             try { const d = await window.storage.get('laufplan_done'); if (d) setDone(JSON.parse(d.value)) } catch {}
           }
@@ -732,8 +731,15 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                 generic_data: l.generic_data && typeof l.generic_data === 'object' ? l.generic_data : {},
               }
             })
-            setLogs(logMap)
-            try { await window.storage.set('laufplan_logs', JSON.stringify(logMap)) } catch {}
+            const scopedLogMap = addLegacyAliasesForPlan(
+              logMap,
+              plan,
+              planId,
+              allowLegacyDayKeys,
+              (value, legacyKey) => ({ ...value, __legacyDayKey: legacyKey })
+            )
+            setLogs(scopedLogMap)
+            try { await window.storage.set('laufplan_logs', JSON.stringify(scopedLogMap)) } catch {}
           } else {
             try { const l = await window.storage.get('laufplan_logs'); if (l) setLogs(JSON.parse(l.value)) } catch {}
           }
@@ -795,7 +801,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
           if (logScreenshots && logScreenshots.length > 0) {
             const loaded = {}
             logScreenshots.forEach(l => { if (l.screenshot_url) loaded[l.day_key] = l.screenshot_url })
-            setScreenshots(loaded)
+            setScreenshots(addLegacyAliasesForPlan(loaded, plan, planId, allowLegacyDayKeys))
           } else {
             // Fallback localStorage
             try {
@@ -845,12 +851,12 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
         if (skippedData) {
           const skippedMap = {}
           skippedData.forEach(s => { skippedMap[s.day_key] = { reason: s.reason || '' } })
-          setSkipped(skippedMap)
+          setSkipped(addLegacyAliasesForPlan(skippedMap, plan, planId, allowLegacyDayKeys))
         }
       }
     }
     load()
-  }, [user, planId, plan])
+  }, [user, planId, plan, allowLegacyDayKeys])
 
   useEffect(() => {
     if (!detailModal) {
@@ -944,6 +950,19 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
           done: newValue,
         }, { onConflict: 'user_id,day_key' })
       } catch (e) { console.error('Done Supabase Fehler:', e) }
+
+      if (allowLegacyDayKeys && planId) {
+        const legacyKey = legacyKeyFromScoped(key)
+        if (legacyKey !== key) {
+          try {
+            await supabase
+              .from('training_done')
+              .delete()
+              .eq('user_id', user.id)
+              .eq('day_key', legacyKey)
+          } catch {}
+        }
+      }
     }
 
     // Falls der Tag zuvor übersprungen war, Skip-Status entfernen (schließen sich gegenseitig aus)
@@ -969,6 +988,17 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
           day_key: key,
           reason: reason || null,
         }, { onConflict: 'user_id,day_key' })
+
+        if (allowLegacyDayKeys && planId) {
+          const legacyKey = legacyKeyFromScoped(key)
+          if (legacyKey !== key) {
+            await supabase
+              .from('skipped_days')
+              .delete()
+              .eq('user_id', user.id)
+              .eq('day_key', legacyKey)
+          }
+        }
       } catch (e) { console.error('Skip Supabase Fehler:', e) }
     }
     // Falls der Tag zuvor abgehakt war, done zurücksetzen (schließen sich gegenseitig aus)
@@ -1165,6 +1195,15 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
           hyrox_data: isHyroxPlan ? (logInput.hyrox_data || {}) : {},
           generic_data: logInput.generic_data || {},
         }, { onConflict: 'user_id,day_key' })
+
+        // Wenn ein alter Hauptplan-Log nur über den Legacy-Key gefunden wurde,
+        // wird er beim ersten erneuten Speichern sauber auf den planbezogenen Key migriert.
+        const legacyKey = oldLog?.__legacyDayKey
+        if (allowLegacyDayKeys && legacyKey && legacyKey !== key) {
+          await supabase.from('logs').delete().eq('user_id', user.id).eq('day_key', legacyKey)
+          await supabase.from('training_done').delete().eq('user_id', user.id).eq('day_key', legacyKey)
+          await supabase.from('skipped_days').delete().eq('user_id', user.id).eq('day_key', legacyKey)
+        }
       } catch (e) { console.error('Log Supabase Fehler:', e) }
     }
 
@@ -1196,11 +1235,16 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
   }
 
   const deleteLog = async (key) => {
+    const storedKey = logs[key]?.__legacyDayKey || key
+
     // Aus Supabase löschen
     if (user) {
       try {
-        await supabase.from('logs').delete().eq('user_id', user.id).eq('day_key', key)
+        await supabase.from('logs').delete().eq('user_id', user.id).eq('day_key', storedKey)
         await supabase.from('training_done').upsert({ user_id: user.id, day_key: key, done: false }, { onConflict: 'user_id,day_key' })
+        if (storedKey !== key) {
+          await supabase.from('training_done').delete().eq('user_id', user.id).eq('day_key', storedKey)
+        }
         // Screenshot-Datei direkt aus dem Storage entfernen - OHNE persistScreenshot()/logs.upsert()
         // zu nutzen, da die logs-Zeile gerade gelöscht wurde. Ein Upsert hier würde sonst
         // (ohne passende Konfliktzeile) eine neue, leere Ersatz-Zeile anlegen.
@@ -1889,7 +1933,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
         {/* Wochen */}
         <div style={{ padding: '0 16px' }}>
           {(phase.weeks || []).map((week, wi) => {
-            const weekDone = week.days.filter((d, di) => !d.optional && done[dayKey(phase.id, week.n, di)]).length
+            const weekDone = week.days.filter((d, di) => !d.optional && done[planDayKey(planId, phase.id, week.n, di)]).length
             const weekTotal = week.days.filter(d => !d.optional).length
             const allDone = weekDone === weekTotal && weekTotal > 0
             const isOpen = !!openWeeks[wi]
@@ -1935,7 +1979,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, openW
                 {isOpen && (
                   <div style={{ padding: '0 16px 16px' }}>
                     {sortedWeekDays(week).map(({ day, originalIndex: di }) => {
-                      const key = dayKey(phase.id, week.n, di)
+                      const key = planDayKey(planId, phase.id, week.n, di)
                       const isDone = !!done[key]
                       const hasLog = !!logs[key]
                       const hasShot = !!screenshots[key]

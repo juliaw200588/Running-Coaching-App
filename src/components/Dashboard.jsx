@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { loadAndEvaluateAchievements } from '../lib/achievementService.js'
 import { getHeroImageForDashboard } from '../lib/heroImages.js'
+import { legacyPlanDayKey, planDayKey } from '../lib/planDayKey.js'
 
 const DAY_MS = 86400000
-const dayKey = (phaseId, weekN, dayIdx) => `${phaseId}_w${weekN}_d${dayIdx}`
 
 const localDate = value => {
   if (!value) return null
@@ -277,7 +277,7 @@ const card = {
   boxShadow: '0 8px 24px rgba(74,52,39,0.055)', boxSizing: 'border-box'
 }
 
-function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile, onOpenWeekAnalysis }) {
+function Dashboard({ user, plan, planId = null, allowLegacyDayKeys = true, onOpenTraining, onOpenActivities, onOpenProfile, onOpenWeekAnalysis }) {
   const [profile, setProfile] = useState(null)
   const [logs, setLogs] = useState([])
   const [skipped, setSkipped] = useState([])
@@ -386,17 +386,35 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
     if (!context?.week || !context?.phase) return null
     const weekStart = context.weekStart
     const weekEnd = new Date(weekStart); weekEnd.setDate(weekEnd.getDate()+6)
-    const planned = (context.week.days || []).map((day, i) => ({ ...day, key: dayKey(context.phase.id, context.week.n, i), index: i, scheduleIndex: tagIndex(day.tag) ?? i })).filter(d => !d.optional)
-    const completed = planned.filter(d => logsByKey[d.key])
-    const skippedDays = planned.filter(d => !logsByKey[d.key] && skippedKeys.has(d.key))
-    const open = planned.filter(d => !logsByKey[d.key] && !skippedKeys.has(d.key))
+    const planned = (context.week.days || []).map((day, i) => ({
+      ...day,
+      key: planDayKey(planId, context.phase.id, context.week.n, i),
+      legacyKey: legacyPlanDayKey(context.phase.id, context.week.n, i),
+      index: i,
+      scheduleIndex: tagIndex(day.tag) ?? i,
+    })).filter(d => !d.optional)
+
+    const logForDay = day =>
+      logsByKey[day.key] ||
+      (allowLegacyDayKeys ? logsByKey[day.legacyKey] : null)
+
+    const skippedForDay = day =>
+      skippedKeys.has(day.key) ||
+      (allowLegacyDayKeys && skippedKeys.has(day.legacyKey))
+
+    const completed = planned.filter(d => logForDay(d))
+    const skippedDays = planned.filter(d => !logForDay(d) && skippedForDay(d))
+    const open = planned.filter(d => !logForDay(d) && !skippedForDay(d))
     const actualWeekLogs = logs.filter(l => {
       const d = localDate(l.actual_date)
       return d && d >= weekStart && d <= weekEnd
     })
 
     const currentPlanKeys = new Set(
-      planned.map(day => day.key)
+      planned.flatMap(day => [
+        day.key,
+        ...(allowLegacyDayKeys ? [day.legacyKey] : []),
+      ])
     )
 
     // Hauptwert: nur Aktivitäten, die einer Planeinheit DIESER Woche
@@ -471,7 +489,7 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
       weekStart,
       weekEnd,
     }
-  }, [context, logs, logsByKey, skippedKeys, isHyroxPlan])
+  }, [context, logs, logsByKey, skippedKeys, isHyroxPlan, planId, allowLegacyDayKeys])
 
   const hero = useMemo(() => {
     if (!plan) {
@@ -484,7 +502,10 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
 
     const todayLinked = todayActivities.find(l => l.day_key)
     if (todayLinked) {
-      const plannedDay = weekData.planned.find(d => d.key === todayLinked.day_key)
+      const plannedDay = weekData.planned.find(d =>
+        d.key === todayLinked.day_key ||
+        (allowLegacyDayKeys && d.legacyKey === todayLinked.day_key)
+      )
       const moved = plannedDay && plannedDay.scheduleIndex !== context.dayIndex
       return { type:'trained', eyebrow:'HEUTE TRAINIERT', title: plannedDay?.einheit || sportMeta(todayLinked.sport_type).label, text: moved ? `Ursprünglich für ${plannedDay.tag} geplant – heute absolviert.` : 'Deine heutige Einheit ist erledigt.', icon:'✓', log:todayLinked, plannedDay }
     }
@@ -495,9 +516,17 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
 
     const todayPlan = weekData.planned.find(d => d.scheduleIndex === context.dayIndex)
     if (todayPlan) {
-      const already = logsByKey[todayPlan.key]
+      const already =
+        logsByKey[todayPlan.key] ||
+        (allowLegacyDayKeys ? logsByKey[todayPlan.legacyKey] : null)
+
       if (already) return { type:'already', eyebrow:'HEUTE SCHON ERLEDIGT', title:todayPlan.einheit, text:`Diese Einheit hast du bereits am ${formatDay(already.actual_date)} absolviert.`, icon:'✓', log:already, plannedDay:todayPlan }
-      if (!skippedKeys.has(todayPlan.key)) return { type:'today', eyebrow:'HEUTE STEHT AN', title:todayPlan.einheit, text:compactDashboardTrainingText(todayPlan, isHyroxPlan), icon:sportMeta(todayPlan.sport_type).icon, plannedDay:todayPlan }
+
+      const todaySkipped =
+        skippedKeys.has(todayPlan.key) ||
+        (allowLegacyDayKeys && skippedKeys.has(todayPlan.legacyKey))
+
+      if (!todaySkipped) return { type:'today', eyebrow:'HEUTE STEHT AN', title:todayPlan.einheit, text:compactDashboardTrainingText(todayPlan, isHyroxPlan), icon:sportMeta(todayPlan.sport_type).icon, plannedDay:todayPlan }
     }
 
     const overdue = weekData.open.find(d => d.scheduleIndex < context.dayIndex)
@@ -505,7 +534,7 @@ function Dashboard({ user, plan, onOpenTraining, onOpenActivities, onOpenProfile
 
     const next = weekData.open.find(d => d.scheduleIndex > context.dayIndex)
     return { type:'rest', eyebrow:'HEUTE IST RUHETAG', title:'Erholung gehört zum Training.', text:next ? `Als Nächstes: ${next.tag} · ${next.einheit}` : 'Für diese Woche ist keine weitere Einheit offen.', icon:'🌿', plannedDay:next }
-  }, [plan, context, weekData, todayActivities, latestActivity, analyses, logsByKey, skippedKeys, isHyroxPlan])
+  }, [plan, context, weekData, todayActivities, latestActivity, analyses, logsByKey, skippedKeys, isHyroxPlan, allowLegacyDayKeys])
 
   const latestAnalysis = analyses[0] || null
   const focus =

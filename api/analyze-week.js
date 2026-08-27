@@ -2,6 +2,29 @@ import { buildTrainingAnalysis, secondsToPace } from '../src/lib/trainingAnalysi
 import { generateHikingPlan } from '../src/lib/hikingPlanServer.js'
 import { normalizeWeeklySport, resolveWeeklyAdjustments } from '../src/lib/weeklyPlanAdapter.js'
 
+
+const HYROX_TARGET_UPDATE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    stationId: {
+      type: 'string',
+      enum: [
+        'sled_push', 'sled_pull', 'farmers_carry', 'sandbag_lunges',
+        'wall_balls', 'ski_erg', 'row', 'burpee_broad_jumps', 'run',
+      ],
+    },
+    weight: { type: 'number' },
+    weightEach: { type: 'number' },
+    distance: { type: 'number' },
+    reps: { type: 'number' },
+    adjustmentReason: { type: 'string' },
+  },
+  required: [
+    'stationId', 'weight', 'weightEach', 'distance', 'reps', 'adjustmentReason',
+  ],
+}
+
 const ADJUSTMENT_PATCH_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -157,10 +180,14 @@ const RESPONSE_SCHEMA = {
               ],
             },
           },
+          hyroxTargetUpdates: {
+            type: 'array',
+            items: HYROX_TARGET_UPDATE_SCHEMA,
+          },
           patch: ADJUSTMENT_PATCH_SCHEMA,
         },
         required: [
-          'tag', 'adjusted', 'action', 'magnitude', 'adjustmentReason', 'clearFields', 'patch',
+          'tag', 'adjusted', 'action', 'magnitude', 'adjustmentReason', 'clearFields', 'hyroxTargetUpdates', 'patch',
         ],
       },
     },
@@ -317,6 +344,15 @@ const compactNextWeekDay = day => ({
   nutritionTip: day.nutritionTip || null,
   strengthPrescription: day.strengthPrescription || null,
   openWaterTip: day.openWaterTip || null,
+  hyroxSessionType: day.hyrox_session_type || null,
+  hyroxTargets: day.hyrox_targets || {},
+  hyroxStations: Array.isArray(day?.hyrox_log?.stations)
+    ? day.hyrox_log.stations.map(station => ({
+        id:station?.id || null,
+        label:station?.label || null,
+        fields:Array.isArray(station?.fields) ? station.fields : [],
+      }))
+    : [],
 })
 
 const COMMON_COACH_RULES = `
@@ -333,7 +369,7 @@ Gemeinsame Regeln:
 8a. Vermeide Wiederholungen zwischen weekVerdict, development, planDecision und nextWeekFocus. Jeder Abschnitt soll eine andere Aufgabe haben: Fazit, Entwicklung, Begründung, Fokus.
 8b. Texte kompakt halten: headline kurz; summary meist 1–2 Sätze; einzelne positive/attention-Punkte jeweils 1 Satz; nextWeekFocus maximal 2 kurze Sätze.
 9. ALLE Pflicht-Einheiten der nächsten Woche in nextWeekAdjusted zurückgeben, in derselben Tageszuordnung.
-10. adjusted=false -> action=keep, magnitude=none, clearFields=[] und patch vollständig mit Leerstrings/0 ausgeben.
+10. adjusted=false -> action=keep, magnitude=none, clearFields=[], hyroxTargetUpdates=[] und patch vollständig mit Leerstrings/0 ausgeben.
 11. adjusted=true nur, wenn wirklich etwas gegenüber dem vorhandenen nächsten Wochenplan verändert werden soll. Jede Änderung transparent begründen.
 12. patch enthält NUR tatsächlich zu ersetzende Felder; alle nicht zu ändernden Felder als Leerstring bzw. 0. Keine null-Werte. Wenn ein bisher vorhandenes optionales Feld bewusst entfernt werden muss, nenne es in clearFields statt einen Leerstring als Änderung zu verwenden.
 13. Keine zusätzlichen Trainingstage erzeugen und keine vorhandenen Pflicht-Tage verschieben.
@@ -399,7 +435,9 @@ HYROX-spezifisch:
 - Entscheide trotzdem auf Wochenebene: Gesamtbelastung, Erholung, andere Sportarten, Check-in und Phase können eine grundsätzlich zulässige Steigerung auf halten/reduzieren begrenzen.
 - Keine Einzel-Log-Sofortanpassung simulieren. Der Wochen-Coach ist die einzige Instanz, die den kommenden Wochenplan verändert.
 - HYROX-Race-Loads aus hyroxProfile.raceLoads sind Obergrenzen, keine automatischen Trainingsziele. Nie über sie hinaus steigern.
-- Bei einer Änderung die bestehende Einheit fachlich erhalten und vorzugsweise details/intensity/durationMinutes anpassen. Keine zusätzlichen Trainingstage erzeugen und keine Station erfinden, die im Plan nicht vorkommt.
+- Bei einer Änderung die bestehende Einheit fachlich erhalten. Stationsgewichte/-distanzen NICHT frei im details-Text umrechnen, sondern ausschließlich über hyroxTargetUpdates melden; der nachgelagerte Sicherheitsadapter synchronisiert daraus strukturierte Ziele und Text. Für nicht stationsbezogene Änderungen dürfen details/intensity/durationMinutes genutzt werden.
+- hyroxTargetUpdates nur für Stationen zurückgeben, die in der betreffenden nächsten Einheit tatsächlich vorkommen. Nicht veränderte Zahlen als 0 ausgeben. adjustmentReason kurz begründen.
+- Keine zusätzlichen Trainingstage erzeugen und keine Station erfinden, die im Plan nicht vorkommt.
 - Bei Deload/Regenerationswoche keine Lastprogression.
 - Der Fokus kann Laufökonomie, Stationslast, Technik oder Belastungsverträglichkeit betreffen, aber genau eine Hauptaufgabe nennen.`,
 

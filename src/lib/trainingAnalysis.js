@@ -1015,36 +1015,106 @@ const hyroxRecommendation = values => {
   return 'hold'
 }
 
-const buildHyroxSummary = weekLogs => {
+const buildHyroxSummary = (weekLogs, historyLogs = []) => {
   const sessions = []
-  const stations = {}
-  for (const log of weekLogs || []) {
-    const data = log?.hyrox_data
-    if (!data || typeof data !== 'object' || !Object.keys(data).length) continue
-    const session = { key:log.key || null, tag:log.tag || null, workout:log.einheit || null, stations:[] }
-    for (const [stationId, values] of Object.entries(data)) {
-      if (!values || typeof values !== 'object') continue
-      const recommendation = hyroxRecommendation(values)
-      const item = {
-        stationId, label:HYROX_STATION_LABELS[stationId] || stationId,
-        weight:numeric(values.weight), weightEach:numeric(values.weight_each),
-        distance:numeric(values.distance), reps:numeric(values.reps), time:numeric(values.time),
-        effort:values.effort || null, technique:values.technique || null,
-        completed:values.completed ?? null, recommendation,
+  const currentStations = {}
+  const historyStations = {}
+
+  const collect = (logs, target, source, includeSessions = false) => {
+    for (const log of logs || []) {
+      const data = log?.hyrox_data
+      if (!data || typeof data !== 'object' || !Object.keys(data).length) continue
+
+      const session = {
+        key:log.key || log.day_key || null,
+        tag:log.tag || null,
+        workout:log.einheit || log.workout || null,
+        actualDate:log.actual_date || log.actualDate || log.date || null,
+        stations:[],
       }
-      session.stations.push(item)
-      if (!stations[stationId]) stations[stationId] = []
-      stations[stationId].push(item)
+
+      for (const [stationId, values] of Object.entries(data)) {
+        if (!values || typeof values !== 'object') continue
+        const recommendation = hyroxRecommendation(values)
+        const item = {
+          stationId,
+          label:HYROX_STATION_LABELS[stationId] || stationId,
+          weight:numeric(values.weight),
+          weightEach:numeric(values.weight_each),
+          distance:numeric(values.distance),
+          reps:numeric(values.reps),
+          sets:numeric(values.sets),
+          time:values.time || null,
+          effort:values.effort || null,
+          technique:values.technique || null,
+          completed:values.completed ?? null,
+          recommendation,
+          actualDate:session.actualDate,
+          source,
+        }
+
+        session.stations.push(item)
+        if (!target[stationId]) target[stationId] = []
+        target[stationId].push(item)
+      }
+
+      if (includeSessions) sessions.push(session)
     }
-    sessions.push(session)
   }
-  const stationTrends = Object.entries(stations).map(([stationId, entries]) => ({
-    stationId, label:HYROX_STATION_LABELS[stationId] || stationId,
-    logs:entries.length, latest:entries.at(-1),
-    deterministicRecommendation:entries.at(-1)?.recommendation || 'hold',
-    safetyPriority:entries.some(e => e.recommendation === 'reduce'),
-  }))
-  return { sessions, stationTrends, rule:'Technik hat Vorrang. Technik schwierig, nicht geschafft oder zu schwer => reduzieren; schwer => halten; leicht + sicher => kleine Steigerung möglich; passend + sicher => geplante Progression zulässig.' }
+
+  collect(historyLogs, historyStations, 'history', false)
+  collect(weekLogs, currentStations, 'current_week', true)
+
+  const stationIds = new Set([
+    ...Object.keys(historyStations),
+    ...Object.keys(currentStations),
+  ])
+
+  const stationTrends = [...stationIds].map(stationId => {
+    const current = currentStations[stationId] || []
+    const history = historyStations[stationId] || []
+    const latest = current.at(-1) || null
+    const previous = history.at(-1) || null
+    const combined = [...history, ...current]
+
+    return {
+      stationId,
+      label:HYROX_STATION_LABELS[stationId] || stationId,
+      currentWeekLogs:current.length,
+      historicalLogs:history.length,
+      totalLogs:combined.length,
+      latest,
+      previous,
+      deterministicRecommendation:latest?.recommendation || 'hold',
+      safetyPriority:current.some(e => e.recommendation === 'reduce'),
+      trendAvailable:Boolean(latest && previous),
+      actualChange:{
+        weight:
+          Number.isFinite(latest?.weight) && Number.isFinite(previous?.weight)
+            ? latest.weight - previous.weight
+            : null,
+        weightEach:
+          Number.isFinite(latest?.weightEach) && Number.isFinite(previous?.weightEach)
+            ? latest.weightEach - previous.weightEach
+            : null,
+        distance:
+          Number.isFinite(latest?.distance) && Number.isFinite(previous?.distance)
+            ? latest.distance - previous.distance
+            : null,
+        reps:
+          Number.isFinite(latest?.reps) && Number.isFinite(previous?.reps)
+            ? latest.reps - previous.reps
+            : null,
+      },
+    }
+  })
+
+  return {
+    sessions,
+    stationTrends,
+    rule:'Technik hat Vorrang. Technik schwierig, nicht geschafft oder zu schwer => reduzieren; schwer => halten; leicht + sicher => kleine Steigerung möglich; passend + sicher => geplante Progression zulässig.',
+    historyNote:'Historische Stationswerte dienen nur als Trendkontext. Die aktuelle Wochenbewertung und Technik haben Vorrang.',
+  }
 }
 
 export function buildTrainingAnalysis({
@@ -1183,7 +1253,7 @@ export function buildTrainingAnalysis({
   const planRealityPatterns = buildPlanRealityPattern(historyRuns)
   const subjectiveObjectiveSignals = buildSubjectiveObjectiveSignals(weekRuns)
   const sportSummary = buildSportSummary({ sportType, plannedDays, weekRuns })
-  const hyroxSummary = normalizeSport(sportType) === 'hyrox' ? buildHyroxSummary(weekLogs) : null
+  const hyroxSummary = normalizeSport(sportType) === 'hyrox' ? buildHyroxSummary(weekLogs, historyLogs) : null
 
   const previousWeekRuns = Number.isFinite(numeric(weekNumber))
     ? historyRuns.filter(
