@@ -1283,7 +1283,20 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, allow
 
   const phase = phases[activePhase] || {}
   const totalDays = phases.flatMap(p => (p.weeks || []).flatMap(w => w.days.filter(d => !d.optional))).length
-  const doneDays = Object.values(done).filter(Boolean).length
+
+  // Gesamtfortschritt nur über echte Tage des aktuellen Plans zählen.
+  // Legacy-Key + planbezogener Alias dürfen nicht doppelt gezählt werden.
+  const doneDays = phases.reduce((total, phaseItem) => {
+    return total + (phaseItem.weeks || []).reduce((weekTotal, week) => {
+      const completedInWeek = (week.days || []).filter((day, dayIdx) =>
+        !day.optional &&
+        done[planDayKey(planId, phaseItem.id, week.n, dayIdx)]
+      ).length
+
+      return weekTotal + completedInWeek
+    }, 0)
+  }, 0)
+
   const progress = totalDays > 0 ? Math.round((doneDays / totalDays) * 100) : 0
   const phaseTabColors = ['#7EC8A4', '#F4A96A', '#E07B8A', '#A78BCA']
 
