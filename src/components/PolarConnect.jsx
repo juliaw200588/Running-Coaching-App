@@ -107,6 +107,16 @@ export default function PolarConnect({ user, plan, onOpenActivities }) {
   ] = useState(false)
 
   const [activePlanRows, setActivePlanRows] = useState([])
+  const [supplementModal, setSupplementModal] = useState(null)
+  const [supplementInput, setSupplementInput] = useState({
+    feeling:'',
+    note:'',
+    schuh_id:'',
+    mobility_status:'',
+    backpack_weight:'',
+    pressure_points:'',
+    hyrox_data:{},
+  })
 
   useEffect(() => {
     checkConnection()
@@ -493,12 +503,41 @@ const enrichImportedActivity = async activity => {
   })
 }
 
-  const assignActivity = async (activity, chosenKey) => {
+  const openSupplement = (activity, chosenKey, candidates = []) => {
+    const candidate = candidates.find(item => item.key === chosenKey) || null
+    const running = isRunningActivity(activity)
+
+    setSupplementInput({
+      feeling:activity.gefuehl || '',
+      note:'',
+      schuh_id:running ? (shoeSelections[activity.id] || '') : '',
+      mobility_status:'',
+      backpack_weight:'',
+      pressure_points:'',
+      hyrox_data:{},
+    })
+    setSupplementModal({ activity, chosenKey, candidate })
+  }
+
+  const setHyroxSupplementField = (stationId, field, value) => {
+    setSupplementInput(prev => ({
+      ...prev,
+      hyrox_data:{
+        ...(prev.hyrox_data || {}),
+        [stationId]:{
+          ...(prev.hyrox_data?.[stationId] || {}),
+          [field]:value,
+        },
+      },
+    }))
+  }
+
+  const assignActivity = async (activity, chosenKey, supplement = null) => {
     setAssigning(activity.id)
 
     const running = isRunningActivity(activity)
     const schuhId = running
-      ? shoeSelections[activity.id] || null
+      ? supplement?.schuh_id || shoeSelections[activity.id] || null
       : null
 
     try {
@@ -511,11 +550,27 @@ const enrichImportedActivity = async activity => {
           ? chosenKey
           : generalKey
 
-      const note = running
+      const autoNote = running
         ? chosenKey === 'extra'
           ? 'Extra-Lauf, automatisch von Polar importiert (kein Plan-Tag)'
           : 'Automatisch von Polar synchronisiert'
         : `${activity.activity_name || activityMeta(activity).label}, automatisch von Polar importiert`
+
+      const note = supplement?.note?.trim()
+        ? supplement.note.trim()
+        : autoNote
+
+      const sportData = {
+        ...(supplement?.mobility_status
+          ? { mobility_status:supplement.mobility_status }
+          : {}),
+        ...(supplement?.backpack_weight
+          ? { backpack_weight:supplement.backpack_weight }
+          : {}),
+        ...(supplement?.pressure_points
+          ? { pressure_points:supplement.pressure_points }
+          : {}),
+      }
 
       await supabase.from('logs').upsert({
         user_id: user.id,
@@ -531,7 +586,7 @@ const enrichImportedActivity = async activity => {
         uhrzeit: activity.uhrzeit || null,
         hf_max: activity.hf_max || null,
         hoehenmeter: activity.hoehenmeter || null,
-        gefuehl: activity.gefuehl || null,
+        gefuehl: supplement?.feeling || activity.gefuehl || null,
         training_load: activity.training_load || null,
         recovery_time: activity.recovery_time || null,
         polar_exercise_id: activity.polar_exercise_id || null,
@@ -553,6 +608,9 @@ const enrichImportedActivity = async activity => {
         elevation_loss: activity.elevation_loss || null,
         polar_import_version:
           activity.polar_import_version || 1,
+        sport_data:sportData,
+        hyrox_data:supplement?.hyrox_data || {},
+        generic_data:{},
       }, { onConflict: 'user_id,day_key' })
 
       if (chosenKey && chosenKey !== 'extra') {
@@ -595,6 +653,7 @@ const enrichImportedActivity = async activity => {
 
       const remaining = pending.filter(a => a.id !== activity.id)
       setPending(remaining)
+      setSupplementModal(null)
 
       await enrichImportedActivity(activity)
 
@@ -834,6 +893,236 @@ const discardActivity = async (activity) => {
         achievements={achievementUnlocks}
         onClose={closeAchievementModal}
       />
+
+      {supplementModal && (() => {
+        const a = supplementModal.activity
+        const candidate = supplementModal.candidate
+        const running = isRunningActivity(a)
+        const plannedText = `${candidate?.einheit || ''} ${candidate?.details || ''}`.toLowerCase()
+        const hasMobility = /mobility|mobilität|beweglichkeit|stretch|dehnen/.test(plannedText)
+        const hiking = ['hiking','walking'].includes(a?.sport_type)
+        const stations = candidate?.hyrox_log?.stations || []
+        const isHyrox = stations.length > 0 || /hyrox/.test(`${candidate?.planName || ''} ${plannedText}`.toLowerCase())
+        const effortChoices = ['Sehr leicht','Leicht','Passend','Schwer','Zu schwer']
+        const techniqueChoices = ['Sicher','Etwas unsicher','Schwierig']
+
+        return (
+          <div
+            onClick={() => !assigning && setSupplementModal(null)}
+            style={{
+              position:'fixed', inset:0, zIndex:500,
+              background:'rgba(45,30,24,.62)',
+              display:'flex', alignItems:'flex-end', justifyContent:'center',
+              backdropFilter:'blur(2px)',
+            }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{
+                width:'100%', maxWidth:560, maxHeight:'92dvh', overflowY:'auto',
+                background:'#FFFCFA', borderRadius:'28px 28px 0 0',
+                padding:'10px 18px calc(22px + env(safe-area-inset-bottom))',
+                boxSizing:'border-box', boxShadow:'0 -12px 50px rgba(60,35,25,.24)',
+              }}
+            >
+              <div style={{width:42,height:5,borderRadius:99,background:'#E9DED7',margin:'2px auto 16px'}} />
+
+              <div style={{fontFamily:'sans-serif',fontSize:10,fontWeight:900,letterSpacing:1.2,color:'#C17A5C',textTransform:'uppercase'}}>
+                Training ergänzen
+              </div>
+              <h3 style={{margin:'5px 0 4px',fontSize:21,color:'#3D2B1F'}}>
+                {candidate?.einheit || a.activity_name || activityMeta(a).label}
+              </h3>
+              {candidate && (
+                <div style={{fontFamily:'sans-serif',fontSize:11,color:'#9A8376',marginBottom:12}}>
+                  {candidate.planName} · Woche {candidate.weekN}
+                </div>
+              )}
+
+              <div style={{
+                padding:'12px 13px',borderRadius:15,background:'#F0FAF4',
+                border:'1px solid #CDE8D9',marginBottom:16,
+              }}>
+                <div style={{fontFamily:'sans-serif',fontSize:10,fontWeight:900,color:'#4F8B70',marginBottom:7}}>
+                  ✓ Von Polar übernommen
+                </div>
+                <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                  {a.distanz && <span style={{fontFamily:'sans-serif',fontSize:10.5,color:'#5D6D63'}}>📍 {a.distanz}</span>}
+                  {running && a.pace && <span style={{fontFamily:'sans-serif',fontSize:10.5,color:'#5D6D63'}}>⏱ {a.pace}</span>}
+                  {a.herzfrequenz && <span style={{fontFamily:'sans-serif',fontSize:10.5,color:'#5D6D63'}}>❤️ {a.herzfrequenz}</span>}
+                  {a.dauer && <span style={{fontFamily:'sans-serif',fontSize:10.5,color:'#5D6D63'}}>⌚ {a.dauer}</span>}
+                </div>
+              </div>
+
+              {running && schuhe.length > 0 && (
+                <div style={{marginBottom:14}}>
+                  <label style={{fontFamily:'sans-serif',fontSize:10,fontWeight:900,color:'#A88F7E',textTransform:'uppercase',letterSpacing:.6}}>
+                    Laufschuhe
+                  </label>
+                  <select
+                    value={supplementInput.schuh_id}
+                    onChange={e=>setSupplementInput(p=>({...p,schuh_id:e.target.value}))}
+                    style={{width:'100%',marginTop:5,padding:'11px 12px',borderRadius:12,border:'1.5px solid #EADDD5',background:'white',fontSize:13,color:'#3D2B1F'}}
+                  >
+                    <option value="">Kein Schuh ausgewählt</option>
+                    {schuhe.map(s=><option key={s.id} value={s.id}>{s.marke} {s.modell} ({Math.round(s.start_km || 0)} km)</option>)}
+                  </select>
+                </div>
+              )}
+
+              <div style={{marginBottom:14}}>
+                <div style={{fontFamily:'sans-serif',fontSize:10,fontWeight:900,color:'#A88F7E',textTransform:'uppercase',letterSpacing:.6,marginBottom:7}}>
+                  Wie hat sich die Einheit angefühlt?
+                </div>
+                <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                  {effortChoices.map(choice=>(
+                    <button
+                      type="button" key={choice}
+                      onClick={()=>setSupplementInput(p=>({...p,feeling:choice}))}
+                      style={{
+                        border:`1.5px solid ${supplementInput.feeling===choice?'#5BA88A':'#EADDD5'}`,
+                        background:supplementInput.feeling===choice?'#EEF8F3':'white',
+                        color:supplementInput.feeling===choice?'#3D8B6E':'#806E63',
+                        borderRadius:99,padding:'7px 10px',fontSize:10,fontWeight:800,
+                      }}
+                    >{choice}</button>
+                  ))}
+                </div>
+              </div>
+
+              {hasMobility && (
+                <div style={{marginBottom:14}}>
+                  <div style={{fontFamily:'sans-serif',fontSize:10,fontWeight:900,color:'#A88F7E',textTransform:'uppercase',letterSpacing:.6,marginBottom:7}}>
+                    Mobility erledigt?
+                  </div>
+                  <div style={{display:'flex',gap:7}}>
+                    {['Ja','Teilweise','Nein'].map(choice=>(
+                      <button
+                        type="button" key={choice}
+                        onClick={()=>setSupplementInput(p=>({...p,mobility_status:choice}))}
+                        style={{
+                          flex:1,border:`1.5px solid ${supplementInput.mobility_status===choice?'#5BA88A':'#EADDD5'}`,
+                          background:supplementInput.mobility_status===choice?'#EEF8F3':'white',
+                          color:supplementInput.mobility_status===choice?'#3D8B6E':'#806E63',
+                          borderRadius:12,padding:'9px 7px',fontSize:10,fontWeight:800,
+                        }}
+                      >{choice}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {hiking && (
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:9,marginBottom:14}}>
+                  <label style={{fontFamily:'sans-serif',fontSize:9.5,fontWeight:900,color:'#A88F7E',textTransform:'uppercase'}}>
+                    Rucksackgewicht
+                    <input
+                      value={supplementInput.backpack_weight}
+                      onChange={e=>setSupplementInput(p=>({...p,backpack_weight:e.target.value}))}
+                      placeholder="z. B. 6 kg"
+                      style={{width:'100%',marginTop:5,padding:'10px',borderRadius:11,border:'1.5px solid #EADDD5',boxSizing:'border-box'}}
+                    />
+                  </label>
+                  <label style={{fontFamily:'sans-serif',fontSize:9.5,fontWeight:900,color:'#A88F7E',textTransform:'uppercase'}}>
+                    Füße / Druckstellen
+                    <input
+                      value={supplementInput.pressure_points}
+                      onChange={e=>setSupplementInput(p=>({...p,pressure_points:e.target.value}))}
+                      placeholder="keine / kurz notieren"
+                      style={{width:'100%',marginTop:5,padding:'10px',borderRadius:11,border:'1.5px solid #EADDD5',boxSizing:'border-box'}}
+                    />
+                  </label>
+                </div>
+              )}
+
+              {isHyrox && stations.length > 0 && (
+                <div style={{marginBottom:14}}>
+                  <div style={{fontFamily:'sans-serif',fontSize:10,fontWeight:900,color:'#A88F7E',textTransform:'uppercase',letterSpacing:.6,marginBottom:8}}>
+                    HYROX-Stationen
+                  </div>
+                  <div style={{display:'grid',gap:9}}>
+                    {stations.map((station,index)=>{
+                      const stationId = station.id || `station-${index}`
+                      const values = supplementInput.hyrox_data?.[stationId] || {}
+                      const label = station.label || station.name || station.title || stationId
+                      const weightEach = /farmer/i.test(`${stationId} ${label}`)
+                      return (
+                        <div key={stationId} style={{padding:'11px',borderRadius:14,border:'1px solid #EADDD5',background:'#FFF8F5'}}>
+                          <div style={{fontFamily:'sans-serif',fontSize:11,fontWeight:900,color:'#5C3D2E',marginBottom:8}}>{label}</div>
+                          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:7,marginBottom:8}}>
+                            <input
+                              value={values[weightEach?'weight_each':'weight'] || ''}
+                              onChange={e=>setHyroxSupplementField(stationId,weightEach?'weight_each':'weight',e.target.value)}
+                              placeholder={weightEach?'kg je Hand':'Gewicht kg'}
+                              inputMode="decimal"
+                              style={{padding:'9px',borderRadius:10,border:'1px solid #EADDD5'}}
+                            />
+                            <input
+                              value={values.distance || ''}
+                              onChange={e=>setHyroxSupplementField(stationId,'distance',e.target.value)}
+                              placeholder="Distanz / Wdh."
+                              style={{padding:'9px',borderRadius:10,border:'1px solid #EADDD5'}}
+                            />
+                          </div>
+                          <div style={{fontFamily:'sans-serif',fontSize:9,fontWeight:900,color:'#A88F7E',marginBottom:5}}>BELASTUNG</div>
+                          <div style={{display:'flex',gap:5,flexWrap:'wrap',marginBottom:8}}>
+                            {['Zu leicht','Leicht','Passend','Schwer','Zu schwer'].map(choice=>(
+                              <button type="button" key={choice} onClick={()=>setHyroxSupplementField(stationId,'effort',choice)}
+                                style={{border:`1px solid ${values.effort===choice?'#FF8C69':'#EADDD5'}`,background:values.effort===choice?'#FFF0E8':'white',borderRadius:99,padding:'5px 7px',fontSize:8.8,fontWeight:800,color:'#765E50'}}>
+                                {choice}
+                              </button>
+                            ))}
+                          </div>
+                          <div style={{fontFamily:'sans-serif',fontSize:9,fontWeight:900,color:'#A88F7E',marginBottom:5}}>TECHNIK</div>
+                          <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
+                            {techniqueChoices.map(choice=>(
+                              <button type="button" key={choice} onClick={()=>setHyroxSupplementField(stationId,'technique',choice)}
+                                style={{border:`1px solid ${values.technique===choice?'#5BA88A':'#EADDD5'}`,background:values.technique===choice?'#EEF8F3':'white',borderRadius:99,padding:'5px 7px',fontSize:8.8,fontWeight:800,color:'#765E50'}}>
+                                {choice}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <label style={{fontFamily:'sans-serif',fontSize:10,fontWeight:900,color:'#A88F7E',textTransform:'uppercase',letterSpacing:.6}}>
+                Notiz <span style={{fontWeight:600,textTransform:'none',color:'#C5B4A9'}}>optional</span>
+                <textarea
+                  value={supplementInput.note}
+                  onChange={e=>setSupplementInput(p=>({...p,note:e.target.value}))}
+                  placeholder="Was soll der Coach noch wissen?"
+                  rows={2}
+                  style={{width:'100%',marginTop:5,padding:'11px 12px',borderRadius:12,border:'1.5px solid #EADDD5',resize:'none',boxSizing:'border-box',fontSize:13}}
+                />
+              </label>
+
+              <div style={{display:'flex',gap:8,marginTop:16}}>
+                <button
+                  type="button"
+                  disabled={assigning === a.id}
+                  onClick={()=>setSupplementModal(null)}
+                  style={{flex:1,padding:13,borderRadius:15,border:'1.5px solid #EADDD5',background:'white',color:'#9A8376',fontWeight:900}}
+                >
+                  Zurück
+                </button>
+                <button
+                  type="button"
+                  disabled={assigning === a.id}
+                  onClick={()=>assignActivity(a,supplementModal.chosenKey,supplementInput)}
+                  style={{flex:2,padding:13,borderRadius:15,border:'none',background:'#5BA88A',color:'white',fontWeight:900}}
+                >
+                  {assigning === a.id ? '⏳ Speichere…' : 'Training abschließen ✓'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        )
+      })()}
 
       {showIgnoredActivities && (
         <IgnoredActivities
@@ -1290,7 +1579,7 @@ const discardActivity = async (activity) => {
 
                   <button
                     onClick={() =>
-                      assignActivity(a, selected)
+                      openSupplement(a, selected, candidates)
                     }
                     disabled={
                       (running && !selected) || isAssigning
