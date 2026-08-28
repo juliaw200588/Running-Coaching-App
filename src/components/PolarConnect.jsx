@@ -1120,7 +1120,6 @@ const discardActivity = async (activity) => {
               </div>
             </div>
           </div>
-        </div>
         )
       })()}
 
