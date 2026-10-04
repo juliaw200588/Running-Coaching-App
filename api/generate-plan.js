@@ -192,6 +192,10 @@ export default async function handler(req, res) {
 
   // Trainingspaces berechnen
   let paceInfo = ''
+  let tempoLow = null
+  let tempoHigh = null
+  let raceLow = null
+  let raceHigh = null
   const fmt = (min) => {
     const m = Math.floor(min)
     const s = Math.round((min - m) * 60).toString().padStart(2, '0')
@@ -247,16 +251,16 @@ export default async function handler(req, res) {
 
     // Tempo/Schwelle: an die HM-äquivalente Pace gekoppelt (Schwellenpace ≈ HM-Renntempo
     // ist ein etablierter Richtwert), NICHT an die Zieldistanz-Pace
-    const tempoLow = paceHm - 0.05
-    const tempoHigh = paceHm + 0.15
+    tempoLow = paceHm - 0.05
+    tempoHigh = paceHm + 0.15
 
     // Intervalle: an die 5-km-äquivalente Pace gekoppelt (VO2max-Reiz), NICHT an die Zieldistanz-Pace
     const intervalLow = pace5k - 0.05
     const intervalHigh = pace5k + 0.1
 
     // Renntempo-Einheiten: Zielwettkampfpace
-    const raceLow = goalPace - 0.1
-    const raceHigh = goalPace + 0.2
+    raceLow = goalPace - 0.1
+    raceHigh = goalPace + 0.2
 
     const basisText = prevMin
       ? `bisherige Zeit (${previousTime})`
