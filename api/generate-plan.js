@@ -239,6 +239,7 @@ export default async function handler(req, res) {
   let tempoHigh = null
   let raceLow = null
   let raceHigh = null
+  let deterministicRunningPaces = null
   const fmt = (min) => {
     const m = Math.floor(min)
     const s = Math.round((min - m) * 60).toString().padStart(2, '0')
@@ -306,6 +307,17 @@ export default async function handler(req, res) {
     // Renntempo-Einheiten: Zielwettkampfpace
     raceLow = goalPace - 0.1
     raceHigh = goalPace + 0.2
+
+    // V3: Die berechneten Bereiche werden zusätzlich strukturiert gespeichert.
+    // Nach der KI-Antwort werden sie serverseitig in den Plan eingesetzt, damit
+    // das Modell keine eigenen oder unrealistisch engen Pace-Spannen erfinden kann.
+    deterministicRunningPaces = {
+      easy: { low: easyLow, high: easyHigh },
+      long: { low: longLow, high: longHigh },
+      tempo: { low: tempoLow, high: tempoHigh },
+      interval: { low: intervalLow, high: intervalHigh },
+      race: goalMin ? { low: raceLow, high: raceHigh } : null,
+    }
 
     const basisText = prevMin
       ? `bisherige Zeit (${previousTime})`
@@ -693,6 +705,104 @@ WICHTIG FÜR DIE AUSGABE:
     }
 
     const plan = JSON.parse(responseText)
+
+    // V3: Pace-Lock nach der KI-Generierung.
+    // Die KI darf Struktur und Formulierung erzeugen, aber konkrete Pacewerte stammen
+    // ausschließlich aus unserer serverseitigen Berechnung. So verhindern wir z.B.
+    // Zone-2-Ausgaben wie 6:31-6:32 min/km bei einer aktuellen 5-km-Zeit von 32:30.
+    const enforceDeterministicRunningPaces = (generatedPlan) => {
+      if (!deterministicRunningPaces) return generatedPlan
+
+      const paceText = (range) => range ? `${fmt(range.low)}-${fmt(range.high)} min/km` : null
+      const pacePattern = /\d{1,2}:\d{2}\s*[-–]\s*\d{1,2}:\d{2}\s*min\/km/gi
+      const singlePacePattern = /\d{1,2}:\d{2}\s*min\/km/gi
+
+      const hfRanges = hfMax
+        ? {
+            z1: ruheHFNum ? `<${karvonenZone(0.6)} bpm` : `<${Math.round(hfMax * 0.6)} bpm`,
+            z2: ruheHFNum ? `${karvonenZone(0.6)}-${karvonenZone(0.7)} bpm` : `${Math.round(hfMax * 0.6)}-${Math.round(hfMax * 0.7)} bpm`,
+            z3: ruheHFNum ? `${karvonenZone(0.7)}-${karvonenZone(0.8)} bpm` : `${Math.round(hfMax * 0.7)}-${Math.round(hfMax * 0.8)} bpm`,
+            z4: ruheHFNum ? `${karvonenZone(0.8)}-${karvonenZone(0.9)} bpm` : `${Math.round(hfMax * 0.8)}-${Math.round(hfMax * 0.9)} bpm`,
+            z5: ruheHFNum ? `>${karvonenZone(0.9)} bpm` : `>${Math.round(hfMax * 0.9)} bpm`,
+          }
+        : null
+
+      const cleanExtra = (inside = '') => {
+        const withoutPace = inside
+          .replace(pacePattern, '')
+          .replace(singlePacePattern, '')
+          .replace(/^[\s,;/-]+|[\s,;/-]+$/g, '')
+          .trim()
+        return withoutPace
+      }
+
+      const enforceZone = (details, zoneLabelRegex, range, hfText) => {
+        if (!range || !details) return details
+        const targetPace = paceText(range)
+        return details.replace(zoneLabelRegex, (match, inside) => {
+          const extra = cleanExtra(inside || '')
+          const suffix = extra || hfText
+          const label = match.match(/^Zone\s*[1-5](?:\s*[-–]\s*[1-5])?/i)?.[0] || 'Zone'
+          return `${label} (${targetPace}${suffix ? `, ${suffix}` : ''})`
+        })
+      }
+
+      const enforceNamedPace = (details, labelRegex, range) => {
+        if (!range || !details) return details
+        const targetPace = paceText(range)
+        return details.replace(labelRegex, (match, label, tail = '') => {
+          const paceInTail = pacePattern.test(tail) || singlePacePattern.test(tail)
+          pacePattern.lastIndex = 0
+          singlePacePattern.lastIndex = 0
+          if (paceInTail) {
+            return label + tail.replace(pacePattern, targetPace).replace(singlePacePattern, targetPace)
+          }
+          // Wenn die KI bei einer Qualitäts-/Renntempoeinheit gar keine Pace genannt hat,
+          // setzen wir den serverseitig berechneten Bereich direkt hinter die Bezeichnung.
+          return `${label} (${targetPace})${tail}`
+        })
+      }
+
+      for (const phase of generatedPlan?.phases || []) {
+        for (const week of phase?.weeks || []) {
+          for (const day of week?.days || []) {
+            if (!day || typeof day.details !== 'string') continue
+
+            const unit = String(day.einheit || '').toLowerCase()
+            let details = day.details
+            const isLong = /langer lauf|long run/.test(unit)
+            const isInterval = /intervall/.test(unit)
+            const isTempo = /tempo|schwelle|threshold/.test(unit) && !/renntempo|wettkampftempo/.test(unit)
+            const isRace = /renntempo|wettkampftempo|hm-pace|halbmarathon-pace|10[- ]?km-pace|marathon-pace|race pace/.test(unit)
+
+            // Lockeres Ein-/Auslaufen und lockere Hauptteile: Zone 1-2/2 immer aus der
+            // aktuellen Leistungsbasis ableiten. Beim langen Lauf den bewusst langsameren
+            // Long-Run-Bereich nutzen.
+            const easyRange = isLong ? deterministicRunningPaces.long : deterministicRunningPaces.easy
+            details = enforceZone(details, /Zone\s*2\s*(?:\(([^)]*)\))?/gi, easyRange, hfRanges?.z2)
+            details = enforceZone(details, /Zone\s*1\s*[-–]\s*2\s*(?:\(([^)]*)\))?/gi, deterministicRunningPaces.easy, hfRanges?.z2)
+
+            if (isInterval) {
+              details = enforceZone(details, /Zone\s*4\s*(?:\(([^)]*)\))?/gi, deterministicRunningPaces.interval, hfRanges?.z4)
+              details = enforceNamedPace(details, /(Intervall(?:e|en)?)([^+–—]{0,80}?)(?=\+|–|—|$)/gi, deterministicRunningPaces.interval)
+            } else if (isTempo) {
+              details = enforceZone(details, /Zone\s*3\s*[-–]\s*4\s*(?:\(([^)]*)\))?/gi, deterministicRunningPaces.tempo, hfRanges?.z4)
+              details = enforceZone(details, /Zone\s*4\s*(?:\(([^)]*)\))?/gi, deterministicRunningPaces.tempo, hfRanges?.z4)
+              details = enforceNamedPace(details, /(Tempodauerlauf|Schwelle|Threshold)([^+–—]{0,80}?)(?=\+|–|—|$)/gi, deterministicRunningPaces.tempo)
+            } else if (isRace && deterministicRunningPaces.race) {
+              details = enforceZone(details, /Zone\s*4\s*(?:\(([^)]*)\))?/gi, deterministicRunningPaces.race, hfRanges?.z4)
+              details = enforceNamedPace(details, /(Renntempo|Wettkampftempo|HM-Pace|Halbmarathon-Pace|10[- ]?km-Pace|Marathon-Pace|Race Pace)([^+–—]{0,80}?)(?=\+|–|—|$)/gi, deterministicRunningPaces.race)
+            }
+
+            day.details = details
+          }
+        }
+      }
+      return generatedPlan
+    }
+
+    enforceDeterministicRunningPaces(plan)
+
     const generatedWeeks = (plan?.phases || []).flatMap(phase => phase?.weeks || [])
 
     for (const week of generatedWeeks) {
