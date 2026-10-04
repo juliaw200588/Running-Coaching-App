@@ -308,9 +308,41 @@ export default async function handler(req, res) {
   }
   const parseTime = (timeStr) => {
     if (!timeStr) return null
-    const parts = timeStr.replace('h', '').trim().split(':')
-    if (parts.length === 3) return parseInt(parts[0])*60 + parseInt(parts[1]) + parseInt(parts[2])/60
-    if (parts.length === 2) return parseInt(parts[0])*60 + parseInt(parts[1])
+
+    const raw = String(timeStr).toLowerCase().replace(/\s+/g, '').trim()
+    const cleaned = raw.replace('h', ':')
+    const parts = cleaned.split(':').filter(Boolean)
+
+    const nums = parts.map(value => Number(value))
+    if (nums.some(value => !Number.isFinite(value) || value < 0)) return null
+
+    if (parts.length === 3) {
+      const [hours, minutes, seconds] = nums
+      if (minutes >= 60 || seconds >= 60) return null
+      return hours * 60 + minutes + seconds / 60
+    }
+
+    if (parts.length === 2) {
+      const [first, second] = nums
+      if (second >= 60) return null
+
+      // Zwei Blöcke sind im Onboarding bewusst flexibel:
+      // - "32:30" bei 5 km bedeutet 32 min 30 s.
+      // - "1:08" bei 10 km/HM/Marathon bedeutet 1 h 08 min.
+      // Faustregel: ab 10 im ersten Block => mm:ss, darunter => h:mm.
+      if (first >= 10) {
+        return first + second / 60
+      }
+
+      return first * 60 + second
+    }
+
+    if (parts.length === 1) {
+      const only = nums[0]
+      // Einzelwert wird als Minuten interpretiert.
+      return only
+    }
+
     return null
   }
   const distKm = goal === 'Marathon' ? 42.195 : goal === 'Halbmarathon' ? 21.0975 : goal === '10 km' ? 10 : 5
@@ -318,13 +350,30 @@ export default async function handler(req, res) {
   const prevMin = parseTime(previousTime)
   const goalMin = parseTime(goalTime)
 
+  const isPlausibleRaceTime = totalMinutes => {
+    if (!totalMinutes || !Number.isFinite(totalMinutes) || totalMinutes <= 0) return false
+    const pace = totalMinutes / distKm
+    return pace >= 2.5 && pace <= 15
+  }
+
+  const safePrevMin = isPlausibleRaceTime(prevMin) ? prevMin : null
+  const safeGoalMin = isPlausibleRaceTime(goalMin) ? goalMin : null
+
+  if (previousTime && !safePrevMin) {
+    console.warn('[Generate Plan][Running] Bisherige Zeit unplausibel und wird nicht als Pacebasis genutzt:', previousTime)
+  }
+
+  if (goalTime && !safeGoalMin) {
+    console.warn('[Generate Plan][Running] Zielzeit unplausibel und wird nicht als Pacebasis genutzt:', goalTime)
+  }
+
   // Riegel-Formel (Riegel 1977): T2 = T1 × (D2/D1)^k – sagt die Wettkampfzeit für eine
   // ANDERE Distanz aus einer bekannten Zeit voraus. Exponent leicht nach Niveau angepasst
   // (weniger trainierte Läufer:innen bauen bei zunehmender Distanz stärker ab).
   const riegelExponent = niveau === 'Erfahren' ? 1.04 : niveau === 'Anfänger' ? 1.08 : 1.06
   const predictMin = (knownMin, knownKm, targetKm) => knownMin * Math.pow(targetKm / knownKm, riegelExponent)
 
-  const hasReliableTrainingPaceBasis = Boolean(prevMin) || (Boolean(goalMin) && niveau !== 'Anfänger')
+  const hasReliableTrainingPaceBasis = Boolean(safePrevMin) || (Boolean(safeGoalMin) && niveau !== 'Anfänger')
 
   if (hasReliableTrainingPaceBasis) {
     // Basis für Trainingspaces: bisherige Zeit bevorzugt, sonst Zielzeit.
@@ -332,14 +381,14 @@ export default async function handler(req, res) {
     // echter Fitness-Datenpunkt – deshalb wird sie niveau-abhängig gedämpft, bevor sie
     // als Basis für die ALLTÄGLICHEN Trainingsbereiche (Zone 2, Tempo, Intervalle) dient.
     // Erfahrenere Läufer:innen kalibrieren Zielzeiten realistischer, daher kleinerer Abschlag.
-    const sicherheitsfaktor = prevMin
+    const sicherheitsfaktor = safePrevMin
       ? 1
       : (niveau === 'Erfahren' ? 1.04 : niveau === 'Anfänger' ? 1.12 : 1.08)
-    const baseMin = (prevMin || goalMin) * sicherheitsfaktor
+    const baseMin = (safePrevMin || safeGoalMin) * sicherheitsfaktor
     const basePace = baseMin / distKm
 
     // Zielzeit für Renntempo-Einheiten
-    const goalPace = goalMin ? goalMin / distKm : basePace
+    const goalPace = safeGoalMin ? safeGoalMin / distKm : basePace
 
     // 5-km-äquivalente Pace (für Intervalle/VO2max-Reize) und Halbmarathon-äquivalente
     // Pace (für Tempodauerlauf/Schwelle) – NICHT einfach von der Zieldistanz-Pace ableiten!
@@ -372,35 +421,54 @@ export default async function handler(req, res) {
     // V3: Die berechneten Bereiche werden zusätzlich strukturiert gespeichert.
     // Nach der KI-Antwort werden sie serverseitig in den Plan eingesetzt, damit
     // das Modell keine eigenen oder unrealistisch engen Pace-Spannen erfinden kann.
-    deterministicRunningPaces = {
-      easy: { low: easyLow, high: easyHigh },
-      long: { low: longLow, high: longHigh },
-      tempo: { low: tempoLow, high: tempoHigh },
-      interval: { low: intervalLow, high: intervalHigh },
-      race: goalMin ? { low: raceLow, high: raceHigh } : null,
+    const safeRange = (low, high) => {
+      const valid =
+        Number.isFinite(low) &&
+        Number.isFinite(high) &&
+        low >= 2.5 &&
+        high <= 15 &&
+        high > low &&
+        (high - low) >= 0.15
+
+      return valid ? { low, high } : null
     }
 
-    const basisText = prevMin
+    deterministicRunningPaces = {
+      easy: safeRange(easyLow, easyHigh),
+      long: safeRange(longLow, longHigh),
+      tempo: safeRange(tempoLow, tempoHigh),
+      interval: safeRange(intervalLow, intervalHigh),
+      race: safeGoalMin ? safeRange(raceLow, raceHigh) : null,
+    }
+
+    const basisText = safePrevMin
       ? `bisherige Zeit (${previousTime})`
       : `Zielzeit (${goalTime}) – da keine bisherige Zeit angegeben`
 
-    const zielText = goalMin && prevMin
+    const zielText = safeGoalMin && safePrevMin
       ? `
 - Renntempo-Einheiten (Zielzeit ${goalTime}): ${fmt(raceLow)}-${fmt(raceHigh)} min/km`
       : ''
 
-    paceInfo = `
+    if (deterministicRunningPaces.easy && deterministicRunningPaces.long) {
+      paceInfo = `
 BERECHNETE TRAININGSPACES (Basis: ${basisText}, Wettkampfpace: ${fmt(basePace)} min/km):
 - Zone 2 / Lockerer Lauf: ${fmt(easyLow)}-${fmt(easyHigh)} min/km (+1:20 bis +1:50 zur Wettkampfpace)
 - Langer Lauf: ${fmt(longLow)}-${fmt(longHigh)} min/km (immer langsamer als lockere Läufe)
-- Tempodauerlauf/Schwelle: ${fmt(tempoLow)}-${fmt(tempoHigh)} min/km (entspricht der halbmarathon-äquivalenten Renntempo, per Riegel-Formel aus der Zielzeit hochgerechnet)
-- Intervalle: ${fmt(intervalLow)}-${fmt(intervalHigh)} min/km (entspricht der 5-km-äquivalenten Renntempo, per Riegel-Formel aus der Zielzeit hochgerechnet – deutlich schneller als die Zieldistanz-Pace bei HM/Marathon-Zielen!)${zielText}
+- Tempodauerlauf/Schwelle: ${fmt(tempoLow)}-${fmt(tempoHigh)} min/km
+- Intervalle: ${fmt(intervalLow)}-${fmt(intervalHigh)} min/km${zielText}
 
 WICHTIG:
-- Zone 2 ist IMMER deutlich langsamer als Wettkampfpace – das fühlt sich zu langsam an, ist aber korrekt!
-- Langer Lauf ist IMMER langsamer als die lockeren Läufe
-- Intervalle sind bei HM-/Marathon-Zielen SPÜRBAR SCHNELLER als die Zieldistanz-Wettkampfpace – das ist beabsichtigt (VO2max-Training), NICHT anpassen!
-- Renntempo-Einheiten erst in der spezifischen Phase einführen`
+- Zone 2 ist IMMER deutlich langsamer als Wettkampfpace.
+- Langer Lauf ist IMMER langsamer als die lockeren Läufe.
+- Keine Pace unter 2:30 min/km oder über 15:00 min/km ausgeben.
+- Keine Pace-Spanne unter 9 Sekunden Breite ausgeben.
+- Renntempo-Einheiten erst in der spezifischen Phase einführen.`
+    } else {
+      paceInfo = `
+PACE-HINWEIS:
+Die eingegebenen Zeiten waren für eine belastbare Paceableitung nicht plausibel. Deshalb keine konkreten Pacewerte erzwingen; stattdessen nach Gefühl/Herzfrequenz steuern.`
+    }
   }
 
   const ruheHFNum = ruheHF ? parseInt(ruheHF) : null

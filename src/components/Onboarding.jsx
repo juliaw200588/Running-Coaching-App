@@ -149,6 +149,7 @@ export default function Onboarding({ onPlanGenerated }) {
     ...(savedDraft?.form || {}),
   }))
   const [loading, setLoading] = useState(false)
+  const [backgroundMessage, setBackgroundMessage] = useState('')
   const [profileLoading, setProfileLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -296,9 +297,31 @@ export default function Onboarding({ onPlanGenerated }) {
     })
   }
 
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+
+    const handleVisibility = () => {
+      if (!loading) return
+
+      if (document.visibilityState === 'visible') {
+        setBackgroundMessage(
+          'Dein Plan wird weiter erstellt. Der Status wird jetzt automatisch aktualisiert …'
+        )
+      } else {
+        setBackgroundMessage(
+          'Du kannst den Tab wechseln – die Planerstellung läuft im Hintergrund weiter.'
+        )
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [loading])
+
   const handleGenerate = async () => {
     setLoading(true)
     setError(null)
+    setBackgroundMessage('Dein Plan wird erstellt. Du kannst den Tab wechseln – die Erstellung läuft weiter.')
 
     try {
       const normalizedForm = {
@@ -324,6 +347,7 @@ export default function Onboarding({ onPlanGenerated }) {
       setError('Fehler: ' + e.message)
     } finally {
       setLoading(false)
+      setBackgroundMessage('')
     }
   }
 
