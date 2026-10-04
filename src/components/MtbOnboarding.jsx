@@ -1,3 +1,4 @@
+import { generatePlanWithBackgroundRecovery } from '../lib/planGenerationJobClient.js'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import {
@@ -140,7 +141,7 @@ export default function MtbOnboarding({ onPlanGenerated }) {
     const selected=c.preferredDays.includes(day)
     if(selected)return{...c,preferredDays:c.preferredDays.filter(x=>x!==day)}
     if(c.preferredDays.length>=Number(c.unitsPerWeek))return c
-    return{...c,preferredDays:[...c.preferredDays,day].sort((a,b)=>DAYS.indexOf(a)-DAYS.indexOf(b))}
+    return{...c,preferredDays:[...c.preferredDays,day]}
   })
   const selectUnits=units=>setForm(c=>({...c,unitsPerWeek:units,preferredDays:DEFAULT_DAYS[units]}))
 
@@ -159,14 +160,16 @@ export default function MtbOnboarding({ onPlanGenerated }) {
   const handleGenerate=async()=>{
     setLoading(true);setError(null)
     try{
-      const normalizedForm={...form,preferredDays:[...(form.preferredDays||[])].sort((a,b)=>DAYS.indexOf(a)-DAYS.indexOf(b))}
-      const guardrails=buildMtbPlanGuardrails(normalizedForm)
-      const response=await fetch('/api/generate-plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...normalizedForm,sport_type:'mountain_biking',plan_type:'mtb_endurance',guardrails})})
-      const data=await response.json()
-      if(!response.ok||data?.error)throw new Error(data?.error||`HTTP ${response.status}`)
-      if(!data?.plan?.phases?.length)throw new Error('Der Trainingsplan ist unvollständig.')
+      const guardrails=buildMtbPlanGuardrails(form)
+      const plan=await generatePlanWithBackgroundRecovery({
+        ...form,
+        sport_type:'mountain_biking',
+        plan_type:'mtb_endurance',
+        guardrails,
+      })
+      if(!plan?.phases?.length)throw new Error('Der Trainingsplan ist unvollständig.')
       if(typeof window!=='undefined')window.sessionStorage.removeItem(DRAFT_KEY)
-      onPlanGenerated(data.plan)
+      onPlanGenerated(plan)
     }catch(e){
       console.error('[MtbOnboarding] Plan konnte nicht erstellt werden:',e)
       setError(e?.message?`Dein Plan konnte gerade nicht erstellt werden: ${e.message}`:'Dein Plan konnte gerade nicht erstellt werden.')
@@ -221,7 +224,7 @@ export default function MtbOnboarding({ onPlanGenerated }) {
         </div>
 
         <div style={{marginBottom:24}}>
-          <div style={labelStyle}>Wie viel MTB-Erfahrung hast du aktuell?</div>
+          <div style={labelStyle}>Wo stehst du körperlich gerade?</div>
           <div style={{display:'grid',gap:8}}>
             {[
               ['beginner','🌱','Ich starte gerade','Selten oder noch nicht regelmäßig auf dem MTB'],
@@ -281,7 +284,7 @@ export default function MtbOnboarding({ onPlanGenerated }) {
 
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:9,marginBottom:22}}>
           <div><label style={labelStyle}>Stunden/Woche <span style={{textTransform:'none',fontWeight:600}}>optional</span></label><input style={inputStyle} type="number" step=".5" min="0" value={form.currentWeeklyHours} onChange={e=>setForm(c=>({...c,currentWeeklyHours:e.target.value}))}/></div>
-          <div><label style={labelStyle}>Höhenmeter bei typischer längerer Tour <span style={{textTransform:'none',fontWeight:600}}>optional</span></label><input style={inputStyle} type="number" step="50" min="0" value={form.typicalElevationM} onChange={e=>setForm(c=>({...c,typicalElevationM:e.target.value}))}/></div>
+          <div><label style={labelStyle}>Typische hm längere Tour <span style={{textTransform:'none',fontWeight:600}}>optional</span></label><input style={inputStyle} type="number" step="50" min="0" value={form.typicalElevationM} onChange={e=>setForm(c=>({...c,typicalElevationM:e.target.value}))}/></div>
         </div>
 
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:9,marginBottom:22}}>
@@ -319,8 +322,7 @@ export default function MtbOnboarding({ onPlanGenerated }) {
         </div>
 
         <div style={{marginBottom:22}}>
-          <div style={labelStyle}>Kannst du Indoor-Radtraining nutzen?</div>
-          <div style={{...small,margin:'-2px 0 8px'}}>Zum Beispiel Rollentrainer, Smart-Trainer oder Indoorbike.</div>
+          <div style={labelStyle}>Kannst du auch drinnen Rad fahren?</div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:7}}>
             {[['no','Nein'],['sometimes','Gelegentlich'],['regular','Regelmäßig']].map(([id,label])=><button key={id} type="button" onClick={()=>setForm(c=>({...c,indoorTrainer:id}))} style={{...choiceStyle(form.indoorTrainer===id),textAlign:'center',padding:'11px 5px'}}>{label}</button>)}
           </div>

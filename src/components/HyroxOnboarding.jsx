@@ -1,3 +1,4 @@
+import { generatePlanWithBackgroundRecovery } from '../lib/planGenerationJobClient.js'
 import { useEffect, useMemo, useState } from 'react'
 
 const DRAFT_KEY = 'hyrox-onboarding-draft-v1'
@@ -264,23 +265,14 @@ export default function HyroxOnboarding({ onPlanGenerated }) {
         plan_type:'hyrox',
       }
 
-      const response = await fetch('/api/generate-plan', {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        body:JSON.stringify(normalizedForm),
-      })
+      const plan = await generatePlanWithBackgroundRecovery(normalizedForm)
 
-      const data = await response.json()
-      if (!response.ok || data?.error) {
-        throw new Error(data?.error || `HTTP ${response.status}`)
-      }
-
-      if (!data?.plan?.phases?.length) {
+      if (!plan?.phases?.length) {
         throw new Error('Der HYROX-Plan ist unvollständig.')
       }
 
       try { sessionStorage.removeItem(DRAFT_KEY) } catch {}
-      onPlanGenerated(data.plan)
+      onPlanGenerated(plan)
     } catch (e) {
       console.error('[HyroxOnboarding] Plan konnte nicht erstellt werden:', e)
       setError(

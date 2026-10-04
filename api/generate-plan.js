@@ -1,8 +1,34 @@
+import { createClient } from '@supabase/supabase-js'
 import { generateHikingPlan } from '../src/lib/hikingPlanServer.js'
 import { generateCyclingPlan } from '../src/lib/cyclingPlanServer.js'
 import { generateMtbPlan } from '../src/lib/mtbPlanServer.js'
 import { generateSwimmingPlan } from '../src/lib/swimmingPlanServer.js'
 import { generateHyroxPlan } from '../src/lib/hyroxPlanServer.js'
+
+const planJobSupabase = process.env.SUPABASE_SERVICE_KEY
+  ? createClient(
+      process.env.SUPABASE_URL || 'https://jgvsbecvgkcfafjyhxvr.supabase.co',
+      process.env.SUPABASE_SERVICE_KEY
+    )
+  : null
+
+async function updatePlanGenerationJob(jobId, userId, values) {
+  if (!planJobSupabase || !jobId || !userId) return
+
+  const { error } = await planJobSupabase
+    .from('plan_generation_jobs')
+    .update({
+      ...values,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', jobId)
+    .eq('user_id', userId)
+
+  if (error) {
+    console.error('[Generate Plan][Job] Status konnte nicht gespeichert werden:', error)
+  }
+}
+
 
 const RUNNING_PLAN_SCHEMA = {
   type: 'object',
@@ -82,6 +108,30 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
+  const generationJobId = req.body?.generationJobId || null
+  const generationUserId = req.body?.generationUserId || null
+
+  const completeJob = async plan => {
+    if (!plan) return
+    await updatePlanGenerationJob(generationJobId, generationUserId, {
+      status: 'completed',
+      plan_data: plan,
+      error_message: null,
+    })
+  }
+
+  const failJob = async message => {
+    await updatePlanGenerationJob(generationJobId, generationUserId, {
+      status: 'failed',
+      error_message: String(message || 'Unbekannter Fehler').slice(0, 1200),
+    })
+  }
+
+  await updatePlanGenerationJob(generationJobId, generationUserId, {
+    status: 'running',
+    error_message: null,
+  })
+
   // Gemeinsamer Einstieg für alle Planarten.
   // Laufen nutzt weiterhin exakt die bestehende Logik darunter.
   // Weitere Sportarten werden hier später ergänzt.
@@ -90,9 +140,11 @@ export default async function handler(req, res) {
   if (sportType === 'hiking') {
     try {
       const result = await generateHikingPlan(req.body || {})
+      await completeJob(result?.plan)
       return res.status(200).json(result)
     } catch (error) {
       console.error('[Generate Plan][Hiking] Erstellung fehlgeschlagen:', error)
+      await failJob(error?.message || 'Der Marsch-/Wander-Trainingsplan konnte nicht erstellt werden.')
       return res.status(500).json({
         error:
           error?.message ||
@@ -104,9 +156,11 @@ export default async function handler(req, res) {
   if (sportType === 'cycling') {
     try {
       const result = await generateCyclingPlan(req.body || {})
+      await completeJob(result?.plan)
       return res.status(200).json(result)
     } catch (error) {
       console.error('[Generate Plan][Cycling] Erstellung fehlgeschlagen:', error)
+      await failJob(error?.message || 'Der Rad-Trainingsplan konnte nicht erstellt werden.')
       return res.status(500).json({
         error:
           error?.message ||
@@ -118,9 +172,11 @@ export default async function handler(req, res) {
   if (sportType === 'mountain_biking') {
     try {
       const result = await generateMtbPlan(req.body || {})
+      await completeJob(result?.plan)
       return res.status(200).json(result)
     } catch (error) {
       console.error('[Generate Plan][MTB] Erstellung fehlgeschlagen:', error)
+      await failJob(error?.message || 'Der Mountainbike-Trainingsplan konnte nicht erstellt werden.')
       return res.status(500).json({
         error:
           error?.message ||
@@ -132,9 +188,11 @@ export default async function handler(req, res) {
   if (sportType === 'swimming') {
     try {
       const result = await generateSwimmingPlan(req.body || {})
+      await completeJob(result?.plan)
       return res.status(200).json(result)
     } catch (error) {
       console.error('[Generate Plan][Swimming] Erstellung fehlgeschlagen:', error)
+      await failJob(error?.message || 'Der Schwimm-Trainingsplan konnte nicht erstellt werden.')
       return res.status(500).json({
         error:
           error?.message ||
@@ -146,9 +204,11 @@ export default async function handler(req, res) {
   if (sportType === 'hyrox') {
     try {
       const result = await generateHyroxPlan(req.body || {})
+      await completeJob(result?.plan)
       return res.status(200).json(result)
     } catch (error) {
       console.error('[Generate Plan][HYROX] Erstellung fehlgeschlagen:', error)
+      await failJob(error?.message || 'Der HYROX-Trainingsplan konnte nicht erstellt werden.')
       return res.status(500).json({
         error:
           error?.message ||
@@ -158,6 +218,7 @@ export default async function handler(req, res) {
   }
 
   if (!['running', 'run'].includes(sportType)) {
+    await failJob(`Diese Sportart wird für die Planerstellung noch nicht unterstützt: ${sportType}`)
     return res.status(400).json({
       error: `Diese Sportart wird für die Planerstellung noch nicht unterstützt: ${sportType}`,
     })
@@ -690,10 +751,14 @@ WICHTIG FÜR DIE AUSGABE:
     })
 
     const data = await response.json()
-    if (!response.ok) return res.status(response.status).json({ error: data.error?.message || 'API Fehler' })
+    if (!response.ok) {
+      await failJob(data.error?.message || 'API Fehler')
+      return res.status(response.status).json({ error: data.error?.message || 'API Fehler' })
+    }
 
     if (data.stop_reason === 'max_tokens') {
       console.error('[Generate Plan][Running] Ausgabe wurde wegen Tokenlimit beendet.')
+      await failJob('Der Trainingsplan war für die Ausgabe zu umfangreich. Bitte erneut versuchen.')
       return res.status(500).json({
         error: 'Der Trainingsplan war für die Ausgabe zu umfangreich. Bitte erneut versuchen.',
       })
@@ -701,6 +766,7 @@ WICHTIG FÜR DIE AUSGABE:
 
     const responseText = data?.content?.find(item => item?.type === 'text')?.text
     if (!responseText) {
+      await failJob('Es wurde kein Trainingsplan zurückgegeben.')
       return res.status(500).json({ error: 'Es wurde kein Trainingsplan zurückgegeben.' })
     }
 
@@ -809,6 +875,7 @@ WICHTIG FÜR DIE AUSGABE:
       const requiredDays = (week?.days || []).filter(day => !day.optional)
 
       if (requiredDays.length !== Number(runsPerWeek)) {
+        await failJob(`Woche ${week?.n ?? '?'} enthält ${requiredDays.length} statt ${runsPerWeek} Pflichtläufe.`)
         return res.status(500).json({
           error: `Woche ${week?.n ?? '?'} enthält ${requiredDays.length} statt ${runsPerWeek} Pflichtläufe.`,
         })
@@ -816,6 +883,7 @@ WICHTIG FÜR DIE AUSGABE:
 
       const invalidDay = requiredDays.find(day => !selectedDays.includes(day.tag))
       if (invalidDay) {
+        await failJob(`Woche ${week?.n ?? '?'} nutzt mit ${invalidDay.tag} einen nicht ausgewählten Lauftag.`)
         return res.status(500).json({
           error: `Woche ${week?.n ?? '?'} nutzt mit ${invalidDay.tag} einen nicht ausgewählten Lauftag.`,
         })
@@ -826,13 +894,16 @@ WICHTIG FÜR DIE AUSGABE:
       console.error(
         `[Generate Plan][Running] ${generatedWeeks.length} statt ${weeksUntilRace} Wochen erhalten.`
       )
+      await failJob(`Der Trainingsplan wurde unvollständig erstellt (${generatedWeeks.length}/${weeksUntilRace} Wochen). Bitte erneut versuchen.`)
       return res.status(500).json({
         error: `Der Trainingsplan wurde unvollständig erstellt (${generatedWeeks.length}/${weeksUntilRace} Wochen). Bitte erneut versuchen.`,
       })
     }
 
+    await completeJob(plan)
     res.status(200).json({ plan })
   } catch (e) {
+    await failJob(e?.message || 'Die Planerstellung ist fehlgeschlagen.')
     res.status(500).json({ error: e.message })
   }
 }

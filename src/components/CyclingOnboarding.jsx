@@ -1,3 +1,4 @@
+import { generatePlanWithBackgroundRecovery } from '../lib/planGenerationJobClient.js'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import {
@@ -314,24 +315,14 @@ export default function CyclingOnboarding({ onPlanGenerated }) {
       }
       const guardrails = buildCyclingPlanGuardrails(normalizedForm)
 
-      const response = await fetch('/api/generate-plan', {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        body:JSON.stringify({
-          ...normalizedForm,
-          sport_type:'cycling',
-          plan_type:'cycling_endurance',
-          guardrails,
-        }),
+      const plan = await generatePlanWithBackgroundRecovery({
+        ...normalizedForm,
+        sport_type:'cycling',
+        plan_type:'cycling_endurance',
+        guardrails,
       })
 
-      const data = await response.json()
-
-      if (!response.ok || data?.error) {
-        throw new Error(data?.error || `HTTP ${response.status}`)
-      }
-
-      if (!data?.plan?.phases?.length) {
+      if (!plan?.phases?.length) {
         throw new Error('Der Trainingsplan ist unvollständig.')
       }
 
@@ -339,7 +330,7 @@ export default function CyclingOnboarding({ onPlanGenerated }) {
         window.sessionStorage.removeItem(DRAFT_KEY)
       }
 
-      onPlanGenerated(data.plan)
+      onPlanGenerated(plan)
     } catch (e) {
       console.error('[CyclingOnboarding] Plan konnte nicht erstellt werden:', e)
       setError(

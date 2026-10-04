@@ -1,3 +1,4 @@
+import { generatePlanWithBackgroundRecovery } from '../lib/planGenerationJobClient.js'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase.js'
 import { buildHikingPlanGuardrails, getRecommendedHikingWeeks } from '../lib/hikingPlanGenerator.js'
@@ -242,32 +243,22 @@ export default function HikingOnboarding({ onPlanGenerated }) {
 
     try {
       const guardrails = buildHikingPlanGuardrails(form)
-
-      const response = await fetch('/api/generate-plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...form,
-          sport_type: 'hiking',
-          plan_type: 'hiking_march',
-          guardrails,
-        }),
+      const plan = await generatePlanWithBackgroundRecovery({
+        ...form,
+        sport_type: 'hiking',
+        plan_type: 'hiking_march',
+        guardrails,
       })
 
-      const data = await response.json()
-
-      if (!response.ok || data?.error) {
-        throw new Error(data?.error || `HTTP ${response.status}`)
-      }
-
-      if (!data?.plan?.phases?.length) {
+      if (!plan?.phases?.length) {
         throw new Error('Der Trainingsplan ist unvollständig.')
       }
 
       if (typeof window !== 'undefined') {
         window.sessionStorage.removeItem(HIKING_DRAFT_KEY)
       }
-      onPlanGenerated(data.plan)
+
+      onPlanGenerated(plan)
     } catch (e) {
       console.error('[HikingOnboarding] Plan konnte nicht erstellt werden:', e)
       setError(
