@@ -1145,12 +1145,10 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart, planId = null 
       const rowsForWeek = existingAnalyses || []
 
       const exactWeekMatch = rowsForWeek.some(
-        row => row.week_start === weekStartStr && (!row.plan_id || row.plan_id === planId)
+        row => row.week_start === weekStartStr && row.plan_id === planId
       )
 
-      const legacyFirstWeekMatch =
-        analyzeWeek === 0 &&
-        rowsForWeek.some(row => row.week_start === planStartStr && (!row.plan_id || row.plan_id === planId))
+      const legacyFirstWeekMatch = false
 
       coachDebug('DB-Prüfung week_analyses.', {
         weekNumber: currentWeek.n,
@@ -1175,12 +1173,14 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart, planId = null 
         }))
         .filter(d => !d.optional)
 
-      const allowLegacyForCurrentPlan = !viewingSecondaryPlan
+      // Ab jetzt strikt planbezogen:
+      // Logs/Skip-Status eines alten Plans dürfen nie in einen neu erstellten Plan hineinrutschen.
+      // Legacy-Keys bleiben in der DB erhalten, werden aber nicht mehr automatisch übernommen.
       const weekLogs = plannedDays.map(d => {
-        const log = logs[d.key] || (allowLegacyForCurrentPlan ? logs[d.legacyKey] : null)
+        const log = logs[d.key] || null
         const skip = skipped[d.key] !== undefined
           ? skipped[d.key]
-          : (allowLegacyForCurrentPlan ? skipped[d.legacyKey] : undefined)
+          : undefined
 
         return {
           ...d,
@@ -1201,8 +1201,7 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart, planId = null 
             if (day.optional) continue
 
             const key = planDayKey(planId, phase.id, week.n, di)
-            const legacyKey = legacyPlanDayKey(phase.id, week.n, di)
-            const log = logs[key] || (!viewingSecondaryPlan ? logs[legacyKey] : null)
+            const log = logs[key] || null
 
             if (!log || !log.actual_date) continue
 

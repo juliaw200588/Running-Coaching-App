@@ -688,7 +688,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, allow
           if (doneData && doneData.length > 0) {
             const doneMap = {}
             doneData.forEach(d => { if (d.done) doneMap[d.day_key] = true })
-            setDone(addLegacyAliasesForPlan(doneMap, plan, planId, allowLegacyDayKeys))
+            setDone(addLegacyAliasesForPlan(doneMap, plan, planId, false))
           } else {
             try { const d = await window.storage.get('laufplan_done'); if (d) setDone(JSON.parse(d.value)) } catch {}
           }
@@ -699,7 +699,10 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, allow
         try { const d = await window.storage.get('laufplan_done'); if (d) setDone(JSON.parse(d.value)) } catch {}
       }
 
-      // Logs aus Supabase laden
+      // Logs aus Supabase laden.
+      // WICHTIG: Für einen gespeicherten Plan werden ausschließlich dessen namespacete
+      // day_keys (plan:<planId>:...) verwendet. Legacy-Keys werden NICHT mehr gespiegelt,
+      // damit ein alter Log niemals in einem neu erstellten Plan erscheint.
       if (user) {
         try {
           const { data: supaLogs } = await supabase.from('logs').select('*').eq('user_id', user.id)
@@ -735,7 +738,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, allow
               logMap,
               plan,
               planId,
-              allowLegacyDayKeys,
+              false,
               (value, legacyKey) => ({ ...value, __legacyDayKey: legacyKey })
             )
             setLogs(scopedLogMap)
@@ -761,7 +764,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, allow
             .eq('user_id', user.id)
             .order('week_start', { ascending: true })
 
-          if (planId) analysisQuery = analysisQuery.or(`plan_id.eq.${planId},plan_id.is.null`)
+          if (planId) analysisQuery = analysisQuery.eq('plan_id', planId)
 
           const { data: analysisRows } = await analysisQuery
           const expectedStarts = {}
@@ -778,10 +781,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, allow
 
           const analysisMap = {}
           ;(analysisRows || []).forEach(row => {
-            const belongsToPlan = row.plan_id
-              ? row.plan_id === planId
-              : row.week_start === expectedStarts[row.week_number]
-            if (belongsToPlan) analysisMap[row.week_number] = row
+            if (row.plan_id === planId) analysisMap[row.week_number] = row
           })
           setWeekAnalyses(analysisMap)
         } catch (error) {
@@ -801,7 +801,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, allow
           if (logScreenshots && logScreenshots.length > 0) {
             const loaded = {}
             logScreenshots.forEach(l => { if (l.screenshot_url) loaded[l.day_key] = l.screenshot_url })
-            setScreenshots(addLegacyAliasesForPlan(loaded, plan, planId, allowLegacyDayKeys))
+            setScreenshots(addLegacyAliasesForPlan(loaded, plan, planId, false))
           } else {
             // Fallback localStorage
             try {
@@ -851,7 +851,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, allow
         if (skippedData) {
           const skippedMap = {}
           skippedData.forEach(s => { skippedMap[s.day_key] = { reason: s.reason || '' } })
-          setSkipped(addLegacyAliasesForPlan(skippedMap, plan, planId, allowLegacyDayKeys))
+          setSkipped(addLegacyAliasesForPlan(skippedMap, plan, planId, false))
         }
       }
     }
@@ -1196,14 +1196,8 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, allow
           generic_data: logInput.generic_data || {},
         }, { onConflict: 'user_id,day_key' })
 
-        // Wenn ein alter Hauptplan-Log nur über den Legacy-Key gefunden wurde,
-        // wird er beim ersten erneuten Speichern sauber auf den planbezogenen Key migriert.
-        const legacyKey = oldLog?.__legacyDayKey
-        if (allowLegacyDayKeys && legacyKey && legacyKey !== key) {
-          await supabase.from('logs').delete().eq('user_id', user.id).eq('day_key', legacyKey)
-          await supabase.from('training_done').delete().eq('user_id', user.id).eq('day_key', legacyKey)
-          await supabase.from('skipped_days').delete().eq('user_id', user.id).eq('day_key', legacyKey)
-        }
+        // Keine automatische Legacy-Migration mehr:
+        // Alte Plan-Logs bleiben historisch erhalten und werden nicht dem neuen Plan zugeordnet.
       } catch (e) { console.error('Log Supabase Fehler:', e) }
     }
 
@@ -1235,7 +1229,7 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, allow
   }
 
   const deleteLog = async (key) => {
-    const storedKey = logs[key]?.__legacyDayKey || key
+    const storedKey = key
 
     // Aus Supabase löschen
     if (user) {
