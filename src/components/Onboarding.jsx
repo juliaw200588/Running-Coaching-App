@@ -302,22 +302,52 @@ export default function Onboarding({ onPlanGenerated }) {
     try {
       const normalizedForm = {
         ...form,
+        sport_type: 'running',
+        plan_type: 'running',
         preferredDays:[...(form.preferredDays || [])]
           .sort((a, b) => WEEKDAYS.indexOf(a) - WEEKDAYS.indexOf(b)),
       }
+
       const response = await fetch('/api/generate-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(normalizedForm),
       })
 
-      const data = await response.json()
-      if (data.error) throw new Error(data.error)
+      // Safari/iOS wirft bei response.json() auf einer HTML-/Text-Fehlerseite nur
+      // "The string did not match the expected pattern". Deshalb zuerst als Text
+      // lesen und nur dann JSON parsen. So bleibt die echte Server-/Vercel-Meldung sichtbar.
+      const rawResponse = await response.text()
+      let data = null
+
+      try {
+        data = rawResponse ? JSON.parse(rawResponse) : null
+      } catch {
+        const compact = String(rawResponse || '')
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 260)
+
+        throw new Error(
+          response.ok
+            ? 'Die Plan-API hat keine gültigen JSON-Daten zurückgegeben.'
+            : `Plan-API ${response.status}: ${compact || response.statusText || 'Unbekannter Serverfehler'}`
+        )
+      }
+
+      if (!response.ok || data?.error) {
+        throw new Error(data?.error || `Plan-API ${response.status}`)
+      }
+
+      if (!data?.plan?.phases?.length) {
+        throw new Error('Der Trainingsplan wurde unvollständig zurückgegeben.')
+      }
 
       if (typeof window !== 'undefined') {
         window.sessionStorage.removeItem(RUNNING_DRAFT_KEY)
       }
-      onPlanGenerated(data.plan)
+      await Promise.resolve(onPlanGenerated(data.plan))
     } catch (e) {
       setError('Fehler: ' + e.message)
     } finally {
