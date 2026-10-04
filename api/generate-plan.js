@@ -163,7 +163,7 @@ export default async function handler(req, res) {
     })
   }
 
-  const { name, zielTyp, niveau, goal, goalTime, previousTime, startDate, weeksUntilRace, runsPerWeek, preferredDays, alter, aktuelleWochenKm, verletzungen, maxHF, ruheHF, geschlecht, wohnort } = req.body
+  const { name, zielTyp, niveau, goal, goalTime, previousTime, startDate, weeksUntilRace, runsPerWeek, preferredDays, currentRunsPerWeek, alter, aktuelleWochenKm, verletzungen, maxHF, ruheHF, geschlecht, wohnort } = req.body
 
   const zielBeschreibung = {
     rennen: 'hat ein bevorstehendes Rennen und möchte sich gezielt darauf vorbereiten',
@@ -178,6 +178,49 @@ export default async function handler(req, res) {
   }[niveau] || niveau
 
   const distanzInfo = goal ? `Zieldistanz: ${goal}` : 'Kein spezifisches Rennen – allgemeiner Einsteigerplan'
+
+  // Aktuelle Laufpraxis ist wichtiger als das reine Niveau-Label.
+  // Beispiel: "Anfänger" + 1 Lauf/Woche + 5 km/Woche bedeutet Wiedereinstieg,
+  // nicht "kann noch nicht durchgehend laufen".
+  const currentRunsNumeric =
+    currentRunsPerWeek === '4plus'
+      ? 4
+      : Number.isFinite(Number(currentRunsPerWeek))
+        ? Number(currentRunsPerWeek)
+        : null
+  const currentWeeklyKm = Number.isFinite(Number(aktuelleWochenKm)) && Number(aktuelleWochenKm) >= 0
+    ? Number(aktuelleWochenKm)
+    : null
+
+  const runningStartProfile = (() => {
+    if (currentRunsNumeric === 0 || currentWeeklyKm === 0) {
+      return 'NEUSTART'
+    }
+    if (
+      (currentRunsNumeric != null && currentRunsNumeric >= 1 && currentWeeklyKm != null && currentWeeklyKm >= 4) ||
+      (currentWeeklyKm != null && currentWeeklyKm >= 5)
+    ) {
+      return 'DURCHGEHEND_MOEGLICH'
+    }
+    if (
+      (currentRunsNumeric != null && currentRunsNumeric >= 1) ||
+      (currentWeeklyKm != null && currentWeeklyKm > 0)
+    ) {
+      return 'WIEDEREINSTIEG_UNKLAR'
+    }
+    return 'UNBEKANNT'
+  })()
+
+  const startProfileInfo = {
+    NEUSTART:
+      'Aktueller Laufstatus: derzeit kein Lauftraining. Laufen/Gehen ist als sanfter Einstieg sinnvoll.',
+    DURCHGEHEND_MOEGLICH:
+      `Aktueller Laufstatus: ${currentRunsNumeric ?? 'mindestens gelegentlich'} Lauf/Läufe pro Woche, ca. ${currentWeeklyKm ?? 'mehrere'} km/Woche. Die Person kann bereits eine relevante Strecke laufen. NICHT auf Couch-to-5K zurücksetzen: grundsätzlich durchgehende lockere Läufe planen; Gehpausen höchstens als optionale Bedarfslösung.`,
+    WIEDEREINSTIEG_UNKLAR:
+      `Aktueller Laufstatus: ${currentRunsNumeric ?? 'gelegentlich'} Lauf/Läufe pro Woche${currentWeeklyKm != null ? `, ca. ${currentWeeklyKm} km/Woche` : ''}. Vorsichtiger Wiedereinstieg, aber vorhandene Lauffähigkeit respektieren. Laufen/Gehen nur dann einsetzen, wenn der Umfang sehr niedrig ist oder es zur Belastungssteuerung nötig ist.`,
+    UNBEKANNT:
+      'Aktueller Laufstatus nicht ausreichend bekannt. Konservativ starten, aber nicht automatisch vier Wochen Laufen/Gehen erzwingen.',
+  }[runningStartProfile]
   const zeitInfo = goalTime || previousTime
     ? `Zielzeit: ${goalTime || 'keine'}, Bisherige Zeit: ${previousTime || 'keine'}`
     : 'Keine Zeitangabe – Fokus auf Finishen bzw. Einstieg'
@@ -219,7 +262,9 @@ export default async function handler(req, res) {
   const riegelExponent = niveau === 'Erfahren' ? 1.04 : niveau === 'Anfänger' ? 1.08 : 1.06
   const predictMin = (knownMin, knownKm, targetKm) => knownMin * Math.pow(targetKm / knownKm, riegelExponent)
 
-  if (prevMin || goalMin) {
+  const hasReliableTrainingPaceBasis = Boolean(prevMin) || (Boolean(goalMin) && niveau !== 'Anfänger')
+
+  if (hasReliableTrainingPaceBasis) {
     // Basis für Trainingspaces: bisherige Zeit bevorzugt, sonst Zielzeit.
     // Ohne bisherige Zeit ist die Zielzeit eine unbewiesene Wunschvorstellung, kein
     // echter Fitness-Datenpunkt – deshalb wird sie niveau-abhängig gedämpft, bevor sie
@@ -441,7 +486,11 @@ ${finalPhaseInstruction}
 TRAININGSPHILOSOPHIE – STRIKT EINHALTEN
 ═══════════════════════════════════════
 
-0. PACE-VORGABEN STRIKT EINHALTEN: Nutze die berechneten Trainingspaces exakt – Zone 2 ist IMMER deutlich langsamer als die Wettkampfpace. Nie schneller als angegeben für lockere Läufe! Die Intervall- und Tempopace sind bewusst NICHT von der Zieldistanz-Pace abgeleitet, sondern von der 5-km- bzw. Halbmarathon-äquivalenten Pace – bei HM-/Marathon-Zielen sind Intervalle daher deutlich schneller als die Zieldistanz-Wettkampfpace. Das ist korrekt so, nicht anpassen!
+0. PACE-VORGABEN STRIKT EINHALTEN:
+   - Konkrete Trainingspaces nur verwenden, wenn oben tatsächlich BERECHNETE TRAININGSPACES vorhanden sind.
+   - Ohne belastbare bisherige Zeit bei Anfänger:innen KEINE Pace aus einer Wunsch-Zielzeit ableiten; stattdessen Unterhaltungstempo/RPE und ggf. HF-Zonen.
+   - Pace-Bereiche müssen realistische Bereiche sein, keine Scheingenauigkeit. Niemals Bereiche von nur 1-5 Sekunden Breite erzeugen oder selbst neue Pacewerte erfinden.
+   - Wenn berechnete Trainingspaces vorhanden sind: Nutze die berechneten Trainingspaces exakt – Zone 2 ist IMMER deutlich langsamer als die Wettkampfpace. Nie schneller als angegeben für lockere Läufe! Die Intervall- und Tempopace sind bewusst NICHT von der Zieldistanz-Pace abgeleitet, sondern von der 5-km- bzw. Halbmarathon-äquivalenten Pace – bei HM-/Marathon-Zielen sind Intervalle daher deutlich schneller als die Zieldistanz-Wettkampfpace. Das ist korrekt so, nicht anpassen!
    ${concreteTempoInstruction}
    ${concreteRacePaceInstruction}
    WICHTIG ZUR DARSTELLUNG: Eine konkrete Pace gehört in die Details des jeweiligen Hauptteils. Der Nutzer soll die Einheit ohne eigenes Umrechnen direkt ausführen können.${hfMax ? `
@@ -468,7 +517,13 @@ TRAININGSPHILOSOPHIE – STRIKT EINHALTEN
 
 10. WARM-UP/COOL-DOWN HINWEIS: In Details bei Intervallen und Tempoläufen immer erwähnen.
 
-11. ANFÄNGER-SPEZIFISCH: Laufen/Gehen-Intervalle in Woche 1-4 (z.B. "3 min laufen, 2 min gehen × 6"). Keine Pace-Angaben, nur Zeitangaben und Gefühlsangaben.
+11. EINSTIEG/WIEDEREINSTIEG – AKTUELLE LAUFFÄHIGKEIT HAT VORRANG VOR DEM LABEL "ANFÄNGER":
+- NEUSTART (0 Läufe/Woche oder 0 km/Woche): Laufen/Gehen progressiv einsetzen.
+- DURCHGEHEND_MOEGLICH (z.B. mindestens 1 Lauf/Woche und ca. 4-5+ km/Woche): KEINE verpflichtenden Laufen/Gehen-Intervalle als Standard. Mit kurzen, durchgehenden lockeren Läufen nahe dem aktuellen Umfang starten; Gehpausen nur optional ("bei Bedarf").
+- WIEDEREINSTIEG_UNKLAR: konservativ beginnen; Laufen/Gehen nur wenn die vorhandenen Angaben wirklich darauf hindeuten, dass durchgehendes lockeres Laufen noch nicht sinnvoll ist.
+- Ein niedriges Niveau bedeutet NICHT automatisch, dass die Person nur 2-4 Minuten am Stück laufen kann.
+- Der Startumfang muss sich am realen aktuellen Wochenumfang orientieren. Nicht künstlich weit darunter starten, außer Verletzungen/gesundheitliche Angaben verlangen es.
+- Bei Anfänger:innen ohne belastbare bisherige Zeit keine künstlich präzisen Pace-Vorgaben erzeugen. Primär Unterhaltungstempo/RPE und vorhandene HF-Zonen verwenden.
 
 12. ABSCHLUSS NACH ZIELTYP: ${zielTyp === 'rennen'
   ? `In der letzten Woche vor dem Renntag in der Einheit "Renntag-Vorbereitung" die konkrete Strategie einbauen: "${rennstrategie}". Zusätzlich die Verpflegungs-/Hydrationsstrategie ergänzen: "${renntagFueling}"${carbLoadingHinweis ? ` und 2 Tage vorher diesen Carb-Loading-Hinweis: "${carbLoadingHinweis}"` : ''}.`
@@ -506,12 +561,12 @@ ANFÄNGER & FORTGESCHRITTEN – ähnliche Struktur, aber unterschiedliche Intens
 Basisphase (beide):
 - Zone 1-2, lockere Läufe, Strides, Kräftigung
 - Fortgeschritten: durchgehende lockere Läufe mit Pace-Angaben
-- Anfänger: Laufen/Gehen-Wechsel abhängig vom Ausgangsumfang:
-  - 0 km/Woche (noch nie gelaufen): 4-5 Wochen Laufen/Gehen (z.B. 2 min laufen, 2 min gehen, progressiv steigern)
-  - 1-10 km/Woche (gelegentlich): 2-3 Wochen Laufen/Gehen, dann durchgehend
-  - 10+ km/Woche (läuft schon aber Anfänger-Niveau): 1 Woche Laufen/Gehen oder direkt durchgehend locker
-  - Keine Angabe: konservativ, 3 Wochen Laufen/Gehen
-  - Keine Pace-Angaben bei Anfänger, nur Zeit und Gefühl ("etwas schneller als normal")
+- Anfänger: Einstieg nach REALER aktueller Laufpraxis, nicht pauschal nach Niveau:
+  - 0 Läufe/Woche oder 0 km/Woche: Laufen/Gehen progressiv; Dauer individuell steigern.
+  - ca. 1 Lauf/Woche UND ca. 4-5+ km/Woche: vorhandene Fähigkeit respektieren; direkt kurze durchgehende lockere Läufe. Keine Rückstufung auf 2-min-Laufblöcke.
+  - 2+ Läufe/Woche bzw. höherer aktueller Umfang: Startwoche nahe dem aktuellen verträglichen Umfang, danach konservative Progression.
+  - Niedriger/unklarer Umfang: konservativ; Gehpausen bei Bedarf möglich, aber nicht automatisch mehrere Wochen verpflichtend.
+  - Ohne belastbare bisherige Laufzeit keine Pace aus einer Wunsch-Zielzeit als aktuelle Trainingspace ausgeben.
 
 Entwicklungsphase (beide):
 - Intervalle werden eingeführt – Progression ist PFLICHT, nie sofort mit langen Intervallen starten!
@@ -600,8 +655,10 @@ ${distanzInfo}
 ${zeitInfo}
 ${hfInfo}
 ${umfangInfo}
+${startProfileInfo}
+Aktuelle Laufhäufigkeit: ${currentRunsPerWeek || 'nicht angegeben'}
 ${verletzungsInfo}
-Läufe pro Woche: ${runsPerWeek}
+Geplante Läufe pro Woche: ${runsPerWeek}
 Bevorzugte Lauftage: ${selectedDays.join(', ')}
 Startdatum: ${startDate}
 Wohnort: ${wohnort || 'nicht angegeben'}
@@ -613,7 +670,9 @@ WICHTIG FÜR DIE AUSGABE:
 - Jede Woche enthält regen=true nur wenn es sich um eine geplante Entlastungswoche handelt, sonst regen=false.
 - Formuliere Details kompakt und konkret; vermeide Wiederholungen.
 - Bei Tempoeinheiten mit vorhandener Zeitbasis die berechnete Tempo-Pace immer konkret nennen.
-- Bei Renntempoeinheiten mit Zielzeit die konkrete Zielpace immer direkt nennen; niemals nur "im Renntempo".`
+- Bei Renntempoeinheiten mit Zielzeit die konkrete Zielpace immer direkt nennen; niemals nur "im Renntempo".
+- Plausibilitätscheck vor Ausgabe: Passt Woche 1 zur AKTUELLEN Laufpraxis? Wer bereits ca. 5 km/Woche läuft, darf nicht wie eine komplett untrainierte Person behandelt werden.
+- Plausibilitätscheck vor Ausgabe: Keine Pace-Spanne mit nur wenigen Sekunden Differenz erzeugen. Ohne belastbare Pacebasis lieber keine Pace nennen.`
         }]
       })
     })
