@@ -25,10 +25,64 @@ export const normalizeActivitySport = value => {
   return 'other'
 }
 
-const daySport = day => {
+const inferPlanSport = plan => {
+  const explicit = normalizeActivitySport(
+    plan?.sport_type ||
+    plan?.sportType ||
+    plan?.plan_type ||
+    plan?.planType
+  )
+  if (explicit !== 'other') return explicit
+
+  const headerSport = normalizeActivitySport(
+    `${plan?.planName || ''} ${plan?.title || ''} ${plan?.name || ''}`
+  )
+  if (headerSport !== 'other') return headerSport
+
+  const allDayText = (plan?.phases || [])
+    .flatMap(phase => phase?.weeks || [])
+    .flatMap(week => week?.days || [])
+    .map(day => `${day?.einheit || ''} ${day?.details || ''}`)
+    .join(' ')
+    .toLowerCase()
+
+  if (/\bhyrox\b/.test(allDayText)) return 'hyrox'
+  if (/(mountain|\bmtb\b)/.test(allDayText)) return 'mountain_biking'
+  if (/(hiking|wandern|wanderung|trek|marsch)/.test(allDayText)) return 'hiking'
+  if (/(cycling|radfahren|rennrad|rad[- ]?tour|bike)/.test(allDayText)) return 'cycling'
+  if (/(swimming|schwimmen|schwimm)/.test(allDayText)) return 'swimming'
+
+  const runningSignals = [
+    /langer lauf/,
+    /locker \+ strides/,
+    /strides/,
+    /interval/,
+    /tempodauerlauf/,
+    /schwelle/,
+    /renntempo/,
+    /\blaufen\b/,
+    /\blauf\b/,
+    /\brunning\b/,
+  ]
+  const runningHits = runningSignals.reduce(
+    (sum, pattern) => sum + (pattern.test(allDayText) ? 1 : 0),
+    0
+  )
+  if (runningHits >= 2) return 'running'
+
+  return 'other'
+}
+
+const daySport = (day, planSport = 'other') => {
   const explicit = normalizeActivitySport(day?.sport_type || day?.sportType)
   if (explicit !== 'other') return explicit
-  return normalizeActivitySport(`${day?.einheit || ''} ${day?.details || ''}`)
+
+  const fromDayText = normalizeActivitySport(
+    `${day?.einheit || ''} ${day?.details || ''}`
+  )
+  if (fromDayText !== 'other') return fromDayText
+
+  return planSport
 }
 
 const compatible = (activitySport, plannedSport, day) => {
@@ -103,6 +157,8 @@ export const flattenActivePlans = planRows => {
     const planId = row?.id || row?.planId
     if (!plan || !planId) continue
 
+    const planSport = inferPlanSport(plan)
+
     for (const phase of plan?.phases || []) {
       for (const week of phase?.weeks || []) {
         const weekStart = weekStartFromRange(plan, week)
@@ -131,7 +187,7 @@ export const flattenActivePlans = planRows => {
             dateStr:localDate(date),
             plannedKm:estimateKm(day?.details),
             plannedMinutes:estimateMinutes(day),
-            plannedSport:daySport(day),
+            plannedSport:daySport(day, planSport),
           })
         })
       }
