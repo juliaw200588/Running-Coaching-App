@@ -166,7 +166,8 @@ export const matchActivityToPlans = ({
   planRows,
   occupiedKeys = new Set(),
   maxDays = 4,
-  limit = 6,
+  limit = 20,
+  includeOccupied = false,
 }) => {
   if (!activity?.datum) return []
 
@@ -177,7 +178,11 @@ export const matchActivityToPlans = ({
   const minutes = actualMinutes(activity)
 
   return flattenActivePlans(planRows)
-    .filter(day => !occupiedKeys.has(day.key))
+    .map(day => ({
+      ...day,
+      occupied: occupiedKeys.has(day.key),
+    }))
+    .filter(day => includeOccupied || !day.occupied)
     .filter(day => compatible(sport, day.plannedSport, day))
     .map(day => {
       const dayDelta = diffDays(day.dateStr, activity.datum)
@@ -209,6 +214,7 @@ export const matchActivityToPlans = ({
     })
     .filter(Boolean)
     .sort((a,b) =>
+      Number(a.occupied) - Number(b.occupied) ||
       a.score - b.score ||
       Number(b.isPrimary) - Number(a.isPrimary) ||
       a.date - b.date
@@ -227,6 +233,15 @@ export const candidateLabel = candidate => {
       ? ` · Δ${candidate.kmDiff.toFixed(1)} km`
       : ''
 
+  const occupiedPart = candidate.occupied ? ' · bereits belegt' : ''
+  const datePart = candidate.date
+    ? candidate.date.toLocaleDateString('de-DE', {
+        weekday:'short',
+        day:'2-digit',
+        month:'2-digit',
+      })
+    : ''
+
   const planPart = candidate.planName || (candidate.isPrimary ? 'Hauptplan' : 'Trainingsplan')
-  return `${planPart} · Wo. ${candidate.weekN} · ${candidate.einheit} (${dayPart}${kmPart})`
+  return `${planPart} · Wo. ${candidate.weekN}${datePart ? ` · ${datePart}` : ''} · ${candidate.einheit} (${dayPart}${kmPart}${occupiedPart})`
 }

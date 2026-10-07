@@ -215,6 +215,26 @@ export default function PolarConnect({ user, plan, onOpenActivities }) {
     } catch {}
   }
 
+
+  // Plan- und Belegungsdaten aktuell halten:
+  // - wenn ein neuer Plan erstellt/aktiviert wurde
+  // - wenn man nach einem Tab-/App-Wechsel zurückkehrt
+  useEffect(() => {
+    if (!user?.id) return
+
+    const refreshPlanAssignmentData = () => {
+      loadActivePlans()
+      loadOccupiedKeys()
+    }
+
+    refreshPlanAssignmentData()
+
+    const handleFocus = () => refreshPlanAssignmentData()
+    window.addEventListener('focus', handleFocus)
+
+    return () => window.removeEventListener('focus', handleFocus)
+  }, [user?.id, plan])
+
   const checkConnection = async () => {
     const { data } = await supabase
       .from('integrations')
@@ -440,7 +460,8 @@ export default function PolarConnect({ user, plan, onOpenActivities }) {
       planRows: activePlanRows,
       occupiedKeys,
       maxDays: 4,
-      limit: 6,
+      limit: 20,
+      includeOccupied: true,
     })
 
 
@@ -1510,6 +1531,7 @@ const discardActivity = async (activity) => {
                         <option
                           key={candidate.key}
                           value={candidate.key}
+                          disabled={candidate.occupied}
                         >
                           {candidateLabel(candidate)}
                         </option>
