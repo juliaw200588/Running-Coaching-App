@@ -262,7 +262,7 @@ function App() {
   const [selectedPlanSport, setSelectedPlanSport] = useState(null)
   const [pendingHikingCheckIn, setPendingHikingCheckIn] = useState(null)
   const [weeklyCheckInRefresh, setWeeklyCheckInRefresh] = useState(0)
-  const weeklyCheckKeyRef = useRef(null)
+  const weeklyCheckKeyRef = useRef(new Set())
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -697,18 +697,34 @@ function App() {
 
 // Wöchentliche Analyse
 //
-// Die Datenbank entscheidet, ob eine Woche bereits analysiert wurde.
-// localStorage ist KEINE Sperre mehr. Dadurch funktioniert der Coach
-// zuverlässig nach Login, Gerätewechsel und später synchronisierten Läufen.
+// MULTI-PLAN:
+// Jeder gespeicherte Plan wird unabhängig geprüft. Ein noch unvollständiger
+// gemeinsamer/Zusatzplan darf den Wochen-Coach des fertigen Hauptplans
+// niemals blockieren.
 useEffect(() => {
-  if (!user || !plan) return undefined
+  if (!user?.id) return undefined
 
   let disposed = false
   let retryTimer = null
-  let sundayEveningTimer = null
+  let eveningTimer = null
 
-  const getCheckContext = (today) => {
-    const startDate = parseLocalPlanDate(plan.startDate || today)
+  const loadWeeklyPlans = async () => {
+    const { data, error } = await supabase
+      .from('plans')
+      .select('id, plan_data, is_primary, created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending:false })
+
+    if (error) {
+      console.error('[WochenCoach] Pläne konnten nicht geladen werden:', error)
+      return []
+    }
+
+    return (data || []).filter(row => row?.id && row?.plan_data)
+  }
+
+  const getCheckContext = (targetPlan, targetPlanId, today) => {
+    const startDate = parseLocalPlanDate(targetPlan?.startDate || today)
     const todayLocal = new Date(
       today.getFullYear(),
       today.getMonth(),
@@ -719,34 +735,19 @@ useEffect(() => {
       (todayLocal - startDate) / 86400000
     )
 
-    if (daysSinceStart < 0) {
-      coachDebug('Noch vor Planstart.', {
-        planStart: formatLocalDate(startDate),
-        today: formatLocalDate(todayLocal),
-      })
-      return null
-    }
+    if (daysSinceStart < 0) return null
 
     const dayInWeek = daysSinceStart % 7
     const isLastDay = dayInWeek === 6
     const currentWeekInPlan = Math.floor(daysSinceStart / 7)
 
-    // Abgeschlossene Wochen werden an jedem späteren App-Start geprüft.
-    // Damit geht eine Weekly Analyse nicht mehr verloren, wenn die App
-    // im bisherigen Mo-Mi-Nachholfenster nicht im richtigen Moment lief.
+    // Am letzten Tag kann die laufende Woche ausgewertet werden.
+    // An allen späteren Tagen wird die unmittelbar vorherige Woche geprüft.
     const analyzeWeek = isLastDay
       ? currentWeekInPlan
       : currentWeekInPlan - 1
 
-    const isFirstDaysNextWeek =
-      !isLastDay &&
-      (dayInWeek === 0 || dayInWeek === 1 || dayInWeek === 2) &&
-      daysSinceStart > 0
-
-    if (analyzeWeek < 0) {
-      coachDebug('Noch keine abgeschlossene Trainingswoche verfügbar.')
-      return null
-    }
+    if (analyzeWeek < 0) return null
 
     const weekStartDate = new Date(startDate)
     weekStartDate.setDate(
@@ -760,50 +761,58 @@ useEffect(() => {
       currentWeekInPlan,
       analyzeWeek,
       isLastDay,
-      isFirstDaysNextWeek,
-      lastAnalysisKey: `last_week_analysis_${user.id}`,
+      isFirstDaysNextWeek:
+        !isLastDay &&
+        (dayInWeek === 0 || dayInWeek === 1 || dayInWeek === 2) &&
+        daysSinceStart > 0,
+      lastAnalysisKey:
+        `last_week_analysis_${user.id}_${targetPlanId}`,
     }
   }
 
-  const runCheck = (reason = 'app') => {
-    if (disposed) return
+  const runSinglePlanCheck = async (
+    row,
+    today,
+    reason = 'app'
+  ) => {
+    if (disposed || !row?.id || !row?.plan_data) return
 
-    const today = new Date()
-    const context = getCheckContext(today)
+    const targetPlanId = row.id
+    const targetPlan = row.plan_data
+    const context = getCheckContext(
+      targetPlan,
+      targetPlanId,
+      today
+    )
 
-    if (!context) {
-      coachDebug('Keine prüfbare Woche für Trigger:', reason)
-      return
-    }
+    if (!context) return
 
-    coachDebug('Prüfung gestartet.', {
-      trigger: reason,
-      analyzeWeekIndex: context.analyzeWeek,
-      weekStart: context.weekStartStr,
-      isLastDay: context.isLastDay,
-      isCatchup: context.isFirstDaysNextWeek,
-    })
-
-    // Nur eine GLEICHZEITIGE Prüfung derselben Woche zulassen.
-    // Nach Abschluss oder Fehler wird die Sperre wieder freigegeben.
     const runKey =
-      `${user.id}_${context.weekStartStr}_` +
+      `${user.id}_${targetPlanId}_${context.weekStartStr}_` +
       `${context.isLastDay ? 'last' : 'catchup'}`
 
-    if (weeklyCheckKeyRef.current === runKey) {
+    if (weeklyCheckKeyRef.current.has(runKey)) {
       coachDebug(
-        'Prüfung läuft bereits, paralleler Start wird übersprungen.',
+        'Multi-Plan-Prüfung läuft bereits.',
         runKey
       )
       return
     }
 
-    weeklyCheckKeyRef.current = runKey
+    weeklyCheckKeyRef.current.add(runKey)
 
-    Promise.resolve(
-      runWeeklyCheck(
+    coachDebug('Multi-Plan-Prüfung gestartet.', {
+      trigger:reason,
+      planId:targetPlanId,
+      isPrimary:Boolean(row.is_primary),
+      analyzeWeekIndex:context.analyzeWeek,
+      weekStart:context.weekStartStr,
+    })
+
+    try {
+      await runWeeklyCheck(
         user,
-        plan,
+        targetPlan,
         today,
         context.currentWeekInPlan,
         context.lastAnalysisKey,
@@ -812,23 +821,39 @@ useEffect(() => {
         context.planStartStr,
         reason,
         context.analyzeWeek,
-        context.currentWeekInPlan
+        context.currentWeekInPlan,
+        targetPlanId
       )
-    ).finally(() => {
-      if (weeklyCheckKeyRef.current === runKey) {
-        weeklyCheckKeyRef.current = null
-      }
-    })
+    } finally {
+      weeklyCheckKeyRef.current.delete(runKey)
+    }
+  }
+
+  const runCheck = async (reason = 'app') => {
+    if (disposed) return
+
+    const rows = await loadWeeklyPlans()
+    if (disposed || rows.length === 0) return
+
+    const today = new Date()
+
+    // Bewusst nacheinander: So vermeiden wir mehrere gleichzeitige
+    // Analyse-API-Aufrufe auf einem mobilen Browser. Jeder Plan hat
+    // trotzdem seinen eigenen DB-Claim.
+    for (const row of rows) {
+      if (disposed) return
+      await runSinglePlanCheck(row, today, reason)
+    }
   }
 
   const queueCheck = (reason) => {
     if (disposed) return
-
     if (retryTimer) clearTimeout(retryTimer)
 
-    // Supabase-Events kommen teilweise unmittelbar hintereinander.
-    // Kurz bündeln, damit nicht für denselben Import mehrfach geprüft wird.
-    retryTimer = setTimeout(() => runCheck(reason), 700)
+    retryTimer = setTimeout(
+      () => runCheck(reason),
+      700
+    )
   }
 
   const handleVisibility = () => {
@@ -839,25 +864,18 @@ useEffect(() => {
 
   const handleFocus = () => runCheck('focus')
 
-  // Direkt beim Laden / Login / Planwechsel prüfen.
+  // Direkt nach Login/App-Start alle Pläne prüfen.
   runCheck('startup')
 
-  // Wenn die App am Sonntag schon vor dem Abend geöffnet ist,
-  // um 18 Uhr erneut prüfen. Fehlt dann noch eine Einheit, kommt
-  // die gewohnte Erinnerung. Sind alle Einheiten vollständig,
-  // startet die Analyse.
+  // Falls die App tagsüber geöffnet bleibt, um 18 Uhr nochmals alle
+  // Pläne prüfen. Relevant ist das insbesondere am letzten Trainingstag.
   const now = new Date()
-  const initialContext = getCheckContext(now)
-
-  if (
-    initialContext?.isLastDay &&
-    now.getHours() < WEEK_REMINDER_HOUR
-  ) {
+  if (now.getHours() < WEEK_REMINDER_HOUR) {
     const evening = new Date(now)
     evening.setHours(WEEK_REMINDER_HOUR, 0, 0, 0)
 
-    sundayEveningTimer = setTimeout(
-      () => runCheck('sunday-evening'),
+    eveningTimer = setTimeout(
+      () => runCheck('evening'),
       Math.max(1000, evening.getTime() - now.getTime())
     )
   }
@@ -868,34 +886,47 @@ useEffect(() => {
     handleVisibility
   )
 
-  // Neue/aktualisierte Logs (z.B. Polar-Zuordnung oder manueller Log)
-  // lösen eine erneute Vollständigkeitsprüfung aus.
+  // Jede Log-/Skip-Änderung kann GENAU EINEN der Pläne vollständig machen.
+  // Deshalb anschließend wieder alle Pläne unabhängig prüfen.
   const logsChannel = supabase
     .channel(`weekly_check_logs_${user.id}`)
     .on(
       'postgres_changes',
       {
-        event: '*',
-        schema: 'public',
-        table: 'logs',
-        filter: `user_id=eq.${user.id}`,
+        event:'*',
+        schema:'public',
+        table:'logs',
+        filter:`user_id=eq.${user.id}`,
       },
       () => queueCheck('log-change')
     )
     .subscribe()
 
-  // Auch bewusstes Überspringen kann eine Woche vollständig machen.
   const skippedChannel = supabase
     .channel(`weekly_check_skipped_${user.id}`)
     .on(
       'postgres_changes',
       {
-        event: '*',
-        schema: 'public',
-        table: 'skipped_days',
-        filter: `user_id=eq.${user.id}`,
+        event:'*',
+        schema:'public',
+        table:'skipped_days',
+        filter:`user_id=eq.${user.id}`,
       },
       () => queueCheck('skip-change')
+    )
+    .subscribe()
+
+  const plansChannel = supabase
+    .channel(`weekly_check_plans_${user.id}`)
+    .on(
+      'postgres_changes',
+      {
+        event:'*',
+        schema:'public',
+        table:'plans',
+        filter:`user_id=eq.${user.id}`,
+      },
+      () => queueCheck('plan-change')
     )
     .subscribe()
 
@@ -903,9 +934,7 @@ useEffect(() => {
     disposed = true
 
     if (retryTimer) clearTimeout(retryTimer)
-    if (sundayEveningTimer) {
-      clearTimeout(sundayEveningTimer)
-    }
+    if (eveningTimer) clearTimeout(eveningTimer)
 
     window.removeEventListener('focus', handleFocus)
     document.removeEventListener(
@@ -915,12 +944,11 @@ useEffect(() => {
 
     supabase.removeChannel(logsChannel)
     supabase.removeChannel(skippedChannel)
+    supabase.removeChannel(plansChannel)
 
-    // Ein User-/Planwechsel darf niemals durch eine alte In-Flight-Sperre
-    // blockiert werden.
-    weeklyCheckKeyRef.current = null
+    weeklyCheckKeyRef.current.clear()
   }
-}, [user, plan, planId, weeklyCheckInRefresh])
+}, [user?.id, weeklyCheckInRefresh])
 
   const getWeekNumber = (date) => {
     const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
@@ -998,11 +1026,18 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart, planId = null 
     planStartStr,
     triggerReason = 'unknown',
     forcedAnalyzeWeek = null,
-    liveWeekInPlan = null
+    liveWeekInPlan = null,
+    targetPlanId = null
   ) => {
     try {
+      if (!targetPlanId) {
+        console.error('[WochenCoach] plan_id fehlt – Analyse wird nicht gestartet.')
+        return
+      }
+
       coachDebug('runWeeklyCheck()', {
         triggerReason,
+        targetPlanId:targetPlanId,
         currentWeekInPlan,
         isLastDay,
         weekStartStr,
@@ -1145,7 +1180,7 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart, planId = null 
       const rowsForWeek = existingAnalyses || []
 
       const exactWeekMatch = rowsForWeek.some(
-        row => row.week_start === weekStartStr && row.plan_id === planId
+        row => row.week_start === weekStartStr && row.plan_id === targetPlanId
       )
 
       const legacyFirstWeekMatch = false
@@ -1168,7 +1203,7 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart, planId = null 
       const plannedDays = currentWeek.days
         .map((d, di) => ({
           ...d,
-          key: planDayKey(planId, currentPhase.id, currentWeek.n, di),
+          key: planDayKey(targetPlanId, currentPhase.id, currentWeek.n, di),
           legacyKey: legacyPlanDayKey(currentPhase.id, currentWeek.n, di),
         }))
         .filter(d => !d.optional)
@@ -1200,7 +1235,7 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart, planId = null 
             const day = week.days[di]
             if (day.optional) continue
 
-            const key = planDayKey(planId, phase.id, week.n, di)
+            const key = planDayKey(targetPlanId, phase.id, week.n, di)
             const log = logs[key] || null
 
             if (!log || !log.actual_date) continue
@@ -1258,7 +1293,7 @@ if (unloggedCount > 0) {
   }
 
   const reminderDedupKey =
-    `last_week_reminder_${user.id}_${weekStartStr}`
+    `last_week_reminder_${user.id}_${targetPlanId}_${weekStartStr}`
 
   const todayLocalStr = formatLocalDate(today)
   const lastReminderDate =
@@ -1319,10 +1354,15 @@ if (String(plan?.sport_type || plan?.plan_type || '').includes('hiking')) {
   }
 
   if (!checkInData) {
-    setPendingHikingCheckIn({
-      weekNumber: currentWeek.n,
-      weekStart: weekStartStr,
-    })
+    // Nur für den aktuell sichtbaren Hiking-Plan ein Modal öffnen.
+    // Ein im Hintergrund geprüfter Hiking-Zusatzplan darf die UI nicht übernehmen.
+    if (targetPlanId === planId) {
+      setPendingHikingCheckIn({
+        planId:targetPlanId,
+        weekNumber:currentWeek.n,
+        weekStart:weekStartStr,
+      })
+    }
     coachDebug('Warte auf Marsch-/Wander-Wochen-Check.', {
       weekNumber: currentWeek.n,
       weekStart: weekStartStr,
@@ -1339,7 +1379,7 @@ const claimAcquired = await claimWeekAnalysis({
   userId: user.id,
   weekNumber: currentWeek.n,
   weekStart: weekStartStr,
-  planId,
+  planId: targetPlanId,
 })
 
 if (!claimAcquired) return
@@ -1370,7 +1410,7 @@ if (!claimAcquired) return
 
       const previousAnalyses = (previousAnalysisRows || [])
         .filter(row => row.week_start < weekStartStr)
-        .filter(row => row.plan_id === planId || (!row.plan_id && row.week_start >= planStartStr))
+        .filter(row => row.plan_id === targetPlanId || (!row.plan_id && row.week_start >= planStartStr))
         .slice(0, 4)
 
       // Schuhzustand laden
@@ -1388,7 +1428,7 @@ if (!claimAcquired) return
         ? nextWeek.days
             .map((d, di) => ({
               ...d,
-              key: planDayKey(planId, nextPhase.id, nextWeek.n, di),
+              key: planDayKey(targetPlanId, nextPhase.id, nextWeek.n, di),
             }))
             .filter(d => !d.optional)
         : null
@@ -1409,7 +1449,7 @@ if (!claimAcquired) return
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
-          planId,
+          planId: targetPlanId,
           weekLogs,
           plannedDays,
           weekNumber: currentWeek.n,
@@ -1441,7 +1481,7 @@ if (!claimAcquired) return
           'Wochen-Coach API Fehler:',
           result?.error || response.status
         )
-        await releaseWeekAnalysisClaim(user.id, weekStartStr, planId)
+        await releaseWeekAnalysisClaim(user.id, weekStartStr, targetPlanId)
         return
       }
 
@@ -1450,7 +1490,7 @@ if (!claimAcquired) return
           'Wochen-Coach hat keine verwertbare Analyse geliefert.',
           { triggerReason, result }
         )
-        await releaseWeekAnalysisClaim(user.id, weekStartStr, planId)
+        await releaseWeekAnalysisClaim(user.id, weekStartStr, targetPlanId)
         return
       }
 
@@ -1468,7 +1508,9 @@ if (!claimAcquired) return
 
       // Plan anpassen
       if (nextWeek && nextWeekIsCurrent && result.nextWeekAdjusted?.length > 0) {
-        const currentPlan = JSON.parse(localStorage.getItem(`runcoaching_plan_${user.id}`) || '{}')
+        // Immer den tatsächlich analysierten Plan anpassen – nicht pauschal
+        // den im localStorage liegenden Hauptplan.
+        const currentPlan = JSON.parse(JSON.stringify(plan || {}))
         let adjusted = false
 
         for (const phase of currentPlan.phases || []) {
@@ -1495,11 +1537,26 @@ if (!claimAcquired) return
 
         if (adjusted) {
           // In Supabase speichern
-          if (planId) {
-            await supabase.from('plans').update({ plan_data: currentPlan }).eq('id', planId)
+          await supabase
+            .from('plans')
+            .update({ plan_data:currentPlan })
+            .eq('id', targetPlanId)
+            .eq('user_id', user.id)
+
+          // UI/LocalStorage nur aktualisieren, wenn genau dieser Plan gerade
+          // im Training-Reiter angezeigt wird. Andere Pläne bleiben unsichtbar
+          // im Hintergrund sauber aktualisiert.
+          if (targetPlanId === planId) {
+            localStorage.setItem(
+              `runcoaching_plan_${user.id}`,
+              JSON.stringify(currentPlan)
+            )
+            setPlan(currentPlan)
+
+            if (targetPlanId === primaryPlanId) {
+              setPrimaryPlan(currentPlan)
+            }
           }
-          localStorage.setItem(`runcoaching_plan_${user.id}`, JSON.stringify(currentPlan))
-          setPlan(currentPlan)
         }
       }
 
@@ -1512,7 +1569,7 @@ if (!claimAcquired) return
           user_id: user.id,
           week_number: currentWeek.n,
           week_start: weekStartStr,
-          plan_id: planId,
+          plan_id: targetPlanId,
           analysis: result.analyse,
           recommendation: result.empfehlung,
           next_week_adjustment: result.anpassung,
@@ -1524,7 +1581,7 @@ if (!claimAcquired) return
           'Wochenanalyse konnte nicht gespeichert werden:',
           analysisInsertError
         )
-        await releaseWeekAnalysisClaim(user.id, weekStartStr, planId)
+        await releaseWeekAnalysisClaim(user.id, weekStartStr, targetPlanId)
         return
       }
 
@@ -1541,11 +1598,17 @@ if (!claimAcquired) return
         })
         .eq('user_id', user.id)
         .eq('week_start', weekStartStr)
-        .match(planId ? { plan_id: planId } : {})
+        .match(targetPlanId ? { plan_id: targetPlanId } : {})
 
       // Glocke = Hinweis. Die vollständige Analyse bleibt dauerhaft bei der Woche im Trainingsplan.
+      const planLabel =
+        plan?.planName ||
+        plan?.title ||
+        plan?.name ||
+        'Trainingsplan'
+
       const message =
-        `📊 Deine Analyse für Woche ${currentWeek.n} ist fertig. ` +
+        `📊 ${planLabel}: Deine Analyse für Woche ${currentWeek.n} ist fertig. ` +
         `Öffne die Woche im Trainingsplan, um deinen Wochen-Coach anzusehen.`
 
       const { error: notificationError } = await supabase
@@ -1557,7 +1620,7 @@ if (!claimAcquired) return
           from_user_id: user.id,
           week_number: currentWeek.n,
           week_start: weekStartStr,
-          plan_id: planId,
+          plan_id: targetPlanId,
         })
 
       if (notificationError) {
@@ -1575,7 +1638,7 @@ if (!claimAcquired) return
     } catch (e) {
       console.error('Wochenanalyse Fehler:', e)
       if (weekStartStr) {
-        await releaseWeekAnalysisClaim(user.id, weekStartStr, planId)
+        await releaseWeekAnalysisClaim(user.id, weekStartStr, targetPlanId)
       }
     }
   }
