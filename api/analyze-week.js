@@ -1,6 +1,7 @@
 import { buildTrainingAnalysis, secondsToPace } from '../src/lib/trainingAnalysis.js'
 import { generateHikingPlan } from '../src/lib/hikingPlanServer.js'
 import { normalizeWeeklySport, resolveWeeklyAdjustments } from '../src/lib/weeklyPlanAdapter.js'
+import { createClient } from '@supabase/supabase-js'
 
 const ADJUSTMENT_PATCH_SCHEMA = {
   type: 'object',
@@ -587,6 +588,7 @@ export default async function handler(req, res) {
   }
 
   const {
+    userId = null,
     weekLogs = [],
     plannedDays = [],
     planId = null,
@@ -608,6 +610,71 @@ export default async function handler(req, res) {
   } = req.body || {}
 
   try {
+    if (!userId || !planId || !weekStart) {
+      return res.status(400).json({
+        error:'userId, planId und weekStart sind für die Wochenanalyse erforderlich.',
+      })
+    }
+
+    const supabaseUrl =
+      process.env.SUPABASE_URL ||
+      'https://jgvsbecvgkcfafjyhxvr.supabase.co'
+    const serviceKey = process.env.SUPABASE_SERVICE_KEY
+
+    if (!serviceKey) {
+      throw new Error('SUPABASE_SERVICE_KEY fehlt auf dem Server.')
+    }
+
+    const admin = createClient(
+      supabaseUrl,
+      serviceKey,
+      {
+        auth:{
+          persistSession:false,
+          autoRefreshToken:false,
+        },
+      }
+    )
+
+    const authHeader = String(req.headers?.authorization || '')
+    const accessToken = authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7).trim()
+      : ''
+
+    if (!accessToken) {
+      return res.status(401).json({
+        error:'Nicht autorisierte Wochenanalyse-Anfrage.',
+      })
+    }
+
+    const {
+      data:{ user:verifiedUser } = { user:null },
+      error:verifyError,
+    } = await admin.auth.getUser(accessToken)
+
+    if (
+      verifyError ||
+      !verifiedUser?.id ||
+      verifiedUser.id !== userId
+    ) {
+      return res.status(401).json({
+        error:'Wochenanalyse-Anfrage konnte nicht authentifiziert werden.',
+      })
+    }
+
+    const { data:ownedPlan, error:planOwnershipError } = await admin
+      .from('plans')
+      .select('id')
+      .eq('id', planId)
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (planOwnershipError || !ownedPlan) {
+      return res.status(403).json({
+        error:'Der Trainingsplan gehört nicht zum angemeldeten Nutzer.',
+      })
+    }
+
     const facts = buildTrainingAnalysis({
       weekLogs,
       plannedDays,
@@ -785,7 +852,7 @@ export default async function handler(req, res) {
     }
 
     // Legacy-Felder beibehalten, damit bestehender App-Code weiterhin funktioniert.
-    return res.status(200).json({
+    const responsePayload = {
       ...result,
       analyse:
         result.weekVerdict?.summary ||
@@ -796,30 +863,154 @@ export default async function handler(req, res) {
         result.adjustmentSummary ||
         'Plan bleibt wie geplant',
       analysisData: {
-        version: 2,
-        generatedAt: new Date().toISOString(),
+        version:2,
+        generatedAt:new Date().toISOString(),
         weekNumber,
-        phase: coachContext.phase,
-        plan: coachContext.plan,
+        phase:coachContext.phase,
+        plan:coachContext.plan,
         trendState,
-        facts: {
-          sportType: facts.sportType,
-          sportSummary: facts.sportSummary,
-          adherence: facts.adherence,
-          weekContext: facts.weekContext,
-          efficiencyCandidates: facts.efficiencyCandidates,
-          chronology: facts.chronology,
-          allActivityChronology: facts.allActivityChronology,
-          nonRunningLoad: facts.nonRunningLoad,
-          tightLoadChains: facts.tightLoadChains,
-          planRealityPatterns: facts.planRealityPatterns,
-          subjectiveObjectiveSignals: facts.subjectiveObjectiveSignals,
-          recoverySpacing: facts.recoverySpacing,
-          fatigueSignals: facts.fatigueSignals,
-          confidence: facts.confidence,
+        facts:{
+          sportType:facts.sportType,
+          sportSummary:facts.sportSummary,
+          adherence:facts.adherence,
+          weekContext:facts.weekContext,
+          efficiencyCandidates:facts.efficiencyCandidates,
+          chronology:facts.chronology,
+          allActivityChronology:facts.allActivityChronology,
+          nonRunningLoad:facts.nonRunningLoad,
+          tightLoadChains:facts.tightLoadChains,
+          planRealityPatterns:facts.planRealityPatterns,
+          subjectiveObjectiveSignals:facts.subjectiveObjectiveSignals,
+          recoverySpacing:facts.recoverySpacing,
+          fatigueSignals:facts.fatigueSignals,
+          confidence:facts.confidence,
         },
-        coach: result,
+        coach:result,
       },
+    }
+
+    // Die fertige Analyse wird SERVERSEITIG gespeichert.
+    // Dadurch geht sie nicht verloren, wenn der Browser während/nach dem
+    // Claude-Aufruf den React-Effekt neu startet, in den Hintergrund geht
+    // oder die Antwort nicht mehr clientseitig verarbeitet.
+    const { data:existingAnalysis, error:existingAnalysisError } = await admin
+      .from('week_analyses')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('plan_id', planId)
+      .eq('week_start', weekStart)
+      .maybeSingle()
+
+    if (existingAnalysisError) {
+      throw new Error(
+        `Wochenanalyse-Status konnte serverseitig nicht geprüft werden: ${existingAnalysisError.message}`
+      )
+    }
+
+    const analysisRow = {
+      user_id:userId,
+      week_number:weekNumber,
+      week_start:weekStart,
+      plan_id:planId,
+      analysis:responsePayload.analyse,
+      recommendation:responsePayload.empfehlung,
+      next_week_adjustment:responsePayload.anpassung,
+      analysis_data:responsePayload.analysisData,
+    }
+
+    if (existingAnalysis?.id) {
+      const { error:updateAnalysisError } = await admin
+        .from('week_analyses')
+        .update(analysisRow)
+        .eq('id', existingAnalysis.id)
+
+      if (updateAnalysisError) {
+        throw new Error(
+          `Wochenanalyse konnte serverseitig nicht aktualisiert werden: ${updateAnalysisError.message}`
+        )
+      }
+    } else {
+      const { error:insertAnalysisError } = await admin
+        .from('week_analyses')
+        .insert(analysisRow)
+
+      if (insertAnalysisError) {
+        throw new Error(
+          `Wochenanalyse konnte serverseitig nicht gespeichert werden: ${insertAnalysisError.message}`
+        )
+      }
+    }
+
+    const { error:claimCompleteError } = await admin
+      .from('week_analysis_claims')
+      .update({
+        status:'completed',
+        completed_at:new Date().toISOString(),
+      })
+      .eq('user_id', userId)
+      .eq('plan_id', planId)
+      .eq('week_start', weekStart)
+      .eq('status', 'running')
+
+    if (claimCompleteError) {
+      throw new Error(
+        `Wochenanalyse-Claim konnte nicht abgeschlossen werden: ${claimCompleteError.message}`
+      )
+    }
+
+    const { data:existingNotification, error:notificationLookupError } = await admin
+      .from('notifications')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('plan_id', planId)
+      .eq('week_start', weekStart)
+      .eq('type', 'week_analysis')
+      .maybeSingle()
+
+    if (notificationLookupError) {
+      console.error(
+        '[WochenCoach] Notification-Status konnte nicht geprüft werden:',
+        notificationLookupError
+      )
+    } else if (!existingNotification) {
+      const planLabel =
+        plan?.planName ||
+        plan?.title ||
+        plan?.name ||
+        'Trainingsplan'
+
+      const { error:notificationInsertError } = await admin
+        .from('notifications')
+        .insert({
+          user_id:userId,
+          type:'week_analysis',
+          message:
+            `📊 ${planLabel}: Deine Analyse für Woche ${weekNumber} ist fertig. ` +
+            `Öffne die Woche im Trainingsplan, um deinen Wochen-Coach anzusehen.`,
+          from_user_id:userId,
+          week_number:weekNumber,
+          week_start:weekStart,
+          plan_id:planId,
+        })
+
+      if (notificationInsertError) {
+        console.error(
+          '[WochenCoach] Analyse gespeichert, Notification fehlgeschlagen:',
+          notificationInsertError
+        )
+      }
+    }
+
+    console.log('[WochenCoach] Analyse serverseitig gespeichert und Claim abgeschlossen.', {
+      userId,
+      planId,
+      weekNumber,
+      weekStart,
+    })
+
+    return res.status(200).json({
+      ...responsePayload,
+      serverPersisted:true,
     })
   } catch (error) {
     console.error('Wochenanalyse v2 Fehler:', error)

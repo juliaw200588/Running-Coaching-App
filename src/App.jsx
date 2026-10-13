@@ -1599,9 +1599,18 @@ if (!claimAcquired) return
         nextIsRegenWeek,
       })
 
+      const {
+        data:{ session:weeklyCoachSession } = { session:null },
+      } = await supabase.auth.getSession()
+
       const response = await fetch('/api/analyze-week', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method:'POST',
+        headers:{
+          'Content-Type':'application/json',
+          ...(weeklyCoachSession?.access_token
+            ? { Authorization:`Bearer ${weeklyCoachSession.access_token}` }
+            : {}),
+        },
         body: JSON.stringify({
           userId: user.id,
           planId: targetPlanId,
@@ -1715,9 +1724,40 @@ if (!claimAcquired) return
         }
       }
 
-      // Analyse in Supabase speichern.
-      // week_start ist jetzt der tatsächliche Start dieser Trainingswoche
-      // und nicht mehr versehentlich der Start des gesamten Plans.
+      // Die neue API speichert Analyse + Claim bereits serverseitig.
+      // So hängt die Persistenz nicht mehr vom Lebenszyklus des Browser-Tabs ab.
+      if (result.serverPersisted === true) {
+        coachDebug('Wochenanalyse wurde serverseitig gespeichert.', {
+          weekNumber:currentWeek.n,
+          weekStart:weekStartStr,
+          planId:targetPlanId,
+        })
+
+        coachDiagnostic('server-persisted-success', {
+          planId:targetPlanId,
+          weekStart:weekStartStr,
+          weekNumber:currentWeek.n,
+        })
+
+        localStorage.setItem(lastAnalysisKey, String(analyzeWeek))
+
+        // TrainingPlan lädt week_analyses bei einer Änderung des plan-Objekts neu.
+        // Nur den aktuell sichtbaren Plan neu rendern; andere Pläne bleiben im Hintergrund.
+        if (targetPlanId === planId) {
+          setPlan(current => (
+            current && typeof current === 'object'
+              ? { ...current }
+              : current
+          ))
+        }
+
+        setUnreadCount(prev => prev + 1)
+        return
+      }
+
+      // Fallback für ältere API-Versionen:
+      // Analyse weiterhin clientseitig speichern.
+      // week_start ist der tatsächliche Start dieser Trainingswoche.
       const { error: analysisInsertError } = await supabase
         .from('week_analyses')
         .insert({
