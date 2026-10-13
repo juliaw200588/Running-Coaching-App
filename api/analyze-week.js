@@ -199,38 +199,152 @@ const parseClaudeJson = raw => {
 }
 
 const normalizeCoachResult = result => {
-  const safe = result && typeof result === 'object' ? result : {}
+  const source =
+    result && typeof result === 'object' && !Array.isArray(result)
+      ? result
+      : {}
 
-  safe.weekVerdict = safe.weekVerdict || {
-    status: 'solid',
-    headline: 'Woche abgeschlossen',
-    summary: 'Die Trainingswoche wurde ausgewertet.',
+  const asObject = (value, fallback = {}) =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? value
+      : fallback
+
+  const asString = (value, fallback = '') =>
+    typeof value === 'string'
+      ? value
+      : (value == null ? fallback : String(value))
+
+  const safe = { ...source }
+
+  const rawWeekVerdict = safe.weekVerdict
+  safe.weekVerdict =
+    typeof rawWeekVerdict === 'string'
+      ? {
+          status: 'solid',
+          headline: 'Woche abgeschlossen',
+          summary: rawWeekVerdict,
+        }
+      : {
+          status: asString(asObject(rawWeekVerdict).status, 'solid'),
+          headline: asString(
+            asObject(rawWeekVerdict).headline,
+            'Woche abgeschlossen'
+          ),
+          summary: asString(
+            asObject(rawWeekVerdict).summary,
+            'Die Trainingswoche wurde ausgewertet.'
+          ),
+        }
+
+  safe.positive = Array.isArray(safe.positive)
+    ? safe.positive.map(item => asString(item)).filter(Boolean)
+    : (typeof safe.positive === 'string' ? [safe.positive] : [])
+
+  safe.attention = Array.isArray(safe.attention)
+    ? safe.attention.map(item => asString(item)).filter(Boolean)
+    : (typeof safe.attention === 'string' ? [safe.attention] : [])
+
+  const rawDevelopment = safe.development
+  const developmentObject = asObject(rawDevelopment)
+  safe.development = {
+    summary:
+      typeof rawDevelopment === 'string'
+        ? rawDevelopment
+        : asString(developmentObject.summary, ''),
+    signals: Array.isArray(developmentObject.signals)
+      ? developmentObject.signals
+          .map(signal => {
+            const s = asObject(signal)
+            return {
+              metric: asString(s.metric, ''),
+              trend: asString(s.trend, 'unclear'),
+              text: asString(s.text, ''),
+            }
+          })
+          .filter(signal => signal.metric || signal.text)
+      : [],
   }
-  safe.positive = Array.isArray(safe.positive) ? safe.positive : []
-  safe.attention = Array.isArray(safe.attention) ? safe.attention : []
-  safe.development = safe.development || { summary: '', signals: [] }
-  safe.development.signals = Array.isArray(safe.development.signals)
-    ? safe.development.signals
-    : []
-  safe.loadAssessment = safe.loadAssessment || { status: 'unclear', text: '' }
-  safe.planDecision = safe.planDecision || { action: 'keep', reason: '' }
-  safe.nextWeekFocus = safe.nextWeekFocus || { title: '', text: '' }
-  safe.confidence = safe.confidence || { level: 'low', reason: '' }
-  safe.recommendation = safe.recommendation || ''
-  safe.adjustmentSummary = safe.adjustmentSummary || 'Die nächste Woche bleibt wie geplant.'
-  safe.emoji = safe.emoji || '📊'
+
+  const rawLoad = safe.loadAssessment
+  const loadObject = asObject(rawLoad)
+  safe.loadAssessment = {
+    status:
+      typeof rawLoad === 'string'
+        ? 'unclear'
+        : asString(loadObject.status, 'unclear'),
+    text:
+      typeof rawLoad === 'string'
+        ? rawLoad
+        : asString(loadObject.text, ''),
+  }
+
+  const rawDecision = safe.planDecision
+  const decisionObject = asObject(rawDecision)
+  safe.planDecision = {
+    action:
+      typeof rawDecision === 'string'
+        ? 'keep'
+        : asString(decisionObject.action, 'keep'),
+    reason:
+      typeof rawDecision === 'string'
+        ? rawDecision
+        : asString(decisionObject.reason, ''),
+  }
+
+  const rawFocus = safe.nextWeekFocus
+  const focusObject = asObject(rawFocus)
+  safe.nextWeekFocus = {
+    title:
+      typeof rawFocus === 'string'
+        ? 'Fokus nächste Woche'
+        : asString(focusObject.title, ''),
+    text:
+      typeof rawFocus === 'string'
+        ? rawFocus
+        : asString(focusObject.text, ''),
+  }
+
+  const rawConfidence = safe.confidence
+  const confidenceObject = asObject(rawConfidence)
+  safe.confidence = {
+    level:
+      typeof rawConfidence === 'string'
+        ? (
+            ['high', 'medium', 'low'].includes(rawConfidence.toLowerCase())
+              ? rawConfidence.toLowerCase()
+              : 'low'
+          )
+        : asString(confidenceObject.level, 'low'),
+    reason:
+      typeof rawConfidence === 'string'
+        ? ''
+        : asString(confidenceObject.reason, ''),
+  }
+
+  safe.recommendation = asString(safe.recommendation, '')
+  safe.adjustmentSummary = asString(
+    safe.adjustmentSummary,
+    'Die nächste Woche bleibt wie geplant.'
+  )
+  safe.emoji = asString(safe.emoji, '📊')
+
   safe.nextWeekAdjusted = Array.isArray(safe.nextWeekAdjusted)
-    ? safe.nextWeekAdjusted.map(item => ({
-        tag: item?.tag || '',
-        adjusted: Boolean(item?.adjusted),
-        action: item?.action || 'keep',
-        magnitude: item?.magnitude || 'none',
-        adjustmentReason: item?.adjustmentReason || '',
-        patch:
-          item?.patch && typeof item.patch === 'object' && !Array.isArray(item.patch)
-            ? item.patch
-            : {},
-      }))
+    ? safe.nextWeekAdjusted.map(item => {
+        const entry = asObject(item)
+        return {
+          tag: asString(entry.tag, ''),
+          adjusted: Boolean(entry.adjusted),
+          action: asString(entry.action, 'keep'),
+          magnitude: asString(entry.magnitude, 'none'),
+          adjustmentReason: asString(entry.adjustmentReason, ''),
+          patch:
+            entry.patch &&
+            typeof entry.patch === 'object' &&
+            !Array.isArray(entry.patch)
+              ? entry.patch
+              : {},
+        }
+      })
     : []
 
   return safe
