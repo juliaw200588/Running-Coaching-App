@@ -27,6 +27,23 @@ const coachDebug = (...args) => {
   console.log('[WochenCoach]', ...args)
 }
 
+const coachDiagnostic = (stage, payload = {}) => {
+  const entry = {
+    at: new Date().toISOString(),
+    stage,
+    ...payload,
+  }
+
+  console.log('[WochenCoach][DIAG]', entry)
+
+  try {
+    const key = 'weekly_coach_diagnostics_v1'
+    const current = JSON.parse(localStorage.getItem(key) || '[]')
+    const next = [...current, entry].slice(-80)
+    localStorage.setItem(key, JSON.stringify(next))
+  } catch {}
+}
+
 const parseLocalPlanDate = (value) => {
   if (!value) return new Date()
 
@@ -263,6 +280,31 @@ function App() {
   const [pendingHikingCheckIn, setPendingHikingCheckIn] = useState(null)
   const [weeklyCheckInRefresh, setWeeklyCheckInRefresh] = useState(0)
   const weeklyCheckKeyRef = useRef(new Set())
+
+  useEffect(() => {
+    window.getWeeklyCoachDiagnostics = () => {
+      try {
+        return JSON.parse(
+          localStorage.getItem('weekly_coach_diagnostics_v1') || '[]'
+        )
+      } catch {
+        return []
+      }
+    }
+
+    window.clearWeeklyCoachDiagnostics = () => {
+      try {
+        localStorage.removeItem('weekly_coach_diagnostics_v1')
+      } catch {}
+    }
+
+    return () => {
+      try {
+        delete window.getWeeklyCoachDiagnostics
+        delete window.clearWeeklyCoachDiagnostics
+      } catch {}
+    }
+  }, [])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -704,6 +746,10 @@ function App() {
 useEffect(() => {
   if (!user?.id) return undefined
 
+  coachDiagnostic('multi-plan-effect-mounted', {
+    userId:user.id,
+  })
+
   let disposed = false
   let retryTimer = null
   let eveningTimer = null
@@ -717,10 +763,25 @@ useEffect(() => {
 
     if (error) {
       console.error('[WochenCoach] Pläne konnten nicht geladen werden:', error)
+      coachDiagnostic('load-plans-error', {
+        message:error.message || String(error),
+        code:error.code || null,
+      })
       return []
     }
 
-    return (data || []).filter(row => row?.id && row?.plan_data)
+    const rows = (data || []).filter(row => row?.id && row?.plan_data)
+
+    coachDiagnostic('load-plans-success', {
+      count:rows.length,
+      plans:rows.map(row => ({
+        id:row.id,
+        isPrimary:Boolean(row.is_primary),
+        startDate:row.plan_data?.startDate || null,
+      })),
+    })
+
+    return rows
   }
 
   const getCheckContext = (targetPlan, targetPlanId, today) => {
@@ -785,7 +846,22 @@ useEffect(() => {
       today
     )
 
-    if (!context) return
+    if (!context) {
+      coachDiagnostic('plan-no-check-context', {
+        planId:targetPlanId,
+        startDate:targetPlan?.startDate || null,
+      })
+      return
+    }
+
+    coachDiagnostic('plan-check-context', {
+      planId:targetPlanId,
+      isPrimary:Boolean(row.is_primary),
+      weekStart:context.weekStartStr,
+      analyzeWeek:context.analyzeWeek,
+      currentWeekInPlan:context.currentWeekInPlan,
+      isLastDay:context.isLastDay,
+    })
 
     const runKey =
       `${user.id}_${targetPlanId}_${context.weekStartStr}_` +
@@ -810,6 +886,13 @@ useEffect(() => {
     })
 
     try {
+      coachDiagnostic('run-weekly-check-call', {
+        planId:targetPlanId,
+        weekStart:context.weekStartStr,
+        analyzeWeek:context.analyzeWeek,
+        reason,
+      })
+
       await runWeeklyCheck(
         user,
         targetPlan,
@@ -999,9 +1082,23 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart, planId = null 
     })
 
   if (!error) {
+    coachDiagnostic('claim-created', {
+      planId,
+      weekStart,
+      weekNumber,
+    })
     coachDebug('Analyse-Claim erfolgreich gesetzt.', { weekNumber, weekStart })
     return true
   }
+
+  coachDiagnostic('claim-insert-error', {
+    planId,
+    weekStart,
+    weekNumber,
+    code:error.code || null,
+    message:error.message || String(error),
+    details:error.details || null,
+  })
 
   if (error.code === '23505') {
     coachDebug(
@@ -1032,8 +1129,16 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart, planId = null 
     try {
       if (!targetPlanId) {
         console.error('[WochenCoach] plan_id fehlt – Analyse wird nicht gestartet.')
+        coachDiagnostic('abort-missing-plan-id', {})
         return
       }
+
+      coachDiagnostic('run-weekly-check-entered', {
+        planId:targetPlanId,
+        weekStart:weekStartStr,
+        forcedAnalyzeWeek,
+        currentWeekInPlan,
+      })
 
       coachDebug('runWeeklyCheck()', {
         triggerReason,
@@ -1138,6 +1243,10 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart, planId = null 
       }
 
       if (!currentPhase || !currentWeek) {
+        coachDiagnostic('abort-week-not-found', {
+          planId:targetPlanId,
+          analyzeWeek,
+        })
         coachDebug('Abbruch: Trainingswoche im Plan nicht gefunden.', {
           analyzeWeek,
           phases: (plan.phases || []).map(phase => ({
@@ -1170,6 +1279,11 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart, planId = null 
           'Wochenanalyse-Status konnte nicht geprüft werden:',
           existingAnalysisError
         )
+        coachDiagnostic('abort-existing-analysis-query-error', {
+          planId:targetPlanId,
+          message:existingAnalysisError.message || String(existingAnalysisError),
+          code:existingAnalysisError.code || null,
+        })
         return
       }
 
@@ -1195,6 +1309,11 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart, planId = null 
       })
 
       if (exactWeekMatch || legacyFirstWeekMatch) {
+        coachDiagnostic('abort-already-analyzed', {
+          planId:targetPlanId,
+          weekStart:weekStartStr,
+          weekNumber:currentWeek.n,
+        })
         coachDebug('Abbruch: Diese Trainingswoche ist bereits analysiert.')
         localStorage.setItem(lastAnalysisKey, String(analyzeWeek))
         return
@@ -1257,6 +1376,24 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart, planId = null 
       // Nur Tage, die WEDER geloggt NOCH bewusst übersprungen wurden, blockieren die Analyse.
       const unloggedCount = weekLogs.filter(l => !l.logged && !l.skipped).length
 
+      coachDiagnostic('completeness-check', {
+        planId:targetPlanId,
+        weekStart:weekStartStr,
+        weekNumber:currentWeek.n,
+        plannedCount:plannedDays.length,
+        loggedCount:weekLogs.filter(item => item.logged).length,
+        skippedCount:weekLogs.filter(item => item.skipped).length,
+        unloggedCount,
+        days:weekLogs.map(item => ({
+          key:item.key,
+          tag:item.tag,
+          einheit:item.einheit,
+          logged:item.logged,
+          skipped:item.skipped,
+          actual_date:item.actual_date || null,
+        })),
+      })
+
       coachDebug('Vollständigkeitsprüfung.', {
         plannedCount: plannedDays.length,
         loggedCount: weekLogs.filter(item => item.logged).length,
@@ -1278,6 +1415,12 @@ const claimWeekAnalysis = async ({ userId, weekNumber, weekStart, planId = null 
 // - Im Nachholfenster (die ersten drei Tage der Folgewoche) weiterhin
 //   höchstens einmal pro Tag, falls noch etwas ungeklärt ist.
 if (unloggedCount > 0) {
+  coachDiagnostic('abort-week-incomplete', {
+    planId:targetPlanId,
+    weekStart:weekStartStr,
+    unloggedCount,
+  })
+
   const isSundayEvening =
     isLastDay && today.getHours() >= WEEK_REMINDER_HOUR
 
@@ -1375,11 +1518,23 @@ if (String(plan?.sport_type || plan?.plan_type || '').includes('hiking')) {
 
 // Die Woche ist vollständig. Noch VOR dem Analyse-Aufruf
 // gewinnt genau EIN Trigger/Tab/Gerät den atomaren Wochen-Claim.
+coachDiagnostic('before-claim', {
+  planId:targetPlanId,
+  weekStart:weekStartStr,
+  weekNumber:currentWeek.n,
+})
+
 const claimAcquired = await claimWeekAnalysis({
   userId: user.id,
   weekNumber: currentWeek.n,
   weekStart: weekStartStr,
   planId: targetPlanId,
+})
+
+coachDiagnostic('after-claim', {
+  planId:targetPlanId,
+  weekStart:weekStartStr,
+  claimAcquired:Boolean(claimAcquired),
 })
 
 if (!claimAcquired) return
@@ -1642,6 +1797,111 @@ if (!claimAcquired) return
       }
     }
   }
+
+
+  // Zweiter, plan-state-basierter Catch-up-Trigger.
+  // Er läuft erst dann, wenn der konkrete Plan und seine planId im App-State
+  // vorhanden sind. So verpassen wir den Wochen-Check nicht beim frühen Login.
+  useEffect(() => {
+    if (!user?.id || !plan || !planId) return undefined
+
+    let cancelled = false
+    const timers = []
+
+    const runPrimaryCatchUp = async (reason) => {
+      if (cancelled) return
+
+      try {
+        const today = new Date()
+        const startDate = parseLocalPlanDate(plan.startDate || today)
+        const todayLocal = new Date(
+          today.getFullYear(),
+          today.getMonth(),
+          today.getDate()
+        )
+
+        const daysSinceStart = Math.floor(
+          (todayLocal - startDate) / 86400000
+        )
+
+        if (daysSinceStart < 0) {
+          coachDiagnostic('fallback-before-plan-start', {
+            planId,
+            reason,
+          })
+          return
+        }
+
+        const dayInWeek = daysSinceStart % 7
+        const isLastDay = dayInWeek === 6
+        const currentWeekInPlan = Math.floor(daysSinceStart / 7)
+        const analyzeWeek = isLastDay
+          ? currentWeekInPlan
+          : currentWeekInPlan - 1
+
+        if (analyzeWeek < 0) {
+          coachDiagnostic('fallback-no-completed-week', {
+            planId,
+            reason,
+          })
+          return
+        }
+
+        const weekStartDate = new Date(startDate)
+        weekStartDate.setDate(
+          weekStartDate.getDate() + analyzeWeek * 7
+        )
+
+        const weekStartStr = formatLocalDate(weekStartDate)
+        const planStartStr = formatLocalDate(startDate)
+
+        coachDiagnostic('fallback-run', {
+          planId,
+          reason,
+          weekStart:weekStartStr,
+          analyzeWeek,
+          currentWeekInPlan,
+          isLastDay,
+        })
+
+        await runWeeklyCheck(
+          user,
+          plan,
+          today,
+          currentWeekInPlan,
+          `last_week_analysis_${user.id}_${planId}`,
+          isLastDay,
+          weekStartStr,
+          planStartStr,
+          `fallback-${reason}`,
+          analyzeWeek,
+          currentWeekInPlan,
+          planId
+        )
+      } catch (error) {
+        console.error('[WochenCoach] Fallback-Catch-up Fehler:', error)
+        coachDiagnostic('fallback-error', {
+          planId,
+          reason,
+          message:error?.message || String(error),
+        })
+      }
+    }
+
+    runPrimaryCatchUp('immediate')
+    timers.push(setTimeout(() => runPrimaryCatchUp('retry-2s'), 2000))
+    timers.push(setTimeout(() => runPrimaryCatchUp('retry-8s'), 8000))
+
+    return () => {
+      cancelled = true
+      timers.forEach(clearTimeout)
+    }
+  }, [
+    user?.id,
+    planId,
+    plan?.startDate,
+    weeklyCheckInRefresh,
+  ])
 
   const loadUnreadCount = async (userId) => {
     const { count } = await supabase
