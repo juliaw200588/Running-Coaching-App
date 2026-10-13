@@ -2,29 +2,6 @@ import { buildTrainingAnalysis, secondsToPace } from '../src/lib/trainingAnalysi
 import { generateHikingPlan } from '../src/lib/hikingPlanServer.js'
 import { normalizeWeeklySport, resolveWeeklyAdjustments } from '../src/lib/weeklyPlanAdapter.js'
 
-
-const HYROX_TARGET_UPDATE_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    stationId: {
-      type: 'string',
-      enum: [
-        'sled_push', 'sled_pull', 'farmers_carry', 'sandbag_lunges',
-        'wall_balls', 'ski_erg', 'row', 'burpee_broad_jumps', 'run',
-      ],
-    },
-    weight: { type: 'number' },
-    weightEach: { type: 'number' },
-    distance: { type: 'number' },
-    reps: { type: 'number' },
-    adjustmentReason: { type: 'string' },
-  },
-  required: [
-    'stationId', 'weight', 'weightEach', 'distance', 'reps', 'adjustmentReason',
-  ],
-}
-
 const ADJUSTMENT_PATCH_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -50,9 +27,6 @@ const ADJUSTMENT_PATCH_SCHEMA = {
     techniqueTitle: { type: 'string' },
     techniqueInstructions: { type: 'string' },
     techniqueDistanceM: { type: 'number' },
-    techniqueMinutes: { type: 'number' },
-    nutritionTip: { type: 'string' },
-    strengthPrescription: { type: 'string' },
   },
   required: [
     'einheit', 'details', 'intensity', 'durationMinutes', 'distanceKm',
@@ -60,7 +34,6 @@ const ADJUSTMENT_PATCH_SCHEMA = {
     'restGuidance', 'warmup', 'warmupDistanceM', 'mainSet', 'mainDistanceM',
     'cooldown', 'cooldownDistanceM', 'longestContinuousM', 'targetSegmentM',
     'techniqueTitle', 'techniqueInstructions', 'techniqueDistanceM',
-    'techniqueMinutes', 'nutritionTip', 'strengthPrescription',
   ],
 }
 
@@ -169,25 +142,10 @@ const RESPONSE_SCHEMA = {
             enum: ['none', 'small', 'moderate'],
           },
           adjustmentReason: { type: 'string' },
-          clearFields: {
-            type: 'array',
-            items: {
-              type: 'string',
-              enum: [
-                'paceGuidance', 'elevationGuidance', 'nutritionTip',
-                'strengthPrescription', 'techniqueTitle', 'techniqueInstructions',
-                'techniqueMinutes', 'techniqueDistanceM', 'targetSegmentM',
-              ],
-            },
-          },
-          hyroxTargetUpdates: {
-            type: 'array',
-            items: HYROX_TARGET_UPDATE_SCHEMA,
-          },
           patch: ADJUSTMENT_PATCH_SCHEMA,
         },
         required: [
-          'tag', 'adjusted', 'action', 'magnitude', 'adjustmentReason', 'clearFields', 'hyroxTargetUpdates', 'patch',
+          'tag', 'adjusted', 'action', 'magnitude', 'adjustmentReason', 'patch',
         ],
       },
     },
@@ -206,6 +164,76 @@ const RESPONSE_SCHEMA = {
     'emoji',
     'nextWeekAdjusted',
   ],
+}
+
+
+const parseClaudeJson = raw => {
+  if (!raw || typeof raw !== 'string') {
+    throw new Error('Claude hat keine JSON-Antwort zurückgegeben.')
+  }
+
+  const trimmed = raw.trim()
+
+  try {
+    return JSON.parse(trimmed)
+  } catch {}
+
+  // Sicherheitsnetz, falls trotz Anweisung einmal Markdown-Codefences erscheinen.
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fenced?.[1]) {
+    try {
+      return JSON.parse(fenced[1].trim())
+    } catch {}
+  }
+
+  // Letztes Sicherheitsnetz: erstes vollständiges JSON-Objekt extrahieren.
+  const firstBrace = trimmed.indexOf('{')
+  const lastBrace = trimmed.lastIndexOf('}')
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    try {
+      return JSON.parse(trimmed.slice(firstBrace, lastBrace + 1))
+    } catch {}
+  }
+
+  throw new Error('Die Wochenanalyse war kein gültiges JSON.')
+}
+
+const normalizeCoachResult = result => {
+  const safe = result && typeof result === 'object' ? result : {}
+
+  safe.weekVerdict = safe.weekVerdict || {
+    status: 'solid',
+    headline: 'Woche abgeschlossen',
+    summary: 'Die Trainingswoche wurde ausgewertet.',
+  }
+  safe.positive = Array.isArray(safe.positive) ? safe.positive : []
+  safe.attention = Array.isArray(safe.attention) ? safe.attention : []
+  safe.development = safe.development || { summary: '', signals: [] }
+  safe.development.signals = Array.isArray(safe.development.signals)
+    ? safe.development.signals
+    : []
+  safe.loadAssessment = safe.loadAssessment || { status: 'unclear', text: '' }
+  safe.planDecision = safe.planDecision || { action: 'keep', reason: '' }
+  safe.nextWeekFocus = safe.nextWeekFocus || { title: '', text: '' }
+  safe.confidence = safe.confidence || { level: 'low', reason: '' }
+  safe.recommendation = safe.recommendation || ''
+  safe.adjustmentSummary = safe.adjustmentSummary || 'Die nächste Woche bleibt wie geplant.'
+  safe.emoji = safe.emoji || '📊'
+  safe.nextWeekAdjusted = Array.isArray(safe.nextWeekAdjusted)
+    ? safe.nextWeekAdjusted.map(item => ({
+        tag: item?.tag || '',
+        adjusted: Boolean(item?.adjusted),
+        action: item?.action || 'keep',
+        magnitude: item?.magnitude || 'none',
+        adjustmentReason: item?.adjustmentReason || '',
+        patch:
+          item?.patch && typeof item.patch === 'object' && !Array.isArray(item.patch)
+            ? item.patch
+            : {},
+      }))
+    : []
+
+  return safe
 }
 
 const compactRunForPrompt = run => ({
@@ -280,7 +308,6 @@ const emptyPatch = () => ({
   restGuidance: '', warmup: '', warmupDistanceM: 0, mainSet: '', mainDistanceM: 0,
   cooldown: '', cooldownDistanceM: 0, longestContinuousM: 0, targetSegmentM: 0,
   techniqueTitle: '', techniqueInstructions: '', techniqueDistanceM: 0,
-  techniqueMinutes: 0, nutritionTip: '', strengthPrescription: '',
 })
 
 const buildTrendState = previousAnalyses => {
@@ -340,19 +367,6 @@ const compactNextWeekDay = day => ({
   techniqueTitle: day.techniqueTitle || null,
   techniqueInstructions: day.techniqueInstructions || null,
   techniqueDistanceM: day.techniqueDistanceM || null,
-  techniqueMinutes: day.techniqueMinutes || null,
-  nutritionTip: day.nutritionTip || null,
-  strengthPrescription: day.strengthPrescription || null,
-  openWaterTip: day.openWaterTip || null,
-  hyroxSessionType: day.hyrox_session_type || null,
-  hyroxTargets: day.hyrox_targets || {},
-  hyroxStations: Array.isArray(day?.hyrox_log?.stations)
-    ? day.hyrox_log.stations.map(station => ({
-        id:station?.id || null,
-        label:station?.label || null,
-        fields:Array.isArray(station?.fields) ? station.fields : [],
-      }))
-    : [],
 })
 
 const COMMON_COACH_RULES = `
@@ -366,18 +380,13 @@ Gemeinsame Regeln:
 6. Fehlende Daten nicht erfinden. Wetter, Schlaf, Stress, Schmerzen oder Ursachen nur verwenden, wenn sie tatsächlich vorliegen.
 7. Keine medizinischen Diagnosen stellen. Bei klaren Krankheit-/Beschwerdesignalen konservativ bleiben.
 8. Maximal zwei wirklich wichtige positive Punkte und zwei Punkte unter attention. Genau EINEN konkreten nextWeekFocus formulieren.
-8a. Vermeide Wiederholungen zwischen weekVerdict, development, planDecision und nextWeekFocus. Jeder Abschnitt soll eine andere Aufgabe haben: Fazit, Entwicklung, Begründung, Fokus.
-8b. Texte kompakt halten: headline kurz; summary meist 1–2 Sätze; einzelne positive/attention-Punkte jeweils 1 Satz; nextWeekFocus maximal 2 kurze Sätze.
 9. ALLE Pflicht-Einheiten der nächsten Woche in nextWeekAdjusted zurückgeben, in derselben Tageszuordnung.
-10. adjusted=false -> action=keep, magnitude=none, clearFields=[], hyroxTargetUpdates=[] und patch vollständig mit Leerstrings/0 ausgeben.
+10. adjusted=false -> action=keep, magnitude=none und patch vollständig mit Leerstrings/0 ausgeben.
 11. adjusted=true nur, wenn wirklich etwas gegenüber dem vorhandenen nächsten Wochenplan verändert werden soll. Jede Änderung transparent begründen.
-12. patch enthält NUR tatsächlich zu ersetzende Felder; alle nicht zu ändernden Felder als Leerstring bzw. 0. Keine null-Werte. Wenn ein bisher vorhandenes optionales Feld bewusst entfernt werden muss, nenne es in clearFields statt einen Leerstring als Änderung zu verwenden.
+12. patch enthält NUR tatsächlich zu ersetzende Felder; alle nicht zu ändernden Felder als Leerstring bzw. 0. Keine null-Werte.
 13. Keine zusätzlichen Trainingstage erzeugen und keine vorhandenen Pflicht-Tage verschieben.
 14. Confidence realistisch angeben. Bei eingeschränkter Datenlage konservativ entscheiden.
-15. Höhenmeter aus weekChronology/allActivityChronology bei Outdoor-Sportarten als Belastungskontext berücksichtigen. Pace/Geschwindigkeit nie isoliert mit deutlich unterschiedlich profilierten Einheiten vergleichen. Fehlen Höhenmeter, nichts erfinden.
-16. Strukturierte Belastungs-/Setdaten sind nur dann als Intervalle, Tempoblöcke oder Sets zu interpretieren, wenn Label/Planstruktur das stützen. Unbeschriftete Segmente nicht als Qualitätsblöcke erfinden.
-17. Wenn strukturierte Blöcke vorhanden sind, bei Qualitäts-/Technikeinheiten die Blockentwicklung höher gewichten als bloße Gesamt-Durchschnittswerte.
-18. Nie interne technische Begriffe, Modelle, Prompts, APIs oder Kosten erwähnen.
+15. Nie interne technische Begriffe, Modelle, Prompts, APIs oder Kosten erwähnen.
 `
 
 const SPORT_SYSTEMS = {
@@ -387,7 +396,6 @@ Laufspezifisch:
 - Soll/Ist bei Distanz, Pace, Herzfrequenz und Einheitentyp vergleichen, sofern vorhanden.
 - Bei Intervallen/Tempo Segmente verwenden; niemals Gesamtpace als Intervallpace bewerten.
 - Bei langen/lockeren Läufen Pace- und HF-Drift sowie ähnliche frühere Einheiten berücksichtigen.
-- Höhenmeter immer als Belastungs- und Pace-Kontext verwenden. Eine langsamere Pace bei deutlich mehr Höhenmetern nicht automatisch als Leistungsabfall bewerten. Bei Vergleichen ähnlicher Läufe unterschiedliche Höhenprofile ausdrücklich mitdenken.
 - Running Index, Kadenz und Pace/HF-Verhältnis nur als unterstützende Signale nutzen.
 - Intervall-/Tempo-Paces nicht wegen einer einzelnen guten Woche aggressiv erhöhen.
 - Bei echter Anpassung dürfen einheit, details, intensity, durationMinutes, distanceKm und paceGuidance gemeinsam verändert werden, damit die Einheit in sich konsistent bleibt.
@@ -397,19 +405,16 @@ Laufspezifisch:
 ${COMMON_COACH_RULES}
 Radspezifisch:
 - Zeit und Belastungsverträglichkeit sind wichtiger als Kilometer, da Wind, Gelände und Untergrund die Distanz stark beeinflussen.
-- Dauer, Herzfrequenz/Trainingslast, Erholung, Höhenmeter und subjektive Rückmeldung gemeinsam betrachten. Nutze zusätzlich Höhenmeter pro km, wenn vorhanden, um flache und bergige Ausfahrten nicht über Durchschnittsgeschwindigkeit gleichzusetzen.
-- Bei strukturierten Tempo-/Intervall-Ausfahrten die in sportSummary.sessionTypes enthaltenen structuredBlocks und structuredBlockTrend verwenden. Entscheidend ist, ob die Belastungsblöcke stabil ausgeführt wurden; die Gesamt-Durchschnittsgeschwindigkeit ist dafür ungeeignet.
-- Wenn keine strukturierten Blöcke vorhanden sind, keine Blockqualität erfinden und nur die tatsächlich verfügbaren Gesamt-/Belastungsdaten bewerten.
+- Dauer, Herzfrequenz/Trainingslast, Erholung, Höhenmeter und subjektive Rückmeldung gemeinsam betrachten.
 - Lange Ausfahrten nicht allein wegen niedriger Kilometerzahl abwerten.
 - Anpassungen primär über durationMinutes, intensity, loadGuidance und details steuern. distanceKm nur verändern, wenn der Plan sie wirklich strukturiert verwendet.
-- Verpflegungshinweise bei langen Einheiten erhalten. Wird eine Einheit so stark verkürzt oder in locker/kurz umgewandelt, dass ein bestehender Verpflegungshinweis nicht mehr passt, nutritionTip über clearFields entfernen oder passend ersetzen.
+- Verpflegungshinweise bei langen Einheiten erhalten; keine unnötigen harten Zusatzreize erzeugen.
 - swap_type kann z.B. intensive Ausfahrt -> lockere Grundlage bedeuten, wenn Trends das rechtfertigen.`,
 
   mountainbike: `Du bist ein professioneller Mountainbike-Coach und analysierst eine abgeschlossene Trainingswoche.
 ${COMMON_COACH_RULES}
 MTB-spezifisch:
-- Dauer, Belastung, Höhenmeter, Gelände und Technikbelastung gemeinsam betrachten; Kilometer sind sekundär. Absolute Höhenmeter und Höhenmeter pro km als wichtigen Kontext für die Belastung nutzen.
-- Falls strukturierte Belastungsblöcke vorliegen, deren Verlauf nutzen; Geschwindigkeit auf technischen Trails nicht isoliert bewerten. Unbeschriftete Segmente nicht automatisch als Intervalle interpretieren.
+- Dauer, Belastung, Höhenmeter, Gelände und Technikbelastung gemeinsam betrachten; Kilometer sind sekundär.
 - Techniktraining ist ein eigener Trainingsreiz und darf nicht automatisch durch mehr Ausdauer ersetzt werden.
 - Bei wiederkehrender Ermüdung kann eine harte Trail-/Intervall-Einheit durch lockere Grundlage oder Technik mit geringerer körperlicher Belastung ersetzt werden.
 - Nur Trainingsinhalte empfehlen, die zum bestehenden Planprofil und zur vorhandenen Umgebung passen; keine nicht verfügbaren Höhenmeter/Trails erfinden.
@@ -418,7 +423,7 @@ MTB-spezifisch:
   hiking: `Du bist ein professioneller Coach für Marsch- und Wandertraining und analysierst eine abgeschlossene Trainingswoche.
 ${COMMON_COACH_RULES}
 Wander-/Marsch-spezifisch:
-- Sichere Belastungsverträglichkeit, Zeit auf den Beinen, Distanz, Höhenmeter und Erholung sind wichtiger als Tempo. Absolute Höhenmeter und Höhenmeter pro km nutzen, um flache und bergige Touren nicht gleich zu bewerten.
+- Sichere Belastungsverträglichkeit, Zeit auf den Beinen, Distanz und Erholung sind wichtiger als Tempo.
 - Wochen-Check besonders ernst nehmen: Füße/Haut, Blasen/Druckstellen, Gelenke/Muskulatur und Erholung am Folgetag.
 - Eine schlecht verträgliche oder verpasste Woche niemals durch einen größeren Sprung nachholen.
 - Bei Mehrtagestouren Belastbarkeit am Folgetag höher gewichten als eine einzelne Maximaldistanz.
@@ -426,33 +431,16 @@ Wander-/Marsch-spezifisch:
 - Zielgelände und Trainingsumgebung unterscheiden; keine nicht verfügbaren Höhenmeter erfinden.
 - Anpassungen bevorzugt über Distanz, Dauer, Intensität und Ausführungshinweise.`,
 
-  hyrox: `Du bist ein professioneller HYROX-Coach und analysierst eine abgeschlossene Trainingswoche.
-${COMMON_COACH_RULES}
-HYROX-spezifisch:
-- Nutze hyroxSummary als strukturierte Ist-Datenbasis für die Stationen. Gewichte, Wiederholungen, Distanz, Zeit, Belastung und Technik nicht erfinden.
-- Die deterministische Empfehlung je Station ist eine harte Leitplanke: safetyPriority/reduce darf niemals in eine Steigerung umgewandelt werden; hold darf nicht allein wegen einer sonst guten Woche gesteigert werden.
-- Technik hat Vorrang vor Last. "Technik schwierig", "zu schwer" oder nicht geschafft => nächste passende Belastung reduzieren bzw. technisch vereinfachen. "Schwer" => halten. "Leicht/zu leicht + sicher" => kleine Steigerung ist möglich. "Passend + sicher" => nur die ohnehin passende geplante Progression zulassen.
-- Entscheide trotzdem auf Wochenebene: Gesamtbelastung, Erholung, andere Sportarten, Check-in und Phase können eine grundsätzlich zulässige Steigerung auf halten/reduzieren begrenzen.
-- Keine Einzel-Log-Sofortanpassung simulieren. Der Wochen-Coach ist die einzige Instanz, die den kommenden Wochenplan verändert.
-- HYROX-Race-Loads aus hyroxProfile.raceLoads sind Obergrenzen, keine automatischen Trainingsziele. Nie über sie hinaus steigern.
-- Bei einer Änderung die bestehende Einheit fachlich erhalten. Stationsgewichte/-distanzen NICHT frei im details-Text umrechnen, sondern ausschließlich über hyroxTargetUpdates melden; der nachgelagerte Sicherheitsadapter synchronisiert daraus strukturierte Ziele und Text. Für nicht stationsbezogene Änderungen dürfen details/intensity/durationMinutes genutzt werden.
-- hyroxTargetUpdates nur für Stationen zurückgeben, die in der betreffenden nächsten Einheit tatsächlich vorkommen. Nicht veränderte Zahlen als 0 ausgeben. adjustmentReason kurz begründen.
-- Keine zusätzlichen Trainingstage erzeugen und keine Station erfinden, die im Plan nicht vorkommt.
-- Bei Deload/Regenerationswoche keine Lastprogression.
-- Der Fokus kann Laufökonomie, Stationslast, Technik oder Belastungsverträglichkeit betreffen, aber genau eine Hauptaufgabe nennen.`,
-
   swimming: `Du bist ein professioneller Schwimmcoach und analysierst eine abgeschlossene Trainingswoche.
 ${COMMON_COACH_RULES}
 Schwimmspezifisch:
 - Gesamtmeter, längste zusammenhängende Strecke, Technikqualität, Belastungsverträglichkeit und Erholung getrennt betrachten.
-- Bei strukturierten Set-/Blockdaten die einzelnen Sets aus sportSummary.sessionTypes verwenden. Pace pro 100 m und HF nur als Zusatzsignal nutzen; bei Techniksets ist saubere Ausführung wichtiger als Geschwindigkeit.
-- Wenn keine tatsächlichen Setdaten aus der Aktivität vorhanden sind, die im Plan hinterlegte mainSet-Struktur als Soll verwenden, aber keine nicht gemessenen Ist-Setleistungen erfinden.
 - Verwende ausschließlich die im swimmingProfile gewählten Schwimmarten. Rücken oder Delfin niemals ergänzen.
 - Beckenlänge strikt respektieren: 25m -> alle geschwommenen Teilstrecken Vielfache von 25; 50m -> Vielfache von 50; both/Beides -> Vielfache von 50.
 - Warm-up und Cool-down dürfen durch eine Wochenanpassung niemals verschwinden.
 - Gesamtmeter = warmupDistanceM + mainDistanceM + zusätzliche techniqueDistanceM + cooldownDistanceM. Technikmeter nicht doppelt zählen.
 - Eine Progression der längsten zusammenhängenden Strecke nur konservativ verändern. Keine großen Sprünge.
-- Bei Anpassungen müssen warmup/mainSet/cooldown, strukturierte Meterfelder, longestContinuousM, Pausen und details fachlich zusammenpassen. Wird ein zusätzlicher Technikblock entfernt, techniqueTitle/techniqueInstructions/techniqueDistanceM gemeinsam über clearFields entfernen und die Meter neu konsistent setzen.
+- Bei Anpassungen müssen warmup/mainSet/cooldown, strukturierte Meterfelder, longestContinuousM, Pausen und details fachlich zusammenpassen.
 - Eine Technikeinheit darf bei Bedarf in eine leichtere Technik-/Grundlageneinheit umgewandelt werden; lange Ausdauerblöcke sind keine Technikblöcke.
 - durationMinutes ist nur ergänzend; Meter- und Pausenstruktur ist maßgeblich.`,
 }
@@ -544,13 +532,11 @@ export default async function handler(req, res) {
         cyclingProfile: plan?.cyclingProfile || null,
         mtbProfile: plan?.mtbProfile || null,
         swimmingProfile: plan?.swimmingProfile || null,
-        hyroxProfile: plan?.hyroxProfile || null,
       },
       weeklyCheckIn: weekCheckIn || null,
       adherence: facts.adherence,
       weekContext: facts.weekContext,
       sportSummary: facts.sportSummary,
-      hyroxSummary: sport === 'hyrox' ? facts.hyroxSummary : null,
       trendState,
       runningDetails: sport === 'running'
         ? {
@@ -586,13 +572,20 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           model: 'claude-sonnet-4-5',
           max_tokens: 3200,
-          system,
-          output_config: {
-            format: {
-              type: 'json_schema',
-              schema: RESPONSE_SCHEMA,
-            },
-          },
+          system:
+            system +
+            `\n\nWICHTIGES AUSGABEFORMAT:\n` +
+            `Antworte ausschließlich mit einem gültigen JSON-Objekt. ` +
+            `Kein Markdown, keine Code-Fences und kein Text vor oder nach dem JSON. ` +
+            `Verwende exakt diese Top-Level-Felder: ` +
+            `weekVerdict, positive, attention, development, loadAssessment, ` +
+            `planDecision, nextWeekFocus, confidence, recommendation, ` +
+            `adjustmentSummary, emoji, nextWeekAdjusted. ` +
+            `nextWeekAdjusted muss für jede Pflicht-Einheit der nächsten Woche ` +
+            `einen Eintrag mit tag, adjusted, action, magnitude, adjustmentReason ` +
+            `und patch enthalten. patch ist ein Objekt und darf nur wirklich ` +
+            `benötigte Änderungsfelder enthalten. Wenn nichts geändert wird, ` +
+            `setze adjusted=false, action="keep", magnitude="none" und patch={}.`,
           messages: [
             {
               role: 'user',
@@ -609,6 +602,9 @@ export default async function handler(req, res) {
 
     if (!response.ok) {
       console.error('Anthropic Wochenanalyse Fehler:', data)
+      console.error(
+        '[WochenCoach] Claude-Aufruf ohne Strict-JSON-Grammatik ist fehlgeschlagen.'
+      )
       throw new Error(
         data?.error?.message ||
         `Anthropic API Fehler ${response.status}`
@@ -630,7 +626,7 @@ export default async function handler(req, res) {
       throw new Error('Claude hat keine Analyse zurückgegeben.')
     }
 
-    const result = JSON.parse(text)
+    const result = normalizeCoachResult(parseClaudeJson(text))
 
     result.nextWeekAdjusted = resolveWeeklyAdjustments({
       nextWeekDays,
@@ -664,9 +660,10 @@ export default async function handler(req, res) {
         result.adjustmentSummary || ''
       )
     ) {
-      const hasTypeSwap = adjustedItems.some(item => item.action === 'swap_type')
       result.adjustmentSummary =
-        `${hasTypeSwap ? 'Die Trainingswoche wurde gezielt angepasst' : 'Planstruktur bleibt bestehen; die Ausführung wurde feinjustiert'}: ` +
+        `Planstruktur bleibt bestehen; ${adjustedItems.length} ` +
+        `Einheit${adjustedItems.length === 1 ? '' : 'en'} ` +
+        `wurde${adjustedItems.length === 1 ? '' : 'n'} in der Ausführung feinjustiert: ` +
         adjustedItems
           .map(item => item.day?.einheit)
           .filter(Boolean)
@@ -685,7 +682,7 @@ export default async function handler(req, res) {
         result.adjustmentSummary ||
         'Plan bleibt wie geplant',
       analysisData: {
-        version: 3,
+        version: 2,
         generatedAt: new Date().toISOString(),
         weekNumber,
         phase: coachContext.phase,
@@ -694,7 +691,6 @@ export default async function handler(req, res) {
         facts: {
           sportType: facts.sportType,
           sportSummary: facts.sportSummary,
-      hyroxSummary: sport === 'hyrox' ? facts.hyroxSummary : null,
           adherence: facts.adherence,
           weekContext: facts.weekContext,
           efficiencyCandidates: facts.efficiencyCandidates,
