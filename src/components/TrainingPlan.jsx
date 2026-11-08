@@ -563,6 +563,11 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, allow
   const [activePhase, setActivePhase] = useState(() => findCurrentPhaseWeek(plan).phaseIdx)
   const [showPauseModal, setShowPauseModal] = useState(false)
   const [pauseWeeks, setPauseWeeks] = useState(1)
+  const [pausePlans, setPausePlans] = useState([])
+  const [selectedPauseIds, setSelectedPauseIds] = useState([])
+  const [pauseLoading, setPauseLoading] = useState(false)
+  const [pauseSaving, setPauseSaving] = useState(false)
+  const [pauseError, setPauseError] = useState('')
   const [openWeeks, setOpenWeeks] = useState(() => ({ [findCurrentPhaseWeek(plan).weekIdx]: true }))
   const [openTechniques, setOpenTechniques] = useState({})
   const [openSwimTechniques, setOpenSwimTechniques] = useState({})
@@ -636,44 +641,116 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, allow
 
   const progressUnitLabel = isRunningPlan ? 'Läufe' : 'Einheiten'
 
-  const handlePausePlan = async () => {
-    // Alle Datumsangaben im Plan um pauseWeeks Wochen verschieben
-    const shiftDays = pauseWeeks * 7
-    const shiftDate = (dateStr) => {
-      if (!dateStr) return dateStr
-      const d = new Date(dateStr)
-      d.setDate(d.getDate() + shiftDays)
-      return d.toISOString().split('T')[0]
+  // Eigene Pläne erst beim Öffnen des Dialogs laden; niemals nur den Hauptplan annehmen.
+  useEffect(() => {
+    if (!showPauseModal || !user?.id) return
+    let cancelled = false
+    const loadPausePlans = async () => {
+      setPauseLoading(true)
+      setPauseError('')
+      const { data, error } = await supabase.from('plans')
+        .select('id, plan_data, is_primary, created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+      if (cancelled) return
+      if (error) {
+        setPauseError(`Pläne konnten nicht geladen werden: ${error.message}`)
+        setPausePlans([])
+      } else {
+        const rows = (data || []).filter(row => row.id && row.plan_data)
+        setPausePlans(rows)
+        setSelectedPauseIds(planId && rows.some(row => row.id === planId) ? [planId] : [])
+      }
+      setPauseLoading(false)
     }
-    const shiftDisplayDate = (str) => {
-      if (!str) return str
-      // Versuche Datumsangaben im Format "08.06." zu verschieben
-      return str.replace(/(\d{2})\.(\d{2})\./g, (match, day, month) => {
-        const year = new Date().getFullYear()
-        const d = new Date(year, parseInt(month)-1, parseInt(day))
-        d.setDate(d.getDate() + shiftDays)
+    loadPausePlans()
+    return () => { cancelled = true }
+  }, [showPauseModal, user?.id, planId])
+
+  const handlePausePlan = async () => {
+    if (pauseSaving || pauseLoading || selectedPauseIds.length === 0) return
+    setPauseSaving(true)
+    setPauseError('')
+    const shiftDays = pauseWeeks * 7
+    const shiftIsoDate = value => {
+      if (!value) return value
+      const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})(.*)$/)
+      if (!match) return value
+      const d = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + shiftDays)
+      const date = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+      return date + (match[4] || '')
+    }
+    const shiftDisplayRange = (value, referenceYear) => {
+      if (!value) return value
+      let previousMonth = null
+      let year = referenceYear
+      return String(value).replace(/(\d{1,2})\.(\d{1,2})\./g, (match, day, month) => {
+        const m = Number(month)
+        if (previousMonth !== null && m < previousMonth - 6) year++
+        if (previousMonth !== null && m > previousMonth + 6) year--
+        previousMonth = m
+        const d = new Date(year, m - 1, Number(day) + shiftDays)
         return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.`
       })
     }
-
-    const updatedPlan = JSON.parse(JSON.stringify(plan))
-    updatedPlan.startDate = shiftDate(updatedPlan.startDate)
-
-    for (const phase of updatedPlan.phases || []) {
-      phase.dateRange = shiftDisplayDate(phase.dateRange)
-      for (const week of phase.weeks || []) {
-        week.dateRange = shiftDisplayDate(week.dateRange)
+    const shifted = original => {
+      const updated = structuredClone(original)
+      const start = String(original.startDate || '')
+      const year = /^\d{4}/.test(start) ? Number(start.slice(0,4)) : new Date().getFullYear()
+      updated.startDate = shiftIsoDate(updated.startDate)
+      let previousWeekMonth = null
+      let currentYear = year
+      for (const phase of updated.phases || []) {
+        for (const week of phase.weeks || []) {
+          const match = String(week.dateRange || '').match(/(\d{1,2})\.(\d{1,2})\./)
+          if (match) {
+            const month = Number(match[2])
+            if (previousWeekMonth !== null && month < previousWeekMonth - 6) currentYear++
+            previousWeekMonth = month
+          }
+          week.dateRange = shiftDisplayRange(week.dateRange, currentYear)
+        }
+        // Phasenbereich aus den verschobenen Wochen ableiten, sofern möglich.
+        const first = phase.weeks?.[0]?.dateRange
+        const last = phase.weeks?.[phase.weeks.length - 1]?.dateRange
+        if (first && last && phase.dateRange) {
+          const firstDate = String(first).match(/\d{1,2}\.\d{1,2}\./)?.[0]
+          const lastDates = [...String(last).matchAll(/\d{1,2}\.\d{1,2}\./g)]
+          const lastDate = lastDates.at(-1)?.[0]
+          phase.dateRange = firstDate && lastDate ? `${firstDate} – ${lastDate}` : shiftDisplayRange(phase.dateRange, year)
+        } else {
+          phase.dateRange = shiftDisplayRange(phase.dateRange, year)
+        }
       }
+      return updated
     }
 
-    // Speichern
-    localStorage.setItem(`runcoaching_plan_${user?.id}`, JSON.stringify(updatedPlan))
-    if (user) {
-      const { data } = await supabase.from('plans').select('id').eq('user_id', user.id).single()
-      if (data) await supabase.from('plans').update({ plan_data: updatedPlan }).eq('id', data.id)
+    const completed = []
+    try {
+      for (const id of selectedPauseIds) {
+        const row = pausePlans.find(item => item.id === id)
+        if (!row) throw new Error('Ein ausgewählter Plan wurde nicht gefunden.')
+        const updatedPlan = shifted(row.plan_data)
+        const { data, error } = await supabase.from('plans')
+          .update({ plan_data: updatedPlan })
+          .eq('id', id).eq('user_id', user.id)
+          .select('id')
+        if (error) throw new Error(`${row.plan_data?.title || 'Plan'}: ${error.message}`)
+        if (!data?.length) throw new Error('Keine Speicherbestätigung für einen ausgewählten Plan.')
+        completed.push(id)
+        if (row.is_primary) {
+          localStorage.setItem(`runcoaching_plan_${user.id}`, JSON.stringify(updatedPlan))
+        }
+      }
+      setShowPauseModal(false)
+      window.location.reload()
+    } catch (error) {
+      console.error('[Planpause] Speichern fehlgeschlagen:', error)
+      setPauseError(`${error.message}${completed.length ? ` (${completed.length} Plan/Pläne bereits verschoben; bitte nicht erneut auswählen.)` : ''}`)
+      setSelectedPauseIds(ids => ids.filter(id => !completed.includes(id)))
+    } finally {
+      setPauseSaving(false)
     }
-
-    window.location.reload()
   }
 
   useEffect(() => {
@@ -2365,6 +2442,20 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, allow
               <p style={{ fontSize: 13, color: '#8B6B5A', fontFamily: 'sans-serif', marginBottom: 20, lineHeight: 1.6 }}>
                 Verletzt, krank oder im Urlaub? Verschiebe deinen Plan um die gewünschte Anzahl Wochen – alle Termine passen sich automatisch an.
               </p>
+              <div style={{ marginBottom: 18 }}>
+                <label style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 1, display: 'block', marginBottom: 10, fontFamily: 'sans-serif' }}>Welche Pläne verschieben?</label>
+                {pauseLoading && <p>Pläne werden geladen…</p>}
+                {!pauseLoading && pausePlans.map(row => {
+                  const sport = row.plan_data?.sport_type || row.plan_data?.plan_type || 'running'
+                  const name = row.plan_data?.title || row.plan_data?.goal || ({hyrox:'HYROX',running:'Laufen',cycling:'Radfahren',swimming:'Schwimmen',hiking:'Wandern',mountain_biking:'Mountainbike'}[sport] || 'Trainingsplan')
+                  return <label key={row.id} style={{ display:'flex', gap:10, alignItems:'center', padding:'12px', marginBottom:8, border:'1px solid #F0E0D0', borderRadius:12, fontSize:13, color:'#3D2B1F', cursor:'pointer' }}>
+                    <input type="checkbox" checked={selectedPauseIds.includes(row.id)} disabled={pauseSaving} onChange={e => setSelectedPauseIds(ids => e.target.checked ? [...ids, row.id] : ids.filter(id => id !== row.id))} />
+                    <span>{name} · {row.is_primary ? 'Hauptplan' : 'Zusatzplan / Gemeinsam'}</span>
+                  </label>
+                })}
+                {pauseError && <p role="alert" style={{ color:'#B43E42', fontSize:12, lineHeight:1.5 }}>{pauseError}</p>}
+                <p style={{ fontSize:11, color:'#8B6B5A' }}>Nur deine eigenen Plantermine werden verschoben. Andere Teilnehmer gemeinsamer Ziele bleiben unverändert.</p>
+              </div>
               <div style={{ marginBottom: 20 }}>
                 <label style={{ fontSize: 11, fontWeight: 'bold', color: '#B8A090', textTransform: 'uppercase', letterSpacing: 1, display: 'block', marginBottom: 8, fontFamily: 'sans-serif' }}>
                   Wie viele Wochen pausieren?
@@ -2379,13 +2470,13 @@ export default function TrainingPlan({ plan, onReset, user, planId = null, allow
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={() => setShowPauseModal(false)}
+                <button disabled={pauseSaving} onClick={() => setShowPauseModal(false)}
                   style={{ flex: 1, padding: '15px', borderRadius: 16, border: '1.5px solid #F0E0D0', background: 'white', color: '#C4A882', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif' }}>
                   Abbrechen
                 </button>
-                <button onClick={() => { setShowPauseModal(false); handlePausePlan() }}
+                <button disabled={pauseSaving || pauseLoading || selectedPauseIds.length === 0} onClick={handlePausePlan}
                   style={{ flex: 2, padding: '15px', borderRadius: 16, border: 'none', background: 'linear-gradient(135deg,#FF8C69,#FF6B9D)', color: 'white', fontSize: 14, fontWeight: 'bold', cursor: 'pointer', fontFamily: 'sans-serif', boxShadow: '0 6px 20px rgba(255,107,157,0.4)' }}>
-                  Plan um {pauseWeeks} {pauseWeeks === 1 ? 'Woche' : 'Wochen'} verschieben
+                  {pauseSaving ? "Speichert…" : `${selectedPauseIds.length} Plan/Pläne um ${pauseWeeks}`} {pauseWeeks === 1 ? 'Woche' : 'Wochen'} verschieben
                 </button>
               </div>
             </div>
